@@ -31,4 +31,19 @@ if [ ! -e "$PROJECT_DIR/.mcp.json" ]; then
 else
   echo "NOTE: $PROJECT_DIR/.mcp.json already exists — merge the 'quiz' entry from $CLAUDE_DIR/mcp.json into it."
 fi
+# Callout styles for the lesson environments (definition, theorem, notation, …).
+if [ -d "$PROJECT_DIR/.obsidian" ]; then
+  mkdir -p "$PROJECT_DIR/.obsidian/snippets"
+  cp "$CLAUDE_DIR/obsidian/learn-callouts.css" "$PROJECT_DIR/.obsidian/snippets/learn-callouts.css"
+  python3 - "$PROJECT_DIR/.obsidian/appearance.json" <<'PY'
+import json, sys, os
+p = sys.argv[1]
+d = json.load(open(p)) if os.path.exists(p) else {}
+s = d.setdefault("enabledCssSnippets", [])
+if "learn-callouts" not in s:
+    s.append("learn-callouts")
+json.dump(d, open(p, "w"), indent=2)
+PY
+  echo "Installed and enabled the Obsidian CSS snippet learn-callouts (restart Obsidian if styles do not show)."
+fi
 echo "Done."

@@ -199,6 +199,31 @@ Everything written in a session is rendered to the learner through Obsidian, whi
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 
+**Environments.** Use LaTeX-style environments, written as Obsidian callouts (styled by `obsidian/learn-callouts.css`), for the pieces of a section that the learner will look back for:
+
+```
+> [!definition] Best response
+> A strategy $s_i^*$ is a **best response** to $s_{-i}$ if $u_i(s_i^*, s_{-i}) \ge u_i(s_i, s_{-i})$ for every $s_i \in S_i$.
+
+> [!theorem] Nash's existence theorem
+> Every finite game has at least one Nash equilibrium in mixed strategies.
+
+> [!proof]
+> …
+
+> [!notation]
+> - $S_i$ — the set of strategies available to player $i$
+> - $s_{-i}$ — the strategies chosen by everyone except $i$
+> - $u_i(\cdot)$ — player $i$'s payoff function, a real number
+
+> [!intuition]
+> …
+```
+
+Types: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, plus Obsidian's own `example`. A definition is stated once, in its own `[!definition]` callout with the term in the title, and never only inline. Unconditional truths of the lesson are `[!definition]` or `[!theorem]` blocks as appropriate. Keep environments short and formal; the motivation and the discovery path stay in the prose around them. Quiz and answer callouts are written by the tools; do not hand-write those.
+
+**Notation is never left to inference.** Every symbol has to be defined in words before the learner can meet it in an equation, or on the line directly after — never later, never implicitly. The rule: no display equation may introduce a symbol that the text has not already defined, unless a `[!notation]` callout follows the equation listing each new symbol (what it stands for, its type or range, its units if any). Subscripts and decorations count: $p_{AB}$ needs "the probability that A beats B", $\hat\theta$ needs "the estimate of $\theta$", $c$ needs "the standard deviation of the performance gap". Read every equation you write once more as the learner would, and ask of each symbol: has this been named? If not, name it.
+
 **Equation numbering and references.** Every display equation the lesson will refer back to gets a number, a block id, and is cited by a clickable link. Numbers run from (1) through the whole lesson note, across sessions — on resume, continue from the highest number already used (the brief tells you). Exact form:
 
 ```

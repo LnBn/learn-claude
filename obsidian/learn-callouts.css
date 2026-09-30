@@ -1,0 +1,35 @@
+/* learn-claude — lesson environments as Obsidian callouts.
+   Install: copy to <vault>/.obsidian/snippets/ and enable under Settings → Appearance → CSS snippets.
+   Types: definition, theorem, lemma, proposition, corollary, proof, notation, remark, intuition.
+   (example, question, success, failure, warning, info, note are Obsidian built-ins and need nothing.) */
+
+.callout[data-callout="definition"] {
+  --callout-color: 63, 81, 181;            /* indigo */
+  --callout-icon: lucide-book-open;
+}
+.callout[data-callout="theorem"],
+.callout[data-callout="proposition"],
+.callout[data-callout="lemma"],
+.callout[data-callout="corollary"] {
+  --callout-color: 156, 39, 176;           /* purple */
+  --callout-icon: lucide-award;
+}
+.callout[data-callout="proof"] {
+  --callout-color: 96, 125, 139;           /* blue-grey */
+  --callout-icon: lucide-check-square;
+}
+.callout[data-callout="notation"] {
+  --callout-color: 0, 150, 136;            /* teal */
+  --callout-icon: lucide-list;
+}
+.callout[data-callout="remark"],
+.callout[data-callout="intuition"] {
+  --callout-color: 255, 152, 0;            /* amber */
+  --callout-icon: lucide-lightbulb;
+}
+
+/* proofs end with a tombstone */
+.callout[data-callout="proof"] .callout-content > :last-child::after {
+  content: " ∎";
+  float: right;
+}

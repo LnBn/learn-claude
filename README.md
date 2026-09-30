@@ -110,6 +110,13 @@ The note is the state, not the chat. One note per topic.
 The teacher writes the checkpoint by itself when you say you are stopping. A lesson started under pi resumes the
 same way; its `… — Resume Here.md` companion note is picked up automatically.
 
+### Environments and notation
+
+Definitions, theorems, proofs, notation lists, remarks and intuition boxes are written as callouts
+(`> [!definition] Best response`, `> [!theorem] …`, `> [!notation]`, …), styled by the CSS snippet the installer
+adds to the vault. Every symbol in an equation is defined in the text before it appears, or in a `[!notation]`
+callout directly after the equation.
+
 ### The note
 
 Each session starts with `## Session — <date>`. Your prompts appear as `> **You:** …` quotes, the teacher's
@@ -146,6 +153,9 @@ textbook chapter. `/md-unlog` stops mirroring.
     render-mermaid.sh    Mermaid → PNG (mermaid-cli + local Chrome)
     render-svg.sh        SVG → PNG (rsvg-convert → ImageMagick → Chrome)
   visual-tools/          package.json for mermaid-cli
+  obsidian/
+    learn-callouts.css   styles for the lesson environments (definition, theorem, proof, notation, …);
+                         install.sh copies it into <vault>/.obsidian/snippets and enables it
 ```
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit and what is fragile.
