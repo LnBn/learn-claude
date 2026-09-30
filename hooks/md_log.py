@@ -380,7 +380,7 @@ SKIP_ASSISTANT = re.compile(r"^\s*🗒")  # status lines from the md-log / lesso
 NARRATION_MAX = 300
 NARRATION_RE = re.compile(
     r"^\s*(I'll|I will|I'm going|I am going|Let me (load|check|verify|run|look|see|start|pull|fetch|confirm|fire|dispatch|ask)|"
-    r"Let's (load|start|check|run)|Now I|Next I|First I|"
+    r"Let's (load|start|check|run)|Now I|Next I|First I|Trying|Retrying|Installing|Running|Checking|Fixing|Switching|"
     r"Loading|Waiting|While (that|the)|Once (the|that|its)|One moment|Give me a moment|"
     r"The (researcher|maker|brief|subagent|diagram) (is|has|came|comes)|Got it|Understood|Sure[,.]|"
     r"Okay[,.]|OK[,.]|Great[,.!]|Perfect[,.!]|Still |The (first|next|last|second) (quiz|question|check))",
@@ -406,9 +406,9 @@ def is_narration(text, shares_message_with_tool):
         return False
     if NARRATION_RE.match(t) or NARRATION_ANY_RE.search(t):
         return True
-    # short text that prefaces a tool call is narration only if it also announces an intent;
-    # a short lesson opener followed by the first quiz is content and must stay
-    return shares_message_with_tool and bool(NARRATION_INTENT_RE.search(t))
+    # text that prefaces a tool call is narration if it announces an intent, or if it is very short
+    # (a one-liner before a command); a lesson opener followed by the first quiz is longer and stays
+    return shares_message_with_tool and (len(t) < 120 or bool(NARRATION_INTENT_RE.search(t)))
 
 
 # ---------------------------------------------------------------- answers
