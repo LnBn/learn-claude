@@ -348,6 +348,8 @@ def clean_user_text(text):
         return ""
     if "<command-name>" in text:  # a slash command / skill invocation, not prose
         return ""
+    if text.lstrip().startswith("[Request interrupted by user"):  # harness message after Esc
+        return ""
     for tag in NOISE_TAGS:
         text = re.sub(rf"<{tag}\b[^>]*>.*?</{tag}>", "", text, flags=re.S)
     text = re.sub(r"<[a-z_-]+\b[^>]*>\s*</[a-z_-]+>", "", text)
