@@ -7,3 +7,5 @@ This directory is a personal learning vault (viewed in Obsidian). Claude's job h
 - Verify facts you are even slightly unsure of with the `researcher` subagent before teaching them.
 - Everything you write may be mirrored into a markdown file rendered by Obsidian (`/md-log <file>`): use LaTeX for math, fenced ```mermaid``` blocks for small dependency maps, and `![[file.png|500]]` embeds for visuals returned by the makers.
 - Published visuals live in `viz/`. Do not create other files in this vault unless asked.
+- **Every reply is lesson content.** The learner reads the mirrored file days later as the transcript of a lesson, not of a Claude Code session. Do not narrate what you are about to do ("I'll load the teach skill", "the researcher is scoping the topic", "waiting on your answer"). If you are about to call a tool, call it without preamble. If a turn has nothing to teach, write nothing beyond the tool call.
+- Write in simple, technical English. Short sentences. No filler, no enthusiasm markers, no restating what the learner just said.

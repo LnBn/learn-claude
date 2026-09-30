@@ -156,6 +156,8 @@ Everything written in a session is rendered to the learner through Obsidian, whi
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 
+**No narration.** Every sentence you write is mirrored into the lesson file and read again days later. Write only lesson content: motivation, truths, derivations, connections, plans, checkpoints, and the questions themselves. Never write "let me load…", "I'll check that with the researcher", "the brief is back", "waiting for your answer", or any description of tool calls — call the tool instead. After a `quiz` returns, the learner has already seen the grade in the popup: do not restate it; continue teaching from the outcome. Prefer short, plain, technical sentences.
+
 **Emphasis — use forms that render in both the terminal and Obsidian.** The learner reads the terminal live and the markdown file rendered, so:
 - Put the key claim of a node in **bold** — one bolded sentence per node, not scattered words.
 - Set off each unconditional truth as a blockquote (`> ALL X is done through {Y}`), so it stands apart from the derivation around it.

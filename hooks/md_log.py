@@ -10,7 +10,8 @@ render natively — no rendering work here.
 
 Captures only reading-relevant content:
   - user prompts                           (> [!quote] YOU)
-  - assistant text (lesson prose)          (> [!abstract] CLAUDE)
+  - assistant text (lesson prose)          (> [!abstract] CLAUDE) — minus session narration
+                                            ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
   - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
                                             writes these itself, live; the Stop replay only backfills
@@ -254,6 +255,29 @@ def is_user_prose(text):
 
 SKIP_ASSISTANT = re.compile(r"^\s*🗒 md-log")
 
+# The lesson file must read like a lesson, not like a Claude Code session. Assistant text that
+# only narrates the session ("I'll load the teach skill", "waiting on your answer", "the researcher
+# is scoping the topic") is dropped:
+#   - short text that shares an API message with a tool call (that text is the preamble to the call)
+#   - short standalone text that starts like narration
+NARRATION_MAX = 300
+NARRATION_RE = re.compile(
+    r"^\s*(I'll|I will|I'm going|I am going|Let me|Let's (load|start|check|run)|Now I|Next I|First I|"
+    r"Loading|Waiting|While (that|the)|Once (the|that|its)|One moment|Give me a moment|"
+    r"The (researcher|maker|brief|subagent|diagram) (is|has|came|comes)|Got it|Understood|Sure[,.]|"
+    r"Okay[,.]|OK[,.]|Great[,.!]|Perfect[,.!])",
+    re.I,
+)
+
+
+def is_narration(text, shares_message_with_tool):
+    t = text.strip()
+    if len(t) > NARRATION_MAX:
+        return False
+    if shares_message_with_tool:
+        return True
+    return bool(NARRATION_RE.match(t))
+
 
 # ---------------------------------------------------------------- answers
 
@@ -357,12 +381,27 @@ def replay_transcript(path, state):
     blocks = []
     state["_logged_user_keys"] = set()
 
-    def flush_text(parts):
+    # first pass: which API messages contain a tool call (their text is narration, see is_narration)
+    tool_msg_ids = set()
+    for raw in lines[start:]:
+        try:
+            e = json.loads(raw)
+        except Exception:
+            continue
+        if e.get("type") == "assistant" and not e.get("isSidechain"):
+            msg = e.get("message") or {}
+            if any(isinstance(b, dict) and b.get("type") == "tool_use" for b in (msg.get("content") or [])):
+                tool_msg_ids.add(msg.get("id"))
+
+    def flush_text(parts, msg_id=None):
         nonlocal written
         text = "\n\n".join(p for p in parts if p.strip())
-        if text.strip() and not SKIP_ASSISTANT.match(text):
-            blocks.append(assistant_block(text))
-            written += 1
+        if not text.strip() or SKIP_ASSISTANT.match(text):
+            return
+        if is_narration(text, msg_id in tool_msg_ids):
+            return
+        blocks.append(assistant_block(text))
+        written += 1
 
     for raw in lines[start:]:
         try:
@@ -432,7 +471,7 @@ def replay_transcript(path, state):
                     ask_calls[b.get("id")] = b.get("input") or {}
                 elif b.get("type") == "tool_use" and b.get("name") == QUIZ_TOOL:
                     quiz_calls.add(b.get("id"))
-            flush_text(parts)
+            flush_text(parts, msg.get("id"))
 
     for blk in blocks:
         append(blk)
