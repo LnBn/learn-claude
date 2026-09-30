@@ -23,10 +23,13 @@ a second time when replaying the transcript.
 import json
 import os
 import random
+import shutil
+import subprocess
 import sys
-import time
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+POPUP = os.path.join(HERE, "quiz_popup.py")
 CLAUDE_DIR = os.path.dirname(HERE)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
@@ -287,48 +290,22 @@ def run_quiz(args, tool_use_id):
     # --- show the question (live) before the learner answers
     append_log(question_block(record))
 
-    # --- elicit
-    def choice(o):
-        return f"{o['index']}. {o['label']}" + (f" — {o['description']}" if o["description"] else "")
+    # --- ask the learner: tmux popup when available (full question + options, like pi),
+    #     otherwise Claude Code's elicitation form (which truncates the message to one line)
+    ui = ask_via_tmux(record) if tmux_available() else None
+    seen_feedback = ui is not None  # the tmux popup shows the grade itself
+    if ui is None:
+        ui = ask_via_elicitation(record, displayed, msg_details=details, multi=multi)
 
-    labels = [choice(o) for o in displayed]
-    msg = question + (f"\n\n{details}" if details else "")
-    if multi:
-        props = {f"opt{o['index']}": {"type": "boolean", "title": choice(o), "default": False} for o in displayed}
-        props["dk"] = {"type": "boolean", "title": DONT_KNOW, "default": False}
-        props["note"] = {"type": "string", "title": "Note (optional)"}
-        schema = {"type": "object", "properties": props, "required": []}
-        msg += "\n\nSelect ALL that apply."
-    else:
-        schema = {
-            "type": "object",
-            "properties": {
-                "answer": {"type": "string", "title": "Your answer", "enum": labels + [DONT_KNOW]},
-                "note": {"type": "string", "title": "Note (optional)"},
-            },
-            "required": ["answer"],
-        }
-    resp = request("elicitation/create", {"message": msg, "requestedSchema": schema})
-
-    if "error" in resp or (resp.get("result") or {}).get("action") != "accept":
+    if ui.get("action") != "accept":
         record["status"] = "cancelled"
         append_log(result_block(record))
         mark_logged(tool_use_id)
         return result("User skipped the quiz (cancelled). Ask whether to continue or move on.", record)
 
-    content = (resp["result"].get("content") or {})
-    note = str(content.get("note") or "").strip()
-    if multi:
-        picked = [o["index"] for o in displayed if content.get(f"opt{o['index']}") is True]
-        dont_know = content.get("dk") is True and not picked
-    else:
-        ans = str(content.get("answer") or "")
-        dont_know = ans.strip() == DONT_KNOW
-        picked = [o["index"] for o in displayed if choice(o) == ans]
-        if not picked and not dont_know:  # tolerate a client returning just the label or the number
-            for o in displayed:
-                if ans.strip() in (o["label"], str(o["index"])):
-                    picked = [o["index"]]
+    picked = [i for i in ui.get("answers", []) if i in {o["index"] for o in displayed}]
+    dont_know = bool(ui.get("dontKnow")) and not picked
+    note = str(ui.get("note") or "").strip()
     correct = (not dont_know) and sorted(picked) == correct_indices
     record.update({"answers": picked, "correct": correct, "dontKnow": dont_know, "note": note})
 
@@ -345,8 +322,89 @@ def run_quiz(args, tool_use_id):
     text += f"\nExplanation: {explanation}"
     if note:
         text += f"\nNote from user: {note}"
-    text += "\nThe user has already seen this feedback — do not repeat the grade; continue from it."
+    if seen_feedback:
+        text += "\nThe user has already seen this feedback in the popup — do not repeat the grade; continue from it."
+    else:
+        text += "\nThe user has NOT seen this feedback yet — relay the grade, the correct answer and the explanation in one short block before continuing."
     return result(text, record)
+
+
+# ----------------------------------------------------------------- learner UI
+
+def tmux_available():
+    return bool(os.environ.get("TMUX")) and shutil.which("tmux") is not None
+
+
+def ask_via_tmux(record):
+    """Show the quiz in a tmux popup. Returns the popup's result dict, or None if
+    the popup could not be shown (caller then falls back to elicitation)."""
+    work = tempfile.mkdtemp(prefix="learn-quiz.")
+    spec_path = os.path.join(work, "spec.json")
+    out_path = os.path.join(work, "result.json")
+    spec = {"question": record["question"], "details": record.get("details", ""),
+            "options": record["options"], "multiSelect": record.get("multiSelect", False),
+            "dontKnow": DONT_KNOW, "correctIndices": record["correctIndices"],
+            "explanation": record.get("explanation", "")}
+    with open(spec_path, "w", encoding="utf-8") as f:
+        json.dump(spec, f, ensure_ascii=False)
+    n_lines = 12 + sum(1 + len(o["label"]) // 60 for o in record["options"]) \
+        + len(record["question"]) // 60 + len(record.get("explanation", "")) // 60
+    height = str(min(max(n_lines, 14), 40))
+    cmd = ["tmux", "display-popup", "-E", "-w", "80%", "-h", height, "-T", " quiz ",
+           f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]
+    try:
+        subprocess.run(cmd, check=False, timeout=3600, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return None
+    try:
+        with open(out_path, encoding="utf-8") as f:
+            res = json.load(f)
+    except Exception:
+        return None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    if res.get("error"):
+        return None
+    return res
+
+
+def shlex_quote(s):
+    return "'" + str(s).replace("'", "'\\''") + "'"
+
+
+def ask_via_elicitation(record, displayed, msg_details, multi):
+    """Fallback: MCP elicitation form. Claude Code shows the message on ONE line,
+    so the question is pushed into the option titles as far as possible."""
+    def choice(o):
+        return f"{o['index']}. {o['label']}" + (f" — {o['description']}" if o.get("description") else "")
+
+    labels = [choice(o) for o in displayed]
+    msg = record["question"] + (f"\n\n{msg_details}" if msg_details else "")
+    if multi:
+        props = {f"opt{o['index']}": {"type": "boolean", "title": choice(o), "default": False} for o in displayed}
+        props["dk"] = {"type": "boolean", "title": DONT_KNOW, "default": False}
+        props["note"] = {"type": "string", "title": "Note (optional)"}
+        schema = {"type": "object", "properties": props, "required": []}
+        msg += "\n\nSelect ALL that apply."
+    else:
+        schema = {"type": "object",
+                  "properties": {"answer": {"type": "string", "title": "Your answer", "enum": labels + [DONT_KNOW]},
+                                 "note": {"type": "string", "title": "Note (optional)"}},
+                  "required": ["answer"]}
+    resp = request("elicitation/create", {"message": msg, "requestedSchema": schema})
+    if "error" in resp or (resp.get("result") or {}).get("action") != "accept":
+        return {"action": "cancel"}
+    content = (resp["result"].get("content") or {})
+    note = str(content.get("note") or "").strip()
+    if multi:
+        picked = [o["index"] for o in displayed if content.get(f"opt{o['index']}") is True]
+        return {"action": "accept", "answers": picked, "dontKnow": content.get("dk") is True and not picked, "note": note}
+    ans = str(content.get("answer") or "").strip()
+    if ans == DONT_KNOW:
+        return {"action": "accept", "answers": [], "dontKnow": True, "note": note}
+    picked = [o["index"] for o in displayed if choice(o) == ans or ans in (o["label"], str(o["index"]))]
+    return {"action": "accept", "answers": picked[:1], "dontKnow": False, "note": note}
 
 
 def err(message):

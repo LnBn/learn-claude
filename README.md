@@ -10,7 +10,7 @@ The teaching philosophy is unchanged. What changed is the plumbing:
 |---|---|
 | `skills/teach` | `skills/teach/SKILL.md` — same text, tool names mapped, learner pronouns neutralised |
 | `skills/visualize` | `skills/visualize/SKILL.md` — dispatches makers with the Agent tool |
-| `extensions/quiz` (graded popup tool) | `mcp/quiz_server.py` — a dependency-free MCP server exposing a `quiz` tool. The form is shown through MCP elicitation, graded **instantly** by the server (✓/✗, correct answer, explanation), logged live. A model-graded `AskUserQuestion` fallback protocol lives in the teach skill for sessions without the server |
+| `extensions/quiz` (graded popup tool) | `mcp/quiz_server.py` — a dependency-free MCP server exposing a `quiz` tool. Inside tmux the question opens in a `tmux display-popup` (`mcp/quiz_popup.py`, curses), is graded **instantly** by the server and the ✓/✗ feedback is shown in the popup and logged live. Outside tmux it falls back to Claude Code's elicitation form (which truncates the question, so use tmux). A model-graded `AskUserQuestion` protocol remains in the teach skill for sessions without the server |
 | `extensions/ask-user-question` | the built-in `AskUserQuestion` tool |
 | `extensions/md-log` | `hooks/md_log.py` wired to `UserPromptSubmit` / `PostToolUse` / `Stop` hooks; `/md-log <file>` and `/md-unlog` skills |
 | `extensions/visual-tools` | `scripts/render-mermaid.sh` + `scripts/render-svg.sh` (mermaid-cli via your installed Chrome; rsvg → ImageMagick → headless Chrome for SVG) |
@@ -26,7 +26,7 @@ bash .claude/scripts/install.sh          # installs mermaid-cli and writes .mcp.
 claude                                   # open Claude Code here, accept the trust dialog and enable the quiz MCP server
 ```
 
-Requirements: Claude Code ≥ 2.1, Python 3, Node ≥ 18. For visuals: Chrome/Chromium installed (Mermaid), and any of
+Requirements: Claude Code ≥ 2.1, Python 3, Node ≥ 18, and tmux for the quiz popup. For visuals: Chrome/Chromium installed (Mermaid), and any of
 `rsvg-convert`, ImageMagick or Chrome (SVG). Without them everything still works, you just lose the pictures.
 
 ## Use
@@ -45,10 +45,11 @@ your go-ahead, then teach node by node. Visuals arrive as `![[viz-…png|500]]` 
 ## Notes
 
 - **Quizzes are graded by the tool, instantly.** Exactly as in pi, the model writes the correct answer and the
-  explanation into the tool call; the server shuffles the options, appends "I don't know", shows an elicitation
-  form, grades the pick locally and returns the outcome. No model round trip before you see ✓/✗. Multi-select
-  questions are shown as one checkbox per option. Check the tool is listed with `/mcp` if quizzes seem to be
-  going through AskUserQuestion instead.
+  explanation into the tool call; the server shuffles the options, appends "I don't know", pops up the question,
+  grades the pick locally, shows the feedback, and returns the outcome. No model round trip before you see ✓/✗.
+  **Run Claude Code inside tmux** to get the popup. Keys: ↑/↓ or j/k move, 1–9 jump, Space toggles (multi-select),
+  Enter submits, Tab edits the note, Esc cancels; any key dismisses the feedback screen. Check the tool is listed
+  with `/mcp` if quizzes seem to be going through AskUserQuestion instead.
 - **The transcript format Claude Code writes is internal** and may change between releases. `md_log.py` parses it
   defensively and never blocks the session; if a release changes the format, assistant prose may stop appearing in
   the log until the parser is updated (prompts and Q&A are logged from hook payloads and are unaffected).
