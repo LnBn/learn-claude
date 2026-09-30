@@ -11,6 +11,8 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      recent quiz outcomes, and (if there is neither
                                      a note nor a checkpoint) the tail of the lesson
     lesson.py checkpoints <lesson.md>  list every checkpoint (date + Next line)
+    lesson.py reset <lesson.md>        start over: move the note and its sidecar checkpoints
+                                     to <project>/.claude/md-log-state/trash/<timestamp>/
     lesson.py checkpoint <lesson.md>   read a checkpoint from stdin and append it to the
                                      sidecar <dir>/.checkpoints/<name>.md (hidden from
                                      Obsidian; the lesson note stays clean)
@@ -232,6 +234,21 @@ if __name__ == "__main__":
         summary(path, notes)
     elif cmd == "checkpoints":
         list_checkpoints(path)
+    elif cmd == "reset":
+        import shutil, time
+        here = os.path.dirname(os.path.abspath(__file__))
+        trash = os.path.join(os.path.dirname(here), "md-log-state", "trash", time.strftime("%Y%m%d-%H%M%S"))
+        moved = []
+        for src in (path, sidecar_path(path)):
+            if os.path.exists(src):
+                os.makedirs(trash, exist_ok=True)
+                dst = os.path.join(trash, ("checkpoints-" if src != path else "") + os.path.basename(src))
+                shutil.move(src, dst)
+                moved.append(dst)
+        if moved:
+            print("🗒 lesson reset — moved to " + trash + ":\n  " + "\n  ".join(moved))
+        else:
+            print("🗒 nothing to reset for " + path)
     elif cmd == "checkpoint":
         text = sys.stdin.read()
         if not text.strip():

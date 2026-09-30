@@ -387,7 +387,9 @@ NARRATION_RE = re.compile(
 NARRATION_ANY_RE = re.compile(
     r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
     r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
-    r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when)",
+    r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when|"
+    r"the lesson is paused|next session (opens|starts|begins|picks up)|stays open until|"
+    r"is the first thing next session|checkpoint saved|we (stop|pause) here)",
     re.I,
 )
 
@@ -561,6 +563,8 @@ def replay_transcript(path, state):
     def flush_text(parts, msg_id=None):
         nonlocal written
         text = "\n\n".join(p for p in parts if p.strip())
+        # a checkpoint written into the reply (old skill, or a slip) belongs in the sidecar, not the note
+        text = re.sub(r"(?:^|\n)> \[!summary\] Checkpoint[^\n]*(?:\n>[^\n]*)*", "", text).strip()
         if not text.strip() or SKIP_ASSISTANT.match(text):
             return
         shares = msg_id in tool_msg_ids

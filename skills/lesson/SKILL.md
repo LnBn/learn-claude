@@ -1,7 +1,7 @@
 ---
 name: lesson
-description: Multi-session lessons. `/lesson resume <file>` links the markdown lesson log, reads only its checkpoint + dependency map + recent quiz outcomes, re-probes what was established, and continues teaching. `/lesson pause` writes a checkpoint block so the next session can pick up cleanly. `/lesson status <file>` shows where a lesson stands without teaching.
-argument-hint: resume <lesson.md> [--notes <note.md>] | pause | status <lesson.md>
+description: Multi-session lessons. `/lesson resume <file>` links the markdown lesson log, reads only its checkpoint + dependency map + recent quiz outcomes, re-probes what was established, and continues teaching. `/lesson pause` writes a checkpoint block so the next session can pick up cleanly. `/lesson status <file>` shows where a lesson stands without teaching. `/lesson reset <file>` starts a lesson over (note and checkpoints moved to trash).
+argument-hint: resume <lesson.md> [--notes <note.md>] | pause | status <lesson.md> | reset <lesson.md>
 disable-model-invocation: true
 allowed-tools: Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
 ---
@@ -45,6 +45,16 @@ EOF
 Keep it under ~15 lines; it is a handoff, not a summary of the lesson. Then reply with only the line the script printed (it starts with `🗒`), nothing else. Do **not** unlink the log.
 
 If you have not been asked to `pause` but the learner says they are stopping, wrapping up, or continuing another day, save the same checkpoint anyway.
+
+## `reset <file>`
+
+The learner wants to start this lesson over. Run:
+
+```
+python3 .claude/hooks/lesson.py reset "<file>"
+```
+
+It moves the note and its sidecar checkpoints to `.claude/md-log-state/trash/<timestamp>/` (recoverable). Reply with only the `🗒` line the script printed. Do not start teaching; the learner will begin the lesson with a fresh `/md-log` or a teach request.
 
 ## `status <file>`
 

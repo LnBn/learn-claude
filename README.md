@@ -104,6 +104,7 @@ The note is the state, not the chat. One note per topic.
 /lesson resume lessons/tcp.md    # next time: links the note, reads only the checkpoint + map + recent quiz
                                  #   outcomes, re-checks what was established, continues from "next"
 /lesson status lessons/tcp.md    # where the lesson stands, no teaching
+/lesson reset lessons/tcp.md     # start over: note + checkpoints moved to .claude/md-log-state/trash/
 ```
 
 The teacher writes the checkpoint by itself when you say you are stopping. A lesson started under pi resumes the
