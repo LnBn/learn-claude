@@ -227,7 +227,15 @@ def ensure_session_header(state, when=None):
     if state.get("header_date") == today:
         return
     label = "Session (continued)" if state.get("header_date") else "Session"
-    append(f"---\n\n## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M', when)}")
+    header = f"## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M', when)}"
+    # a rule separates sessions, but never as the file's first line (Obsidian would read it as frontmatter)
+    path = log_file()
+    nonempty = False
+    try:
+        nonempty = os.path.exists(path) and os.path.getsize(path) > 0 and open(path, encoding="utf-8").read().strip() != ""
+    except Exception:
+        pass
+    append(("---\n\n" if nonempty else "") + header)
     state["header_date"] = today
 
 
@@ -258,9 +266,10 @@ def append(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
-        prefix = "\n\n" if current.strip() else ""
+        # exactly one blank line between blocks: the file always ends with "\n", add one more
+        prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
-            f.write(prefix + text.rstrip("\n") + "\n")
+            f.write(prefix + text.strip("\n") + "\n")
     except Exception:
         pass
 

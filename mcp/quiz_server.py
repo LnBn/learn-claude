@@ -154,8 +154,9 @@ def append_log(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
+        prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
-            f.write(("\n\n" if current.strip() else "") + text.rstrip("\n") + "\n")
+            f.write(prefix + text.strip("\n") + "\n")
     except Exception:
         pass
 
