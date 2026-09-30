@@ -11,6 +11,9 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      recent quiz outcomes, and (if there is neither
                                      a note nor a checkpoint) the tail of the lesson
     lesson.py checkpoints <lesson.md>  list every checkpoint (date + Next line)
+    lesson.py checkpoint <lesson.md>   read a checkpoint from stdin and append it to the
+                                     sidecar <dir>/.checkpoints/<name>.md (hidden from
+                                     Obsidian; the lesson note stays clean)
 
 The lesson file is the md-log mirror written by hooks/md_log.py and the quiz
 server — or by pi's md-log extension (its callout titles are understood too);
@@ -36,6 +39,37 @@ RESULT_KINDS = {
 NOTE_SUFFIXES = (" — Resume Here.md", " - Resume Here.md", " — resume here.md", " - resume here.md")
 MAX_NOTE_LINES = 200
 MAX_TAIL_LINES = 60
+
+
+def sidecar_path(lesson_path):
+    d, name = os.path.split(os.path.abspath(lesson_path))
+    return os.path.join(d, ".checkpoints", name)
+
+
+def sidecar_checkpoints(lesson_path):
+    """[(header, [lines])] from the sidecar, oldest first."""
+    p = sidecar_path(lesson_path)
+    if not os.path.exists(p):
+        return []
+    out, cur = [], None
+    for ln in read(p):
+        if ln.startswith("## "):
+            cur = (ln[3:].strip(), [])
+            out.append(cur)
+        elif cur is not None:
+            cur[1].append(ln)
+    return [(h, [l for l in body]) for h, body in out]
+
+
+def write_checkpoint(lesson_path, text):
+    p = sidecar_path(lesson_path)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    import time
+    stamp = time.strftime("%Y-%m-%d (%a) %H:%M")
+    block = f"## {stamp}\n\n{text.strip()}\n"
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(("\n" if os.path.getsize(p) else "") + block)
+    return p
 
 
 def read(path):
@@ -111,7 +145,8 @@ def summary(path, notes=None):
         print(f"LESSON FILE IS EMPTY ({path}) — this is a new lesson. Start from Phase 1 of the teach skill.")
         return
     notes = notes or find_note(path)
-    cps = checkpoints(lines)
+    cps = checkpoints(lines)  # legacy: checkpoint callouts inside the note
+    side = sidecar_checkpoints(path)
     outcomes = quiz_outcomes(lines)
     tally = {"✓": 0, "✗": 0, "?": 0, "skip": 0}
     for _, o in outcomes:
@@ -121,7 +156,7 @@ def summary(path, notes=None):
     print(f"LESSON: {path}")
     print(f"sessions: {session_count(lines) or 'unmarked (pi-era log)'} · prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
           f"(✓ {tally['✓']} · ✗ {tally['✗']} · don't-know {tally['?']} · skipped {tally['skip']}) · "
-          f"checkpoints: {len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else ""))
+          f"checkpoints: {len(side) + len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else ""))
     print()
     if notes:
         note_lines = read(notes)
@@ -130,7 +165,14 @@ def summary(path, notes=None):
         if len(note_lines) > MAX_NOTE_LINES:
             print(f"… ({len(note_lines) - MAX_NOTE_LINES} more lines — Read the file if you need them)")
         print()
-    if cps:
+    if side:
+        stamp, body = side[-1]
+        print(f"LATEST CHECKPOINT ({stamp}, from {sidecar_path(path)}):")
+        print("\n".join(body).strip())
+        print()
+        print("(Anything in the note written after this checkpoint belongs to the session that saved it; "
+              "see the tail of the note only if the quiz outcomes below suggest more happened.)")
+    elif cps:
         i, blk = cps[-1]
         print("LATEST CHECKPOINT:")
         print("\n".join(blk))
@@ -141,7 +183,7 @@ def summary(path, notes=None):
                   f"(the session continued past it). Recent tail follows.")
             print("--- tail after checkpoint ---")
             print("\n".join(lines[i + len(blk):][-MAX_TAIL_LINES:]))
-    elif not notes:
+    elif not notes and not side:
         print("NO CHECKPOINT FOUND. Reconstruct where things stand from the map, the quiz outcomes and the tail "
               "below, then CONFIRM your reading with the learner before teaching.")
         print("--- tail of the lesson ---")
@@ -167,8 +209,10 @@ def summary(path, notes=None):
 
 
 def list_checkpoints(path):
+    for stamp, body in sidecar_checkpoints(path):
+        nxt = next((ln for ln in body if "**Next:**" in ln), "")
+        print(f"{stamp}  {nxt.strip()}")
     if not os.path.exists(path):
-        print("no lesson file")
         return
     for i, blk in checkpoints(read(path)):
         head = blk[0].split("Checkpoint", 1)[-1].strip(" —-")
@@ -188,6 +232,12 @@ if __name__ == "__main__":
         summary(path, notes)
     elif cmd == "checkpoints":
         list_checkpoints(path)
+    elif cmd == "checkpoint":
+        text = sys.stdin.read()
+        if not text.strip():
+            print("checkpoint text expected on stdin", file=sys.stderr)
+            sys.exit(2)
+        print(f"🗒 checkpoint saved to {write_checkpoint(path, text)}")
     else:
         print(f"unknown command {cmd}")
         sys.exit(2)

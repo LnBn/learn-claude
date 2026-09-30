@@ -188,7 +188,7 @@ The learner may ask a question at any point: typed at the prompt, in the note fi
 
 ## Multi-session lessons
 
-A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, end your reply with a **Checkpoint** block in the exact shape defined in the `lesson` skill (`/lesson pause`) — confirmed nodes, shaky nodes, the next node, notes. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, re-probe the established nodes with a few `quiz` questions, and continue from the checkpoint's next node.
+A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, save a **checkpoint** exactly as the `lesson` skill's `pause` describes: one Bash call to `.claude/hooks/lesson.py checkpoint` with the checkpoint on stdin — confirmed nodes, shaky nodes, the next node, notes. It goes to a hidden sidecar, never into the note. Reply with only the `🗒` line the script prints. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, re-probe the established nodes with a few `quiz` questions, and continue from the checkpoint's next node.
 
 ## Formatting — math renders as LaTeX
 

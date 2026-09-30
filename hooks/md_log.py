@@ -368,7 +368,7 @@ def is_user_prose(text):
     return not ACK_RE.match(text)  # "ready", "ok", "next" are pacing, not lesson content
 
 
-SKIP_ASSISTANT = re.compile(r"^\s*🗒 md-log")
+SKIP_ASSISTANT = re.compile(r"^\s*🗒")  # status lines from the md-log / lesson scripts
 
 # The lesson file must read like a lesson, not like a Claude Code session. Assistant text that
 # only narrates the session ("I'll load the teach skill", "waiting on your answer", "the researcher

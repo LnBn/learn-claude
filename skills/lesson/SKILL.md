@@ -24,26 +24,27 @@ Load the `teach` skill first if it is not already loaded — everything below ru
    printed in full and counts as the checkpoint. Logs written by pi's md-log (with `PI` blocks and its quiz
    callouts) are understood too — resuming a pi-era lesson is the same command.
 3. **New lesson** (no file / empty): say so in one line and start the teach process from Phase 1 (probe).
-4. **Existing lesson:** in a few sentences, tell the learner where things stand — the goal, which nodes are confirmed, which were shaky or missed, and what comes next — using the hand-off note or the latest checkpoint (the note wins if both exist; ignore any tooling/environment notes in it that concern another harness). If there is no checkpoint, reconstruct this from the map, the quiz outcomes and the tail, and **confirm your reading with the learner** (`ask_user_question`) before going on. If the brief says the session continued past the checkpoint, fold the tail into your reading.
+4. **Existing lesson:** in a few sentences, tell the learner where things stand — the goal, which nodes are confirmed, which were shaky or missed, and what comes next — using the latest checkpoint (from the sidecar) or the hand-off note (the newer of the two wins; ignore any tooling/environment notes that concern another harness). If there is no checkpoint, reconstruct this from the map, the quiz outcomes and the tail, and **confirm your reading with the learner** (`ask_user_question`) before going on. If the brief says the session continued past the checkpoint, fold the tail into your reading.
 5. **Re-probe before building.** Nodes established last time are only as solid as they are *today*. Run a short retrieval check — 2 to 4 `quiz` questions — over the confirmed nodes, prioritising anything listed as shaky or missed and the node(s) the next step depends on. Same construction rules as always. Anything that fails is re-established (motivate → establish → connect → quiz-check) before you move on.
 6. Then continue the Phase 3 loop from the checkpoint's **Next** node. Re-present the dependency map only if it changed.
 
 ## `pause`
 
-The learner is stopping. Write a checkpoint **as the last thing in your reply** (the md-log hook mirrors your reply into the lesson file, so this lands in the note). Use exactly this shape so the next session can find it:
+The learner is stopping. Save a checkpoint **outside the note** — the note is clean lesson material; checkpoints live in a hidden sidecar the next session reads. Run one Bash command with the checkpoint on stdin (the lesson file is the one linked with `/md-log` or `/lesson resume` this session):
 
 ```
-> [!summary] Checkpoint — <YYYY-MM-DD>
-> **Goal:** <the concrete goal from Phase 1b>
-> **Confirmed nodes:** <node — one line each, quiz-checked this or a previous session>
-> **Shaky / missed:** <node — what went wrong, the misconception if you found one; or "none">
-> **Next:** <the next node from the map, and the motivating problem you planned to open it with>
-> **Notes:** <energy, Socratic vs expository preference, anything the next teacher needs>
+python3 .claude/hooks/lesson.py checkpoint "<lesson.md>" <<'EOF'
+**Goal:** <the concrete goal from Phase 1b>
+**Confirmed nodes:** <node — one line each, quiz-checked this or a previous session>
+**Shaky / missed:** <node — what went wrong, the misconception if you found one; or "none">
+**Next:** <the next node from the map, and the motivating problem you planned to open it with>
+**Notes:** <energy, Socratic vs expository preference, anything the next teacher needs>
+EOF
 ```
 
-Keep it under ~15 lines; it is a handoff, not a summary of the lesson. Before the block, one sentence to the learner is enough. Do **not** unlink the log.
+Keep it under ~15 lines; it is a handoff, not a summary of the lesson. Then reply with only the line the script printed (it starts with `🗒`), nothing else. Do **not** unlink the log.
 
-If you have not been asked to `pause` but the learner says they are stopping, wrapping up, or continuing another day, write the same checkpoint anyway.
+If you have not been asked to `pause` but the learner says they are stopping, wrapping up, or continuing another day, save the same checkpoint anyway.
 
 ## `status <file>`
 

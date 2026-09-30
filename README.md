@@ -99,7 +99,8 @@ Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²), ∑ᵢ₌₁ⁿ
 The note is the state, not the chat. One note per topic.
 
 ```
-/lesson pause                    # writes a Checkpoint block: goal, confirmed nodes, shaky nodes, next node
+/lesson pause                    # saves a checkpoint (goal, confirmed nodes, shaky nodes, next node) to
+                                 #   lessons/.checkpoints/<name>.md — hidden from Obsidian, the note stays clean
 /lesson resume lessons/tcp.md    # next time: links the note, reads only the checkpoint + map + recent quiz
                                  #   outcomes, re-checks what was established, continues from "next"
 /lesson status lessons/tcp.md    # where the lesson stands, no teaching
