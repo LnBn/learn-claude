@@ -1,0 +1,6 @@
+md-log.json
+md-log-state/
+settings.local.json
+visual-tools/node_modules/
+visual-tools/package-lock.json
+__pycache__/

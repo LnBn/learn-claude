@@ -1,0 +1,10 @@
+{
+  "name": "@learn/visual-tools",
+  "version": "0.1.0",
+  "description": "Bundled mermaid-cli used by scripts/render-mermaid.sh (rendered through an installed Chrome).",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2"
+  }
+}
