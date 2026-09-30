@@ -174,9 +174,8 @@ def render(text):
         return math_to_text(body)
 
     out = MATH_RE.sub(sub, text)
-    out = re.sub(r"\*\*(.+?)\*\*", r"\1", out)  # bold markers add noise in a TUI
     out = re.sub(r"`([^`]+)`", r"\1", out)
-    return out
+    return out  # **bold** markers are kept; the popup renders them (see quiz_popup.spans)
 
 
 if __name__ == "__main__":

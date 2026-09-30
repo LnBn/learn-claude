@@ -156,6 +156,12 @@ Everything written in a session is rendered to the learner through Obsidian, whi
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 
+**Emphasis — use forms that render in both the terminal and Obsidian.** The learner reads the terminal live and the markdown file rendered, so:
+- Put the key claim of a node in **bold** — one bolded sentence per node, not scattered words.
+- Set off each unconditional truth as a blockquote (`> ALL X is done through {Y}`), so it stands apart from the derivation around it.
+- Fenced code blocks (with a language tag) for code; inline code only for identifiers.
+- Reserve Obsidian-only forms — `> [!important]` callouts, `==highlights==` — for things that also read fine as a plain quote in the terminal; never rely on colour alone to carry meaning.
+
 ## Quiz protocol — fallback when the `quiz` tool is unavailable
 
 Use this ONLY if `mcp__quiz__quiz` is not in your tool list (e.g. the quiz MCP server is not enabled). Then **you are the grader**. A `quiz` is one **AskUserQuestion** call followed immediately by your grading. Follow this exactly, every time:

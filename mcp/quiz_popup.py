@@ -17,6 +17,7 @@ LaTeX in the question/options/explanation is shown as Unicode (latex_text.py).
 import curses
 import json
 import os
+import re
 import sys
 import textwrap
 
@@ -26,6 +27,71 @@ try:
 except Exception:  # pragma: no cover
     def render_math(t):
         return t
+
+
+BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def spans(text):
+    """Split '**bold** text' into [(segment, is_bold)], dropping the markers."""
+    out, pos = [], 0
+    for m in BOLD_RE.finditer(text):
+        if m.start() > pos:
+            out.append((text[pos:m.start()], False))
+        out.append((m.group(1), True))
+        pos = m.end()
+    if pos < len(text):
+        out.append((text[pos:], False))
+    return out or [("", False)]
+
+
+def plain(text):
+    return BOLD_RE.sub(r"\1", text)
+
+
+def addline(stdscr, row, col, text, attr, maxw):
+    """addnstr that honours **bold** spans inside `text`."""
+    x = col
+    for seg, bold in spans(text):
+        if x - col >= maxw:
+            break
+        seg = seg[: maxw - (x - col)]
+        try:
+            stdscr.addstr(row, x, seg, attr | (curses.A_BOLD if bold else 0))
+        except curses.error:
+            pass
+        x += len(seg)
+
+
+def wrap_keep_bold(text, width):
+    """textwrap on the plain text, then re-attach bold markers per line."""
+    marked = text
+    lines = textwrap.wrap(plain(marked), width) or [""]
+    if "**" not in marked:
+        return lines
+    # re-derive bold ranges on the plain string and reapply per wrapped line
+    bold_ranges, off, p = [], 0, plain(marked)
+    for m in BOLD_RE.finditer(marked):
+        start = m.start() - off
+        bold_ranges.append((start, start + len(m.group(1))))
+        off += 4
+    out, cursor = [], 0
+    for ln in lines:
+        start = p.find(ln, cursor)
+        if start < 0:
+            out.append(ln)
+            continue
+        end = start + len(ln)
+        pieces, i = [], start
+        for b0, b1 in bold_ranges:
+            lo, hi = max(b0, start), min(b1, end)
+            if lo < hi:
+                pieces.append(p[i:lo] + "**" + p[lo:hi] + "**")
+                i = hi
+        pieces.append(p[i:end])
+        out.append("".join(pieces))
+        cursor = end
+    return out
 
 
 def main(stdscr, spec, out_path):
@@ -82,20 +148,17 @@ def main(stdscr, spec, out_path):
                     continue
                 mark = "✓" if idx in correct_idx else ("✗" if idx in picked else " ")
                 attr = curses.color_pair(3) if idx in correct_idx else (curses.color_pair(4) if idx in picked else curses.A_DIM)
-                for k, ln in enumerate(textwrap.wrap(f" {mark} {idx}. {label}", width) or [""]):
+                for k, ln in enumerate(wrap_keep_bold(f" {mark} {idx}. {label}", width)):
                     rows.append((ln if k == 0 else "      " + ln, attr))
             if explanation:
                 rows.append(("", 0))
                 for para in explanation.split("\n"):
-                    for ln in textwrap.wrap(para, width) or [""]:
+                    for ln in wrap_keep_bold(para, width):
                         rows.append((ln, 0))
             rows.append(("", 0))
             rows.append(("press any key to continue", curses.A_DIM))
             for r, (text, attr) in enumerate(rows[:h]):
-                try:
-                    stdscr.addnstr(r, 2, text, w - 3, attr)
-                except curses.error:
-                    pass
+                addline(stdscr, r, 2, text, attr, w - 3)
             stdscr.refresh()
             ch = stdscr.getch()
             if ch != curses.KEY_RESIZE:
@@ -114,11 +177,11 @@ def main(stdscr, spec, out_path):
         lines.append(("QUIZ" + ("  (select all that apply)" if multi else ""), curses.A_BOLD | curses.color_pair(1)))
         lines.append(("", 0))
         for para in question.split("\n"):
-            for ln in textwrap.wrap(para, width) or [""]:
-                lines.append((ln, curses.A_BOLD))
+            for ln in wrap_keep_bold(para, width):
+                lines.append((ln, 0))
         if details:
             lines.append(("", 0))
-            for ln in textwrap.wrap(details, width):
+            for ln in wrap_keep_bold(details, width):
                 lines.append((ln, curses.A_DIM))
         lines.append(("", 0))
         option_rows = {}
@@ -130,7 +193,7 @@ def main(stdscr, spec, out_path):
             if desc:
                 text += f" — {desc}"
             attr = curses.A_REVERSE if (i == cursor and not editing_note) else (curses.A_DIM if is_dk else 0)
-            wrapped = textwrap.wrap(text, width) or [text]
+            wrapped = wrap_keep_bold(text, width)
             option_rows[i] = len(lines)
             for k, ln in enumerate(wrapped):
                 lines.append((ln if k == 0 else "      " + ln, attr))
@@ -156,10 +219,7 @@ def main(stdscr, spec, out_path):
         scroll = max(0, min(scroll, max(0, len(lines) - h)))
         free_scroll = False
         for row, (text, attr) in enumerate(lines[scroll:scroll + h]):
-            try:
-                stdscr.addnstr(row, 2, text, w - 3, attr)
-            except curses.error:
-                pass
+            addline(stdscr, row, 2, text, attr, w - 3)
         stdscr.refresh()
 
         ch = stdscr.getch()
