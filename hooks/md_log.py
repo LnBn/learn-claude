@@ -391,6 +391,7 @@ NARRATION_ANY_RE = re.compile(
     r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
     r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when|"
     r"say \*{0,2}(go|yes|ok|continue|next)\*{0,2} (to|when|and|or|if)|"
+    r"waiting for your go-ahead|look right to you|say what you want changed|before we start\?|"
     r"the lesson is paused|next session (opens|starts|begins|picks up)|stays open until|"
     r"is the first thing next session|checkpoint saved|we (stop|pause) here)",
     re.I,
