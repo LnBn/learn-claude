@@ -48,8 +48,15 @@ your go-ahead, then teach node by node. Visuals arrive as `![[viz-…png|500]]` 
   explanation into the tool call; the server shuffles the options, appends "I don't know", pops up the question,
   grades the pick locally, shows the feedback, and returns the outcome. No model round trip before you see ✓/✗.
   **Run Claude Code inside tmux** to get the popup. Keys: ↑/↓ or j/k move, 1–9 jump, Space toggles (multi-select),
-  Enter submits, Tab edits the note, Esc cancels; any key dismisses the feedback screen. Check the tool is listed
-  with `/mcp` if quizzes seem to be going through AskUserQuestion instead.
+  Enter submits, Tab edits the note, PgUp/PgDn scroll, Esc cancels; any key dismisses the feedback screen. Text
+  wraps to the popup width. LaTeX in the question, options and explanation is shown as Unicode in the popup
+  (`mcp/latex_text.py`: x² αᵢ √(a²+b²) ∑ᵢ₌₁ⁿ …; `pip install pylatexenc` widens coverage) while the markdown log
+  keeps the real LaTeX for Obsidian.
+- **If you get Claude Code's own form instead** (a one-line truncated question and "Your answer: not set"), the
+  popup did not trigger. Read `.claude/md-log-state/quiz-server.log`: it records why (Claude Code started outside
+  tmux, tmux missing, or a popup error). The MCP server is spawned when the session starts, so after updating the
+  files restart Claude Code from inside tmux. Check the tool is listed with `/mcp` if quizzes go through
+  AskUserQuestion instead.
 - **The transcript format Claude Code writes is internal** and may change between releases. `md_log.py` parses it
   defensively and never blocks the session; if a release changes the format, assistant prose may stop appearing in
   the log until the parser is updated (prompts and Q&A are logged from hook payloads and are unaffected).

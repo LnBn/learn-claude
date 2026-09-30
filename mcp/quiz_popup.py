@@ -11,13 +11,21 @@ result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str}
         or {"action":"cancel"}
 
 Keys: ↑/↓ or j/k move · 1-9 jump · Space toggle (multi) · Enter submit
-      Tab edit note · Esc cancel
+      Tab edit note · PgUp/PgDn scroll · Esc cancel
+LaTeX in the question/options/explanation is shown as Unicode (latex_text.py).
 """
 import curses
-import os
 import json
+import os
 import sys
 import textwrap
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from latex_text import render as render_math
+except Exception:  # pragma: no cover
+    def render_math(t):
+        return t
 
 
 def main(stdscr, spec, out_path):
@@ -33,12 +41,17 @@ def main(stdscr, spec, out_path):
     options = spec["options"]
     multi = bool(spec.get("multiSelect"))
     dk_label = spec.get("dontKnow", "I don't know")
-    entries = [(o["index"], o["label"], o.get("description") or "") for o in options] + [(0, dk_label, "")]
+    question = render_math(spec["question"])
+    details = render_math(spec.get("details") or "")
+    explanation = render_math(spec.get("explanation") or "")
+    entries = [(o["index"], render_math(o["label"]), render_math(o.get("description") or "")) for o in options] \
+        + [(0, dk_label, "")]
     cursor = 0
     selected = set()
     note = ""
     editing_note = False
     scroll = 0
+    free_scroll = False
 
     def write(result):
         with open(out_path, "w", encoding="utf-8") as f:
@@ -47,7 +60,7 @@ def main(stdscr, spec, out_path):
     def show_feedback(result):
         """Instant grading, shown in the popup before it closes (like pi)."""
         correct_idx = sorted(spec.get("correctIndices") or [])
-        by_index = {o["index"]: o["label"] for o in options}
+        by_index = {idx: label for idx, label, _ in entries}
         correct_str = ", ".join(f"{i}. {by_index.get(i, '?')}" for i in correct_idx)
         picked = result.get("answers", [])
         while True:
@@ -69,11 +82,13 @@ def main(stdscr, spec, out_path):
                     continue
                 mark = "✓" if idx in correct_idx else ("✗" if idx in picked else " ")
                 attr = curses.color_pair(3) if idx in correct_idx else (curses.color_pair(4) if idx in picked else curses.A_DIM)
-                rows.append((f" {mark} {idx}. {label}", attr))
-            if spec.get("explanation"):
+                for k, ln in enumerate(textwrap.wrap(f" {mark} {idx}. {label}", width) or [""]):
+                    rows.append((ln if k == 0 else "      " + ln, attr))
+            if explanation:
                 rows.append(("", 0))
-                for ln in textwrap.wrap(spec["explanation"], width):
-                    rows.append((ln, 0))
+                for para in explanation.split("\n"):
+                    for ln in textwrap.wrap(para, width) or [""]:
+                        rows.append((ln, 0))
             rows.append(("", 0))
             rows.append(("press any key to continue", curses.A_DIM))
             for r, (text, attr) in enumerate(rows[:h]):
@@ -98,11 +113,12 @@ def main(stdscr, spec, out_path):
         lines = []  # (text, attr)
         lines.append(("QUIZ" + ("  (select all that apply)" if multi else ""), curses.A_BOLD | curses.color_pair(1)))
         lines.append(("", 0))
-        for ln in textwrap.wrap(spec["question"], width) or [""]:
-            lines.append((ln, curses.A_BOLD))
-        if spec.get("details"):
+        for para in question.split("\n"):
+            for ln in textwrap.wrap(para, width) or [""]:
+                lines.append((ln, curses.A_BOLD))
+        if details:
             lines.append(("", 0))
-            for ln in textwrap.wrap(spec["details"], width):
+            for ln in textwrap.wrap(details, width):
                 lines.append((ln, curses.A_DIM))
         lines.append(("", 0))
         option_rows = {}
@@ -130,12 +146,15 @@ def main(stdscr, spec, out_path):
             help_txt = "type your note · Tab/Enter back to options · Esc cancel"
         lines.append((help_txt, curses.A_DIM))
 
-        # keep the cursor row visible
+        # keep the cursor row visible (PageUp/PageDown scroll freely)
         target = option_rows.get(cursor, 0)
-        if target < scroll:
-            scroll = target
-        if target >= scroll + h - 1:
-            scroll = target - h + 2
+        if not free_scroll:
+            if target < scroll:
+                scroll = target
+            if target >= scroll + h - 1:
+                scroll = target - h + 2
+        scroll = max(0, min(scroll, max(0, len(lines) - h)))
+        free_scroll = False
         for row, (text, attr) in enumerate(lines[scroll:scroll + h]):
             try:
                 stdscr.addnstr(row, 2, text, w - 3, attr)
@@ -161,7 +180,15 @@ def main(stdscr, spec, out_path):
         if ch in (27, ord("q")):
             write({"action": "cancel"})
             return
-        if ch in (curses.KEY_UP, ord("k")):
+        if ch == curses.KEY_PPAGE:
+            scroll -= max(1, h - 2)
+            free_scroll = True
+        elif ch == curses.KEY_NPAGE:
+            scroll += max(1, h - 2)
+            free_scroll = True
+        elif ch == curses.KEY_RESIZE:
+            pass
+        elif ch in (curses.KEY_UP, ord("k")):
             cursor = (cursor - 1) % len(entries)
         elif ch in (curses.KEY_DOWN, ord("j")):
             cursor = (cursor + 1) % len(entries)

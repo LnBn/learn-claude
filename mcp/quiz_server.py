@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 POPUP = os.path.join(HERE, "quiz_popup.py")
@@ -34,6 +35,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
+SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
 
 TOOL = {
@@ -154,6 +156,16 @@ def append_log(text):
                 current = f.read()
         with open(path, "a", encoding="utf-8") as f:
             f.write(("\n\n" if current.strip() else "") + text.rstrip("\n") + "\n")
+    except Exception:
+        pass
+
+
+def diag(msg):
+    """Append a line to .claude/md-log-state/quiz-server.log (why a fallback happened, etc.)."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(SERVER_LOG, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg.rstrip() + "\n")
     except Exception:
         pass
 
@@ -332,7 +344,13 @@ def run_quiz(args, tool_use_id):
 # ----------------------------------------------------------------- learner UI
 
 def tmux_available():
-    return bool(os.environ.get("TMUX")) and shutil.which("tmux") is not None
+    if not os.environ.get("TMUX"):
+        diag("no tmux popup: $TMUX is not set — Claude Code was started outside tmux; using the elicitation form")
+        return False
+    if shutil.which("tmux") is None:
+        diag("no tmux popup: tmux binary not on PATH; using the elicitation form")
+        return False
+    return True
 
 
 def ask_via_tmux(record):
@@ -347,24 +365,32 @@ def ask_via_tmux(record):
             "explanation": record.get("explanation", "")}
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(spec, f, ensure_ascii=False)
-    n_lines = 12 + sum(1 + len(o["label"]) // 60 for o in record["options"]) \
-        + len(record["question"]) // 60 + len(record.get("explanation", "")) // 60
-    height = str(min(max(n_lines, 14), 40))
-    cmd = ["tmux", "display-popup", "-E", "-w", "80%", "-h", height, "-T", " quiz ",
+    # size the popup from the content, assuming ~70 usable columns; PgUp/PgDn cover the rest
+    def rows(text):
+        return sum(max(1, len(par) // 70 + 1) for par in str(text).split("\n")) if text else 0
+    n_lines = 9 + rows(record["question"]) + rows(record.get("details")) \
+        + sum(rows(o["label"]) for o in record["options"]) + rows(record.get("explanation"))
+    height = str(min(max(n_lines, 14), 45))
+    cmd = ["tmux", "display-popup", "-E", "-w", "85%", "-h", height, "-T", " quiz ",
            f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]
     try:
-        subprocess.run(cmd, check=False, timeout=3600, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
+        proc = subprocess.run(cmd, check=False, timeout=3600, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except Exception as exc:
+        diag(f"tmux display-popup failed to start: {exc}; using the elicitation form")
+        shutil.rmtree(work, ignore_errors=True)
         return None
     try:
         with open(out_path, encoding="utf-8") as f:
             res = json.load(f)
     except Exception:
+        diag(f"tmux display-popup produced no result (exit {proc.returncode}): {proc.stderr.strip()[:300]}; "
+             "using the elicitation form")
         return None
     finally:
         shutil.rmtree(work, ignore_errors=True)
     if res.get("error"):
+        diag(f"popup UI error: {res['error']}; using the elicitation form")
         return None
     return res
 
