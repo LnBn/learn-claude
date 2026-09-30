@@ -201,7 +201,7 @@ def main(stdscr, spec, out_path):
                 pass
         lines.append(("", 0))
         note_attr = curses.A_REVERSE if editing_note else curses.A_DIM
-        lines.append(("Note: " + (note if note else "(Tab to add a note)"), note_attr))
+        lines.append(("Note / question for the teacher: " + (note if note else "(Tab to type)"), note_attr))
         lines.append(("", 0))
         help_txt = ("↑/↓ move · Space toggle · Enter submit · Tab note · Esc cancel" if multi
                     else "↑/↓ move · Enter choose · Tab note · Esc cancel")

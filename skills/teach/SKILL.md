@@ -143,6 +143,10 @@ Repeat this full loop per node — don't front-load all the foundations once at 
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
+## Questions from the learner
+
+The learner may ask a question at any point: typed at the prompt, or in the note field of a `quiz` popup. A question always takes priority over the plan. Answer it with the same principles (ground it in established nodes, motivate, connect), confirm it landed if it touched a node, then return to where you were. Do not defer a question to "later" and do not move to the next node while one is open. If the answer reveals a gap below the current node, repair the gap first.
+
 ## Multi-session lessons
 
 A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, end your reply with a **Checkpoint** block in the exact shape defined in the `lesson` skill (`/lesson pause`) — confirmed nodes, shaky nodes, the next node, notes. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, re-probe the established nodes with a few `quiz` questions, and continue from the checkpoint's next node.

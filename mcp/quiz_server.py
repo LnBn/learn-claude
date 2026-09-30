@@ -333,7 +333,7 @@ def run_quiz(args, tool_use_id):
         text = f"User answered {'correctly' if correct else 'incorrectly'}.\nSelected: {sel}\nCorrect: {correct_str}"
     text += f"\nExplanation: {explanation}"
     if note:
-        text += f"\nNote from user: {note}"
+        text += f"\nNote from user: {note}\nIf this note asks a question, answer it before moving on."
     if seen_feedback:
         text += "\nThe user has already seen this feedback in the popup — do not repeat the grade; continue from it."
     else:

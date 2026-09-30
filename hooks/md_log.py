@@ -32,10 +32,15 @@ Commands (called by the /md-log and /md-unlog skills):
   md_log.py link <file> [--session ID]   link a file (resets the cursor -> backfill on next Stop)
   md_log.py unlink                       stop logging
   md_log.py status
+  md_log.py rebuild <out.md> <transcript.jsonl>...
+                                         regenerate a lesson file from session transcripts
+                                         (in the order given) with the current filters
 
 State lives next to this script's .claude dir:
   <project>/.claude/md-log.json              {"file": "/abs/path.md"}
-  <project>/.claude/md-log-state/<session>.json   {"line": N, "prompts": [...], "tool_ids": [...]}
+  <project>/.claude/md-log-state/<session>.json   {"line": N, "prompts": [...], "tool_ids": [...], "file": ...}
+  (the session's own file wins over md-log.json, so two sessions can log to two notes;
+   the quiz server only knows md-log.json, i.e. the most recently linked file)
 
 NOTE: the transcript JSONL is an internal Claude Code format and may change
 between versions; parsing here is defensive and fails silently (never blocks
@@ -76,7 +81,17 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
+OUT_OVERRIDE = None  # set by `rebuild` to write somewhere other than the linked file
+
+
+SESSION_FILE = None  # set per hook invocation from the session state (link --session)
+
+
 def log_file():
+    if OUT_OVERRIDE:
+        return OUT_OVERRIDE
+    if SESSION_FILE:
+        return SESSION_FILE
     return load_json(CONFIG, {}).get("file")
 
 
@@ -200,14 +215,33 @@ def quiz_blocks_from_result(text):
     return quiz_question_block(r) + "\n\n" + quiz_result_block(r)
 
 
-def ensure_session_header(state):
+def ensure_session_header(state, when=None):
     """Separate sessions visibly in the file: a rule + dated H2 on a session's first write."""
-    today = time.strftime("%Y-%m-%d")
+    when = when if when is not None else time.localtime()
+    today = time.strftime("%Y-%m-%d", when)
     if state.get("header_date") == today:
         return
     label = "Session (continued)" if state.get("header_date") else "Session"
-    append(f"---\n\n## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M')}")
+    append(f"---\n\n## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M', when)}")
     state["header_date"] = today
+
+
+def transcript_start(path):
+    """Local time of the first user prompt in a transcript, for rebuild headers."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    e = json.loads(raw)
+                except Exception:
+                    continue
+                if e.get("type") == "user" and e.get("timestamp"):
+                    ts = e["timestamp"].replace("Z", "+00:00")
+                    from datetime import datetime
+                    return datetime.fromisoformat(ts).astimezone().timetuple()
+    except Exception:
+        pass
+    return None
 
 
 def append(text):
@@ -265,7 +299,12 @@ NARRATION_RE = re.compile(
     r"^\s*(I'll|I will|I'm going|I am going|Let me|Let's (load|start|check|run)|Now I|Next I|First I|"
     r"Loading|Waiting|While (that|the)|Once (the|that|its)|One moment|Give me a moment|"
     r"The (researcher|maker|brief|subagent|diagram) (is|has|came|comes)|Got it|Understood|Sure[,.]|"
-    r"Okay[,.]|OK[,.]|Great[,.!]|Perfect[,.!])",
+    r"Okay[,.]|OK[,.]|Great[,.!]|Perfect[,.!]|Still |The (first|next|last|second) (quiz|question|check))",
+    re.I,
+)
+NARRATION_ANY_RE = re.compile(
+    r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
+    r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next)",
     re.I,
 )
 
@@ -276,7 +315,7 @@ def is_narration(text, shares_message_with_tool):
         return False
     if shares_message_with_tool:
         return True
-    return bool(NARRATION_RE.match(t))
+    return bool(NARRATION_RE.match(t) or NARRATION_ANY_RE.search(t))
 
 
 # ---------------------------------------------------------------- answers
@@ -488,11 +527,16 @@ def handle_hook():
         data = json.load(sys.stdin)
     except Exception:
         return
-    if not log_file():
-        return
     event = data.get("hook_event_name")
     session = data.get("session_id")
     state = load_state(session)
+    global SESSION_FILE
+    SESSION_FILE = state.get("file")  # a session linked with --session keeps its own file
+    if state.get("file") is None and log_file():
+        state["file"] = log_file()  # adopt the project default the first time this session writes
+        SESSION_FILE = state["file"]
+    if not log_file():
+        return
     ensure_session_header(state)
 
     tp = data.get("transcript_path")
@@ -545,19 +589,40 @@ def main(argv):
             open(path, "a", encoding="utf-8").close()
         save_json(CONFIG, {"file": path})
         if session:
-            # reset the cursor so the next Stop hook backfills the whole session
-            save_json(state_path(session), {"line": 0, "prompts": [], "tool_ids": []})
+            # reset the cursor so the next Stop hook backfills the whole session; pin the file to this session
+            save_json(state_path(session), {"line": 0, "prompts": [], "tool_ids": [], "file": path})
         print(f"🗒 md-log linked: {path}")
         print("The session will be mirrored there (history is backfilled at the end of this turn).")
         return 0
     if cmd == "unlink":
         f = log_file()
         save_json(CONFIG, {"file": None})
+        if "--session" in argv:
+            sp = state_path(argv[argv.index("--session") + 1])
+            st = load_json(sp, {})
+            st["file"] = None
+            save_json(sp, st)
         print(f"🗒 md-log unlinked" + (f" (was {f})" if f else ""))
         return 0
     if cmd == "status":
         f = log_file()
         print(f"🗒 md-log: {f}" if f else "🗒 md-log: not linked")
+        return 0
+    if cmd == "rebuild":
+        global OUT_OVERRIDE
+        if len(argv) < 4:
+            print("usage: md_log.py rebuild <out.md> <transcript.jsonl>...", file=sys.stderr)
+            return 2
+        OUT_OVERRIDE = os.path.abspath(os.path.expanduser(argv[2]))
+        open(OUT_OVERRIDE, "w", encoding="utf-8").close()
+        global QUIZ_LOGGED
+        QUIZ_LOGGED = os.devnull  # every quiz result comes from the transcript in a rebuild
+        total = 0
+        for tp in argv[3:]:
+            state = {"line": 0, "prompts": [], "tool_ids": []}
+            ensure_session_header(state, transcript_start(tp))
+            total += replay_transcript(tp, state)
+        print(f"rebuilt {OUT_OVERRIDE} from {len(argv) - 3} transcript(s): {total} blocks")
         return 0
     print(f"unknown command {cmd}", file=sys.stderr)
     return 2
