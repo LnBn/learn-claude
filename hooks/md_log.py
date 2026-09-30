@@ -67,6 +67,7 @@ def load_json(path, default):
 
 
 def save_json(path, data):
+    data = {k: v for k, v in data.items() if not k.startswith("_")}  # drop scratch fields
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -354,6 +355,7 @@ def replay_transcript(path, state):
     quiz_calls = set()  # tool_use_ids of the graded quiz tool
     written = 0
     blocks = []
+    state["_logged_user_keys"] = set()
 
     def flush_text(parts):
         nonlocal written
@@ -381,6 +383,7 @@ def replay_transcript(path, state):
                         pending_prompts.discard(key)
                     else:
                         blocks.append(user_block(text))
+                        state["_logged_user_keys"].add(key)
                         written += 1
             elif isinstance(content, list):
                 for b in content:
@@ -394,6 +397,7 @@ def replay_transcript(path, state):
                                 pending_prompts.discard(key)
                             else:
                                 blocks.append(user_block(text))
+                                state["_logged_user_keys"].add(key)
                                 written += 1
                     elif b.get("type") == "tool_result":
                         tid = b.get("tool_use_id")
@@ -457,12 +461,13 @@ def handle_hook():
     if event == "UserPromptSubmit":
         text = clean_user_text(data.get("prompt") or "")
         key = h(text) if is_user_prose(text) else None
-        if key:  # register first, so a replay that already sees this prompt consumes the key
-            state["prompts"] = (state["prompts"] + [key])[-50:]
+        logged_by_replay = set()
         if tp and os.path.exists(tp):  # catch anything the last Stop missed
             replay_transcript(tp, state)
-        if key and key in state["prompts"]:  # not consumed by the replay -> log it live now
+            logged_by_replay = state.pop("_logged_user_keys", set())
+        if key and key not in logged_by_replay:  # usual case: transcript doesn't have it yet -> log live
             append(user_block(text))
+            state["prompts"] = (state["prompts"] + [key])[-50:]  # so the later Stop replay skips it
 
     elif event == "PostToolUse" and data.get("tool_name") == "AskUserQuestion":
         if tp and os.path.exists(tp):  # prose written earlier this turn goes first
