@@ -90,7 +90,7 @@ def session_count(lines):
 
 def user_prose(lines):
     """Rough count of learner prompts, for the brief (assistant prose has no banner)."""
-    return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU")
+    return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU" or ln.startswith("> **You:**"))
 
 
 def find_note(path):

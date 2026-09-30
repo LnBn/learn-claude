@@ -9,8 +9,8 @@ Obsidian), so assistant text with $...$ math, code blocks and markdown all
 render natively — no rendering work here.
 
 Captures only reading-relevant content:
-  - user prompts                           (> [!quote] YOU)
-  - assistant text (lesson prose)          (written bare, no banner) — minus session narration
+  - user prompts                           (> **You:** …)
+  - assistant text (lesson prose)          (<small>**Claude**</small> label line, then bare prose) — minus narration
                                             ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
   - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
@@ -122,11 +122,15 @@ def callout(kind, title, body_lines):
 
 
 def user_block(text):
-    return f"> [!quote] YOU\n\n{text}"
+    # light speaker marker: a quote with an inline label; every line quoted so multi-line prompts stay inside
+    lines = text.split("\n")
+    body = "\n".join(("> " + ln) if ln.strip() else ">" for ln in lines[1:])
+    return f"> **You:** {lines[0]}" + (f"\n{body}" if body else "")
 
 
 def assistant_block(text):
-    return text  # the teacher's prose is the lesson itself; no banner
+    # small label line, then the prose bare: marks the speaker without a callout box
+    return f"<small>**Claude**</small>\n\n{text}"
 
 
 def question_block(q):
