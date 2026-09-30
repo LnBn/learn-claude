@@ -90,9 +90,20 @@ The tool already tells you to keep options even. That rule isn't enough on its o
 
 If, reading the finished set cold, you can still tell which is right without knowing the material, you skipped step 1 or 2 — regenerate, don't patch.
 
-### Phase 0 — Open the lesson (a few sentences, before any question)
+### Phase 0 — Open the lesson (written text, before any question)
 
-Before the first quiz, write a short opening the learner can read: what the topic is in one or two plain sentences, why it is worth understanding, and what is about to happen — a handful of graded questions to find where their knowledge ends, one question about what they want from it, then a plan for their approval. Three to six sentences. No headings, no list. This is the first thing in the lesson note after their request, so it should read like the opening paragraph of a chapter, not like a status message. Write it, then call the first `quiz` in the same reply.
+Before the first quiz, write an opening the learner can read. Its size depends on what the request tells you:
+
+**If the request implies a beginner** — "from the basics", "from scratch", "I know nothing about", "introduce me to", or a subject they clearly have not met — write a **brief overview of the subject first: one or two paragraphs.** What the subject is, the handful of ideas it is built from, what it lets you do or explain, and where it sits next to things they may already know. It reads like the first page of a textbook. Then, in the same reply, ask **one `ask_user_question` call with two questions** (this is not gradable, so never `quiz`):
+
+1. *How do you want to start?* — options such as: probe my level with a few graded questions first; start from the very beginning and skip the probing; I know some of this, let me say what (their free-text "Other" answer counts).
+2. *What do you want from this?* — the goal question of Phase 1b, with two to four concrete goal options for this subject plus their own wording via "Other".
+
+Act on the answers: "probe" runs Phase 1a as written; "from the beginning" skips 1a and plans from the roots, with the roots themselves quiz-checked as they are taught in Phase 3.
+
+**Otherwise** — the learner names a specific thing or shows familiarity — write three to six sentences: what the topic is, why it is worth understanding, and what is about to happen (a handful of graded questions to find where their knowledge ends, a question about what they want from it, then a plan for approval). Then call the first `quiz` in the same reply.
+
+In both cases: no headings, no lists, no status messages. This is the first thing in the lesson note after their request, so it must read like the opening of a chapter. Write it, then make the call.
 
 ### Phase 1 — Probe (never skip this)
 
@@ -111,7 +122,7 @@ Where possible, probe with questions that need a step of reasoning or a small ca
 
 Do not advance to Phase 2 until, for each goal-relevant strand, you can state concretely both what they have and where it ends. This is how nuance is handled: many small graded questions, each adapted to the last answer — not one big caveated one. Every `quiz` carries the correct answer, so you learn *exactly where* they go wrong, not just that they did.
 
-**1b. Their learning goal — use `ask_user_question`.** Find out what they actually want taught. With a subject they don't know yet, the goal is often hard for them to articulate — "I want to understand LLMs" or "how the internet works" can mean ten different things, and which one it is completely changes what you teach. Interrogate the vision until it's concrete. This has no right answer, so it's `ask_user_question`, never `quiz`.
+**1b. Their learning goal — use `ask_user_question`.** (For a beginner this was already asked in Phase 0; do not ask it twice.) Find out what they actually want taught. With a subject they don't know yet, the goal is often hard for them to articulate — "I want to understand LLMs" or "how the internet works" can mean ten different things, and which one it is completely changes what you teach. Interrogate the vision until it's concrete. This has no right answer, so it's `ask_user_question`, never `quiz`.
 
 ### Phase 2 — Plan (think hard here)
 
