@@ -176,6 +176,10 @@ Repeat per node; never front-load all the foundations and stop checking. Any new
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
+## If a `quiz` call is moved to the background
+
+Claude Code moves a tool call that has run for two minutes to the background and returns a message saying so; the learner is still reading or working on the answer. That message is **not** an answer. Do not continue teaching, do not re-ask, do not write "waiting". End your turn with nothing further; the result arrives as a task notification, and you continue from it exactly as if the tool had returned it directly.
+
 ## Questions from the learner
 
 The learner may ask a question at any point: typed at the prompt, in the note field of a `quiz` popup (sent with their answer), or with `?` in the popup, which sends the question *instead of* an answer. In that last case the tool result says so: answer the question without giving away the quiz answer, then call `quiz` again with the same question, options, correct answer and explanation so they can answer. A question always takes priority over the plan. Answer it with the same principles (ground it in established nodes, motivate, connect), confirm it landed if it touched a node, then return to where you were. Do not defer a question to "later" and do not move to the next node while one is open. If the answer reveals a gap below the current node, repair the gap first.

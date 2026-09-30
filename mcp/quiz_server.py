@@ -195,6 +195,8 @@ def mark_logged(tool_use_id):
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
         ids = load_json(QUIZ_LOGGED, [])
+        if tool_use_id in ids:
+            return
         ids = (ids + [tool_use_id])[-500:]
         with open(QUIZ_LOGGED, "w", encoding="utf-8") as f:
             json.dump(ids, f)
@@ -281,7 +283,7 @@ def coerce_correct(ca):
     return [s]
 
 
-def run_quiz(args, tool_use_id):
+def run_quiz(args, tool_use_id, progress_token=None):
     question = str(args.get("question", "")).strip()
     details = str(args.get("details") or "").strip()
     options = normalize_options(args.get("options"))
@@ -331,6 +333,7 @@ def run_quiz(args, tool_use_id):
     # --- show the question (live) before the learner answers (not again on a re-ask)
     if not reask:
         append_log(question_block(record))
+    mark_logged(tool_use_id)  # now, not after the answer: this quiz's blocks are the server's to write
     clear_last_asked()
 
     # --- ask the learner: tmux popup when available (full question + options, like pi),
@@ -505,9 +508,10 @@ def handle_incoming(m):
         if params.get("name") != "quiz":
             send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown tool"}})
             return
-        tool_use_id = ((params.get("_meta") or {}).get("claudecode/toolUseId"))
+        meta = params.get("_meta") or {}
+        tool_use_id = meta.get("claudecode/toolUseId")
         try:
-            res = run_quiz(params.get("arguments") or {}, tool_use_id)
+            res = run_quiz(params.get("arguments") or {}, tool_use_id, meta.get("progressToken"))
         except SystemExit:
             raise
         except Exception as exc:

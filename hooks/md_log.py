@@ -380,7 +380,8 @@ NARRATION_RE = re.compile(
 )
 NARRATION_ANY_RE = re.compile(
     r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
-    r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next)",
+    r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
+    r"running in the background|moved to the background)",
     re.I,
 )
 
@@ -521,8 +522,10 @@ def replay_transcript(path, state):
     blocks = []
     state["_logged_user_keys"] = set()
 
-    # first pass: which API messages contain a tool call (their text is narration, see is_narration)
+    # first pass: which API messages contain a tool call (their text is narration, see is_narration), and
+    # the results of backgrounded quiz calls, which arrive later as task notifications (task id -> text)
     tool_msg_ids = set()
+    task_results = {}
     for raw in lines[start:]:
         try:
             e = json.loads(raw)
@@ -532,6 +535,12 @@ def replay_transcript(path, state):
             msg = e.get("message") or {}
             if any(isinstance(b, dict) and b.get("type") == "tool_use" for b in (msg.get("content") or [])):
                 tool_msg_ids.add(msg.get("id"))
+        elif e.get("type") == "user":
+            c = (e.get("message") or {}).get("content")
+            if isinstance(c, str) and "<task-notification>" in c and "QUIZ_JSON:" in c:
+                m = re.search(r"<task-id>([^<]+)</task-id>", c)
+                if m:
+                    task_results[m.group(1)] = c
 
     def trim_narration_edges(text, shares):
         """Drop a short narration paragraph at the start or end of a text block ("Let me load the quiz tool:")."""
@@ -574,6 +583,17 @@ def replay_transcript(path, state):
         msg = e.get("message") or {}
         content = msg.get("content")
         if t == "user":
+            if isinstance(content, str) and "<task-notification>" in content and "QUIZ_JSON:" in content:
+                # a quiz call that ran longer than Claude Code's foreground limit: its result arrives here
+                m = re.search(r"<task-id>([^<]+)</task-id>", content)
+                key = "task:" + (m.group(1) if m else h(content))
+                if key not in logged_ids:
+                    qa = quiz_blocks_from_result(content)
+                    if qa:
+                        blocks.append(qa)
+                        written += 1
+                    logged_ids.add(key)
+                continue
             if isinstance(content, str):
                 text = clean_user_text(content)
                 if is_user_prose(text):
@@ -611,15 +631,29 @@ def replay_transcript(path, state):
                                 blocks.append(qa)
                                 written += 1
                             logged_ids.add(tid)
-                        elif tid in quiz_calls and tid not in logged_ids:
+                        elif tid in quiz_calls:
                             resp = b.get("content")
                             if isinstance(resp, list):
                                 resp = "".join(c.get("text", "") for c in resp if isinstance(c, dict))
-                            qa = quiz_blocks_from_result(resp)
-                            if qa:
-                                blocks.append(qa)
-                                written += 1
-                            logged_ids.add(tid)
+                            m = re.search(r"moved to the background as task (\S+)", resp or "")
+                            if m:
+                                task = m.group(1)
+                                if tid in logged_ids:
+                                    # the server logged this quiz live; do not log its notification again
+                                    logged_ids.add("task:" + task)
+                                elif task in task_results and ("task:" + task) not in logged_ids:
+                                    # rebuild: place the quiz where it was asked, not where its result arrived
+                                    qa = quiz_blocks_from_result(task_results[task])
+                                    if qa:
+                                        blocks.append(qa)
+                                        written += 1
+                                    logged_ids.add("task:" + task)
+                            elif tid not in logged_ids:
+                                qa = quiz_blocks_from_result(resp)
+                                if qa:
+                                    blocks.append(qa)
+                                    written += 1
+                                logged_ids.add(tid)
         elif t == "assistant" and isinstance(content, list):
             parts = []
             for b in content:

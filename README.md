@@ -165,6 +165,10 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit and what
   releases. `md_log.py` parses it defensively; prompts and quizzes come from hook payloads and are unaffected.
   Regenerate a note with `python3 .claude/hooks/md_log.py rebuild <out.md> <transcript.jsonl>...`.
 - **Hooks not firing**: Claude Code must be started from the folder that contains `.claude`, not a subfolder.
+- **"The quiz is running in the background"**: Claude Code moves tool calls that run longer than two minutes to
+  the background. `settings.json` sets `CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` to turn that off for this project,
+  so a quiz can wait as long as you need. If you see the message, the setting is not in effect: restart Claude
+  Code from the project folder.
 
 ## Credits
 
