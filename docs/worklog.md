@@ -18,7 +18,8 @@ disabled (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0`) → note ordering fixes (prose
 relink no longer duplicates → rebuild command for notes.
 
 **Notes reformatted by hand** to the new conventions: `lessons/openskill.md` (definitions, 9 notation blocks,
-equations (1)–(12) with links), `lessons/game_theory.md`, `lessons/tcp.md`. Backups of every rewritten note are in
+equations (1)–(12) with links, Examples 1–4 as aligned calculations), `lessons/game_theory.md` (definitions,
+theorems, notation, Example 1), `lessons/tcp.md` (plan heading only). Backups of every rewritten note are in
 `.claude/md-log-state/*.bak`. `Learn/Probabilistic ML.md` (pi-era) was only de-duplicated, not reformatted.
 
 **Lessons in progress:** game theory (`lessons/game_theory.md`, at the dominance node), OpenSkill

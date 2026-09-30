@@ -123,9 +123,13 @@ Chrome.
 ## Obsidian side
 
 `obsidian/learn-callouts.css` styles the environment callouts (`definition`, `theorem`, `lemma`,
-`proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`); `install.sh` copies it into
-`<vault>/.obsidian/snippets/` and enables it in `appearance.json`. Equation references use core features
-only: `\tag{n}` for the number, a `^eq-n` block id, and `[[#^eq-n|(n)]]` links.
+`proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples);
+`install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`. Equation and
+example references use core features only: `\tag{n}` for an equation number, `Example n — …` in the callout
+title for a worked example, a `^eq-n` / `^ex-n` block id on the line after the block, and `[[#^eq-n|(n)]]` /
+`[[#^ex-n|Example n]]` links. Both counters run through the whole note; `lesson.py summary` reports the last
+value of each so a resumed session continues them. Calculations inside an example are set out one step per
+line (a list or an `aligned` display block), not run inline.
 
 ## Testing notes
 
