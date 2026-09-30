@@ -84,6 +84,10 @@ def quiz_outcomes(lines):
     return out
 
 
+def session_count(lines):
+    return sum(1 for ln in lines if ln.startswith("## Session"))
+
+
 def user_prose(lines):
     """Rough count of learner prompts, for the brief."""
     return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU")
@@ -115,7 +119,7 @@ def summary(path, notes=None):
             tally[o] += 1
 
     print(f"LESSON: {path}")
-    print(f"prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
+    print(f"sessions: {session_count(lines) or 'unmarked (pi-era log)'} · prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
           f"(✓ {tally['✓']} · ✗ {tally['✗']} · don't-know {tally['?']} · skipped {tally['skip']}) · "
           f"checkpoints: {len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else ""))
     print()

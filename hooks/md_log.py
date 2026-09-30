@@ -14,6 +14,9 @@ Captures only reading-relevant content:
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
   - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
                                             writes these itself, live; the Stop replay only backfills
+  - a dated session header                 (---  ## Session — 2026-09-30 (Wed) 14:05) the first time a
+                                            session writes to the file, and "Session (continued)" if the
+                                            same session writes again on a later day
 Other tools (Bash, Read, Edit, Agent, ...) are omitted.
 
 Wiring (see settings.json):
@@ -193,6 +196,16 @@ def quiz_blocks_from_result(text):
     except Exception:
         return ""
     return quiz_question_block(r) + "\n\n" + quiz_result_block(r)
+
+
+def ensure_session_header(state):
+    """Separate sessions visibly in the file: a rule + dated H2 on a session's first write."""
+    today = time.strftime("%Y-%m-%d")
+    if state.get("header_date") == today:
+        return
+    label = "Session (continued)" if state.get("header_date") else "Session"
+    append(f"---\n\n## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M')}")
+    state["header_date"] = today
 
 
 def append(text):
@@ -437,16 +450,19 @@ def handle_hook():
     event = data.get("hook_event_name")
     session = data.get("session_id")
     state = load_state(session)
+    ensure_session_header(state)
 
     tp = data.get("transcript_path")
 
     if event == "UserPromptSubmit":
+        text = clean_user_text(data.get("prompt") or "")
+        key = h(text) if is_user_prose(text) else None
+        if key:  # register first, so a replay that already sees this prompt consumes the key
+            state["prompts"] = (state["prompts"] + [key])[-50:]
         if tp and os.path.exists(tp):  # catch anything the last Stop missed
             replay_transcript(tp, state)
-        text = clean_user_text(data.get("prompt") or "")
-        if is_user_prose(text):
+        if key and key in state["prompts"]:  # not consumed by the replay -> log it live now
             append(user_block(text))
-            state["prompts"] = (state["prompts"] + [h(text)])[-50:]
 
     elif event == "PostToolUse" and data.get("tool_name") == "AskUserQuestion":
         if tp and os.path.exists(tp):  # prose written earlier this turn goes first
