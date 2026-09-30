@@ -458,9 +458,14 @@ def parse_answers(tool_input, tool_response):
     return out
 
 
+PACING_HEADERS = {"resume"}  # AskUserQuestion headers that steer the session rather than teach
+
+
 def qa_blocks(tool_input, tool_response):
     blocks = []
     for q, selected, other, note in parse_answers(tool_input, tool_response):
+        if (q.get("header") or "").strip().lower() in PACING_HEADERS:
+            continue
         blocks.append(question_block(q))
         blocks.append(answer_block(q, selected, other, note))
     return "\n\n".join(blocks)

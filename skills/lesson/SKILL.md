@@ -24,8 +24,12 @@ Load the `teach` skill first if it is not already loaded — everything below ru
    printed in full and counts as the checkpoint. Logs written by pi's md-log (with `PI` blocks and its quiz
    callouts) are understood too — resuming a pi-era lesson is the same command.
 3. **New lesson** (no file / empty): say so in one line and start the teach process from Phase 1 (probe).
-4. **Existing lesson:** in a few sentences, tell the learner where things stand — the goal, which nodes are confirmed, which were shaky or missed, and what comes next — using the latest checkpoint (from the sidecar) or the hand-off note (the newer of the two wins; ignore any tooling/environment notes that concern another harness). If there is no checkpoint, reconstruct this from the map, the quiz outcomes and the tail, and **confirm your reading with the learner** (`ask_user_question`) before going on. If the brief says the session continued past the checkpoint, fold the tail into your reading.
-5. **Re-probe before building.** Nodes established last time are only as solid as they are *today*. Run a short retrieval check — 2 to 4 `quiz` questions — over the confirmed nodes, prioritising anything listed as shaky or missed and the node(s) the next step depends on. Same construction rules as always. Anything that fails is re-established (motivate → establish → connect → quiz-check) before you move on.
+4. **Existing lesson:** ask, with one `AskUserQuestion` call and **nothing else in the reply** (no prose before or after — the note must not show this exchange, and the hook drops questions with this header):
+   - `header`: exactly `Resume`
+   - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness) followed by: *"Run a short recall check on what was established before continuing?"*
+   - options: **Continue where we left off** — pick up at the next node, no recall check; **Recall check first** — 2 to 4 quizzes on the established nodes, then continue.
+   If there is no checkpoint and no hand-off note, add a third option **Let me say where we got to** and reconstruct the state from the map, quiz outcomes and tail with their answer before going on.
+5. **Continue where we left off** → say nothing about the choice; go straight to step 6. **Recall check first** → run a short retrieval check — 2 to 4 `quiz` questions — over the confirmed nodes, prioritising anything listed as shaky or missed and the node(s) the next step depends on. Anything that fails is re-established (motivate → establish → connect → check) before you move on.
 6. Then continue the Phase 3 loop from the checkpoint's **Next** node. Re-present the dependency map only if it changed.
 
 ## `pause`
