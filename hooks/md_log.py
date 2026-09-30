@@ -263,6 +263,19 @@ def transcript_start(path):
 _STATE_FOR_HEADER = None  # set by handle_hook; append() writes the session header lazily before the first block
 
 
+HOOK_LOG = os.path.join(STATE_DIR, "md-log.log")
+
+
+def diag(msg):
+    """One line per hook invocation, for tracing ordering problems."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(HOOK_LOG, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%H:%M:%S ") + msg + "\n")
+    except Exception:
+        pass
+
+
 def append(text):
     global _STATE_FOR_HEADER
     path = log_file()
@@ -432,19 +445,24 @@ def wait_for_transcript(path, start_line, max_wait=8.0):
         time.sleep(0.15)
 
 
-def wait_for_tool_use(path, tool_use_id, max_wait=3.0):
-    """Wait until the transcript holds the tool_use entry (it is written after the text of the same message)."""
-    if not tool_use_id:
-        return
+def wait_for_tool_use(path, tool_use_id, tool_name=None, start_line=0, max_wait=3.0):
+    """Wait until the transcript holds the pending tool_use entry. Claude Code writes the whole assistant
+    message (text first, then the tool_use) a fraction of a second after PreToolUse fires. Match by id when
+    given, otherwise by an assistant tool_use of this tool name after the cursor."""
     deadline = time.time() + max_wait
     while time.time() < deadline:
         try:
             with open(path, encoding="utf-8") as f:
-                if tool_use_id in f.read():
-                    return
+                lines = f.readlines()
         except Exception:
-            return
+            return False
+        for raw in lines[start_line:]:
+            if tool_use_id and tool_use_id in raw:
+                return True
+            if not tool_use_id and tool_name and '"tool_use"' in raw and f'"name":"{tool_name}"' in raw.replace(" ", ""):
+                return True
         time.sleep(0.1)
+    return False
 
 
 def replay_transcript(path, state):
@@ -597,13 +615,18 @@ def handle_hook():
         if key and key not in logged_by_replay:  # usual case: transcript doesn't have it yet -> log live
             append(user_block(text))
             state["prompts"] = (state["prompts"] + [key])[-50:]  # so the later Stop replay skips it
+        diag(f"UserPromptSubmit prose={'yes' if key else 'no'} cursor={state.get('line')}")
 
     elif event == "PreToolUse" and data.get("tool_name") in (QUIZ_TOOL, "AskUserQuestion"):
         # the quiz server writes its question block itself, live; prose the teacher wrote just before the
         # call is only in the transcript, so flush it now to keep the note in reading order
         if tp and os.path.exists(tp):
-            wait_for_tool_use(tp, data.get("tool_use_id"))
-            replay_transcript(tp, state)
+            found = wait_for_tool_use(tp, data.get("tool_use_id"), data.get("tool_name"), state.get("line", 0))
+            n = replay_transcript(tp, state)
+            diag(f"PreToolUse {data.get('tool_name')} id={'yes' if data.get('tool_use_id') else 'NO'} "
+                 f"tool_use_in_transcript={found} blocks_written={n}")
+        else:
+            diag(f"PreToolUse {data.get('tool_name')}: no transcript_path")
 
     elif event == "PostToolUse" and data.get("tool_name") == "AskUserQuestion":
         if tp and os.path.exists(tp):  # prose written earlier this turn goes first
@@ -619,7 +642,8 @@ def handle_hook():
     elif event == "Stop":
         if tp and os.path.exists(tp):
             wait_for_transcript(tp, state.get("line", 0))
-            replay_transcript(tp, state)
+            n = replay_transcript(tp, state)
+            diag(f"Stop blocks_written={n} cursor={state.get('line')}")
 
     save_json(state_path(session), state)
 
