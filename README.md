@@ -72,7 +72,7 @@ You can type a question at any prompt. The teacher answers it before moving on.
 3. **Teach**, one node per section:
    - `### Node name`
    - **Read.** A complete written exposition: why this node now, the truth or derivation, how it hangs off earlier
-     nodes, a worked example or code.
+     nodes, a worked example or code. The teacher stops here; read it in the note, then type `ready`.
    - **Check.** One quiz answerable from a close reading.
    - **Apply.** One quiz that needs reasoning, a calculation, or running code.
    - A failed apply is re-taught before anything is built on it.

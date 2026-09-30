@@ -358,8 +358,14 @@ def clean_user_text(text):
     return text
 
 
+ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sure|proceed|carry on|"
+                    r"i'?m ready|ready to go|go ahead|start|let'?s go|k)\W*$", re.I)
+
+
 def is_user_prose(text):
-    return bool(text) and not text.startswith("/")
+    if not text or text.startswith("/"):
+        return False
+    return not ACK_RE.match(text)  # "ready", "ok", "next" are pacing, not lesson content
 
 
 SKIP_ASSISTANT = re.compile(r"^\s*🗒 md-log")
@@ -381,7 +387,7 @@ NARRATION_RE = re.compile(
 NARRATION_ANY_RE = re.compile(
     r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
     r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
-    r"running in the background|moved to the background)",
+    r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when)",
     re.I,
 )
 
@@ -543,7 +549,8 @@ def replay_transcript(path, state):
                     task_results[m.group(1)] = c
 
     def trim_narration_edges(text, shares):
-        """Drop a short narration paragraph at the start or end of a text block ("Let me load the quiz tool:")."""
+        """Drop a short narration paragraph at the start or end of a text block ("Let me load the quiz tool:",
+        "Say ready when you have read this.")."""
         paras = [p for p in text.split("\n\n") if p.strip()]
         while paras and len(paras) > 1 and is_narration(paras[0], shares) and len(paras[0]) <= NARRATION_MAX:
             paras.pop(0)
