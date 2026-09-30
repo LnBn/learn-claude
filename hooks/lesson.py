@@ -120,6 +120,13 @@ def quiz_outcomes(lines):
     return out
 
 
+def max_equation_number(lines):
+    """Highest \\tag{n} / ^eq-n used, so a resumed session continues the numbering."""
+    text = "\n".join(lines)
+    nums = [int(n) for n in re.findall(r"\\tag\{(\d+)\}", text)] + [int(n) for n in re.findall(r"^\^eq-(\d+)\s*$", text, re.M)]
+    return max(nums) if nums else 0
+
+
 def session_count(lines):
     return sum(1 for ln in lines if ln.startswith("## Session"))
 
@@ -158,7 +165,8 @@ def summary(path, notes=None):
     print(f"LESSON: {path}")
     print(f"sessions: {session_count(lines) or 'unmarked (pi-era log)'} · prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
           f"(✓ {tally['✓']} · ✗ {tally['✗']} · don't-know {tally['?']} · skipped {tally['skip']}) · "
-          f"checkpoints: {len(side) + len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else ""))
+          f"checkpoints: {len(side) + len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else "")
+          + f" · equations numbered so far: {max_equation_number(lines)} (continue from the next number)")
     print()
     if notes:
         note_lines = read(notes)

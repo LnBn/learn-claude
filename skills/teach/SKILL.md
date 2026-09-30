@@ -199,6 +199,19 @@ Everything written in a session is rendered to the learner through Obsidian, whi
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 
+**Equation numbering and references.** Every display equation the lesson will refer back to gets a number, a block id, and is cited by a clickable link. Numbers run from (1) through the whole lesson note, across sessions — on resume, continue from the highest number already used (the brief tells you). Exact form:
+
+```
+$$
+p(\theta \mid x) = \frac{p(x \mid \theta)\,p(\theta)}{p(x)} \tag{3}
+$$
+^eq-3
+
+By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
+```
+
+Rules: `\tag{n}` inside the math, `^eq-n` alone on the line directly after the closing `$$`, and every later mention written as `[[#^eq-n|(n)]]` — never a bare "(3)" or "equation 3". Leave unnumbered any one-off equation that nothing refers to. Do not use `\label`/`\eqref`: they do not work across separate math blocks in Obsidian.
+
 **No narration.** Every sentence you write is mirrored into the lesson file and read again days later. Write only lesson content: motivation, truths, derivations, connections, plans, checkpoints, and the questions themselves. Never write "let me load…", "I'll check that with the researcher", "the brief is back", "waiting for your answer", or any description of tool calls — call the tool instead. After a `quiz` returns, the learner has already seen the grade in the popup: do not restate it; continue teaching from the outcome. Prefer short, plain, technical sentences.
 
 **Emphasis — use forms that render in both the terminal and Obsidian.** The learner reads the terminal live and the markdown file rendered, so:
