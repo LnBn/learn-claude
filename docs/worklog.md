@@ -13,7 +13,7 @@ Update with `git -C .claude pull` from the vault root.
 sidecar checkpoints → dated session headers, one-blank-line spacing, no speaker banners except `> **You:**`
 → narration filtering (many rounds, tuned on real notes) → read/ready/quiz section structure, Phase 0 opener
 (beginner overview + how-to-start question) → `### Plan` heading, environments as callouts + CSS snippet,
-notation rule, equation numbering with block links → optional recall check on resume → MCP backgrounding
+notation rule, equation numbering with block links, numbered worked-example callouts → optional recall check on resume → MCP backgrounding
 disabled (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0`) → note ordering fixes (prose inserted above a quiz block) →
 relink no longer duplicates → rebuild command for notes.
 

@@ -220,7 +220,21 @@ If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 > …
 ```
 
-Types: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, plus Obsidian's own `example`. A definition is stated once, in its own `[!definition]` callout with the term in the title, and never only inline. Unconditional truths of the lesson are `[!definition]` or `[!theorem]` blocks as appropriate. Keep environments short and formal; the motivation and the discovery path stay in the prose around them. Quiz and answer callouts are written by the tools; do not hand-write those.
+Types: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples.
+
+**Worked examples are numbered environments.** Every worked example or calculation goes in an `[!example]` callout titled `Example n — <what it computes>`, numbered from 1 through the whole note across sessions (the resume brief tells you the last number used), with a block id so it can be cited:
+
+```
+> [!example] Example 2 — B's new σ after the upset
+> 1. $\gamma = 8 / 11.607 = 0.689$
+> 2. $r = 64 / 134.72 = 0.475$
+> 3. $\Delta = 0.689 \times 0.475 \times 0.2225 = 0.0729$, so $\sigma_B' = 8\sqrt{1 - 0.0729} = 7.70$
+^ex-2
+
+Compare with [[#^ex-2|Example 2]]: the same three factors, larger $\sigma$.
+```
+
+Never write "Worked example." as a bare paragraph. A definition is stated once, in its own `[!definition]` callout with the term in the title, and never only inline. Unconditional truths of the lesson are `[!definition]` or `[!theorem]` blocks as appropriate. Keep environments short and formal; the motivation and the discovery path stay in the prose around them. Quiz and answer callouts are written by the tools; do not hand-write those.
 
 **Notation is never left to inference.** Every symbol has to be defined in words before the learner can meet it in an equation, or on the line directly after — never later, never implicitly. The rule: no display equation may introduce a symbol that the text has not already defined, unless a `[!notation]` callout follows the equation listing each new symbol (what it stands for, its type or range, its units if any). Subscripts and decorations count: $p_{AB}$ needs "the probability that A beats B", $\hat\theta$ needs "the estimate of $\theta$", $c$ needs "the standard deviation of the performance gap". Read every equation you write once more as the learner would, and ask of each symbol: has this been named? If not, name it.
 

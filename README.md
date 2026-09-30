@@ -133,7 +133,8 @@ $$
 By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
 ```
 
-Numbers run through the whole note; a resumed session continues from the last one.
+Numbers run through the whole note; a resumed session continues from the last one. Worked examples are
+`> [!example] Example n — …` callouts with a `^ex-n` id, numbered the same way and cited as `[[#^ex-n|Example n]]`.
 
 ### The note
 
