@@ -66,9 +66,12 @@ You can type a question at any prompt. The teacher answers it before moving on.
 
 ### What a lesson looks like
 
-1. **Probe.** Graded questions to find the edge of what you know, and a question about what you want.
-2. **Plan.** A short approach and a mermaid dependency map: unconditional truths at the roots, your goal at the
-   sink. Nothing is taught until you approve it.
+0. **Open.** A written opening before any question. For a beginner request ("from the basics") it is a one or
+   two paragraph overview of the subject, then one question: probe my level first, or start from the beginning,
+   and what do you want from this. Otherwise a few sentences on the topic and what is about to happen.
+1. **Probe.** Graded questions to find the edge of what you know, with a step of reasoning where possible.
+2. **Plan.** Under a `### Plan` heading: a short approach and a mermaid dependency map, unconditional truths at
+   the roots, your goal at the sink. Nothing is taught until you approve it.
 3. **Teach**, one node per section:
    - `### Node name`
    - **Read.** A complete written exposition: why this node now, the truth or derivation, how it hangs off earlier
@@ -102,28 +105,47 @@ The note is the state, not the chat. One note per topic.
 /lesson pause                    # saves a checkpoint (goal, confirmed nodes, shaky nodes, next node) to
                                  #   lessons/.checkpoints/<name>.md — hidden from Obsidian, the note stays clean
 /lesson resume lessons/tcp.md    # next time: links the note, reads only the checkpoint + map + recent quiz
-                                 #   outcomes, re-checks what was established, continues from "next"
+                                 #   outcomes, asks once whether to run a recall check, continues from "next"
 /lesson status lessons/tcp.md    # where the lesson stands, no teaching
 /lesson reset lessons/tcp.md     # start over: note + checkpoints moved to .claude/md-log-state/trash/
 ```
 
-The teacher writes the checkpoint by itself when you say you are stopping. A lesson started under pi resumes the
-same way; its `… — Resume Here.md` companion note is picked up automatically.
+The teacher writes the checkpoint by itself when you say you are stopping. The resume question (recall check or
+continue) is asked in the terminal only and never appears in the note; declining it resumes straight from the
+next node. A lesson started under pi resumes the same way; its `… — Resume Here.md` companion note is picked up
+automatically.
 
-### Environments and notation
+### Environments, notation and equation numbers
 
 Definitions, theorems, proofs, notation lists, remarks and intuition boxes are written as callouts
 (`> [!definition] Best response`, `> [!theorem] …`, `> [!notation]`, …), styled by the CSS snippet the installer
 adds to the vault. Every symbol in an equation is defined in the text before it appears, or in a `[!notation]`
 callout directly after the equation.
 
+Equations the lesson refers back to are numbered and linkable, with no plugin:
+
+```markdown
+$$
+p(\theta \mid x) = \frac{p(x \mid \theta)\,p(\theta)}{p(x)} \tag{3}
+$$
+^eq-3
+
+By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
+```
+
+Numbers run through the whole note; a resumed session continues from the last one.
+
 ### The note
 
 Each session starts with `## Session — <date>`. Your prompts appear as `> **You:** …` quotes, the teacher's
 prose is written bare, quizzes are callouts with the result, and diagrams are `![[viz-….png|500]]` embeds
-into `viz/`.
-Session chatter ("I'll load the skill", "waiting on your answer") is filtered out, so the note reads like a
-textbook chapter. `/md-unlog` stops mirroring.
+into `viz/`. Blocks are separated by one blank line. Kept out of the note: session chatter ("I'll load the
+skill", "waiting on your answer", "the lesson is paused at…"), pacing prompts (`ready`, `ok`, `next`), the
+resume question, checkpoints (they live in the sidecar) and status lines from the scripts. The note reads like
+a textbook chapter. `/md-unlog` stops mirroring.
+
+If you ask a question in the quiz popup with `?`, the note shows the quiz block, an "Asked before answering"
+note, the teacher's answer, then the grade; the re-asked quiz is not repeated.
 
 ## Layout
 
