@@ -1,86 +1,171 @@
-# learn (Claude Code edition)
+# learn-claude
 
-A port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn) — the AI learning system from
-[How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU) — from the pi harness to
-**Claude Code**, so it runs on a Claude subscription with no API billing.
+A personal AI tutor that runs inside [Claude Code](https://code.claude.com) on a Claude subscription.
+It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), the learning system from
+[How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU), from the pi harness to Claude Code.
+The teaching philosophy is his. The plumbing is new.
 
-The teaching philosophy is unchanged. What changed is the plumbing:
+**What you get**
 
-| pi piece | Claude Code piece here |
+- A teacher that follows a fixed process: probe what you know, agree a plan with a dependency map, then teach one
+  node at a time as a *section*: written exposition, an easy check quiz, a harder apply quiz.
+- Graded quizzes in a terminal popup, marked the instant you answer, with the explanation.
+- A markdown mirror of every lesson that renders in Obsidian (LaTeX, mermaid maps, diagrams), split by session.
+- Lessons that span days: pause with a checkpoint, resume later from the note, not from the chat.
+- Fact checks by a web-research subagent and diagrams drawn, rendered and visually verified by maker subagents.
+
+Everything runs locally except the model calls, which go through your Claude Code login. No API key.
+
+## Requirements
+
+| Needed | For |
 |---|---|
-| `skills/teach` | `skills/teach/SKILL.md` — same text, tool names mapped, learner pronouns neutralised |
-| `skills/visualize` | `skills/visualize/SKILL.md` — dispatches makers with the Agent tool |
-| `extensions/quiz` (graded popup tool) | `mcp/quiz_server.py` — a dependency-free MCP server exposing a `quiz` tool. Inside tmux the question opens in a `tmux display-popup` (`mcp/quiz_popup.py`, curses), is graded **instantly** by the server and the ✓/✗ feedback is shown in the popup and logged live. Outside tmux it falls back to Claude Code's elicitation form (which truncates the question, so use tmux). A model-graded `AskUserQuestion` protocol remains in the teach skill for sessions without the server |
-| `extensions/ask-user-question` | the built-in `AskUserQuestion` tool |
-| `extensions/md-log` | `hooks/md_log.py` wired to `UserPromptSubmit` / `PostToolUse` / `Stop` hooks; `/md-log <file>` and `/md-unlog` skills |
-| — (new) | `skills/lesson` + `hooks/lesson.py`: `/lesson resume|pause|status` for multi-session lessons via checkpoint blocks in the log |
-| `extensions/visual-tools` | `scripts/render-mermaid.sh` + `scripts/render-svg.sh` (mermaid-cli via your installed Chrome; rsvg → ImageMagick → headless Chrome for SVG) |
-| `agents/researcher`, `mermaid-maker`, `svg-maker` | `agents/*.md` custom subagents (WebSearch/WebFetch for the researcher; Bash/Read/Write/Edit for the makers, which LOOK at their PNG with Read) |
+| Claude Code ≥ 2.1, Python 3.10+ | everything |
+| tmux ≥ 3.2 | the quiz popup (outside tmux you get Claude Code's cramped form) |
+| Obsidian (or any markdown viewer) | reading the lesson notes rendered |
+| Node ≥ 18 + npm, Chrome or Chromium | Mermaid diagrams |
+| `rsvg-convert`, ImageMagick, or Chrome | SVG diagrams |
+
+Without Node or Chrome everything still works; you lose the pictures.
 
 ## Install
 
-This directory **is** a `.claude` directory. From your learning project's root (ideally a folder inside your Obsidian vault):
+This repository **is** a `.claude` directory. Clone it into the folder you will learn in, ideally a folder inside
+your Obsidian vault so the notes and diagrams render in place.
 
 ```bash
-cp -r /path/to/learn-claude .claude      # or: git clone <this repo> .claude
-bash .claude/scripts/install.sh          # installs mermaid-cli and writes .mcp.json (one-off, needs node + npm)
-claude                                   # open Claude Code here, accept the trust dialog and enable the quiz MCP server
+cd ~/path/to/vault
+git clone https://github.com/LnBn/learn-claude .claude
+bash .claude/scripts/install.sh      # installs mermaid-cli, writes .mcp.json, smoke-tests the renderers
 ```
 
-Requirements: Claude Code ≥ 2.1, Python 3, Node ≥ 18, and tmux for the quiz popup. For visuals: Chrome/Chromium installed (Mermaid), and any of
-`rsvg-convert`, ImageMagick or Chrome (SVG). Without them everything still works, you just lose the pictures.
+Then start Claude Code **from that folder, inside tmux**:
 
-## Use
+```bash
+tmux
+claude
+```
+
+The first time, accept the trust dialog and the prompt to enable the project's `quiz` MCP server.
+Update later with `git -C .claude pull`. Your log state is gitignored, so pulling never touches it.
+
+## Daily use
 
 ```
-/md-log lessons/2026-09-30-tcp.md    # mirror the session into a note (Obsidian renders math, mermaid, embeds)
+/md-log lessons/tcp.md                  # mirror this session into a note
 teach me how TCP achieves reliability
 ```
 
-Claude loads the `teach` skill on its own whenever it is explaining something (CLAUDE.md nudges it too). It will
-probe your level with graded questions, ask about your goal, present a plan with a mermaid dependency map, wait for
-your go-ahead, then teach node by node. Each node is one section: a `###` heading, a written exposition to read in
-full, a **check** quiz (did you read it closely) and an **apply** quiz (reason, calculate or run code). The log
-mirrors your prompts as `YOU` quotes and the teacher's prose bare, so the note reads like a textbook chapter. Visuals arrive as `![[viz-…png|500]]` embeds pointing into `viz/`.
+or, to continue a lesson from an earlier day:
 
-`/md-unlog` stops mirroring. Logging state lives in `.claude/md-log.json` and `.claude/md-log-state/` (gitignored).
+```
+/lesson resume lessons/tcp.md
+```
+
+You can type a question at any prompt. The teacher answers it before moving on.
+
+### What a lesson looks like
+
+1. **Probe.** Graded questions to find the edge of what you know, and a question about what you want.
+2. **Plan.** A short approach and a mermaid dependency map: unconditional truths at the roots, your goal at the
+   sink. Nothing is taught until you approve it.
+3. **Teach**, one node per section:
+   - `### Node name`
+   - **Read.** A complete written exposition: why this node now, the truth or derivation, how it hangs off earlier
+     nodes, a worked example or code.
+   - **Check.** One quiz answerable from a close reading.
+   - **Apply.** One quiz that needs reasoning, a calculation, or running code.
+   - A failed apply is re-taught before anything is built on it.
+
+### The quiz popup
+
+| Key | Action |
+|---|---|
+| ↑ ↓ or j k | move |
+| 1–9 | jump to an option (toggles it in multi-select) |
+| Space | toggle (multi-select) |
+| Enter | submit |
+| Tab | type a note that is sent with your answer |
+| `?` | ask the teacher a question *before* answering; the quiz is re-asked after the answer |
+| PgUp PgDn | scroll |
+| Esc | cancel the quiz |
+
+"I don't know" is always the last option. Choosing it is recorded as a gap, not a wrong answer.
+After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
+Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²), ∑ᵢ₌₁ⁿ); the note keeps the real LaTeX.
 
 ### Lessons over several sessions
 
-The lesson's markdown file is the state, not the chat context. Keep one file per topic and use:
+The note is the state, not the chat. One note per topic.
 
 ```
-/lesson pause                      # when stopping: writes a Checkpoint block (goal, confirmed nodes, shaky nodes, next node)
-/lesson resume lessons/tcp.md      # next session: links the log, reads ONLY the checkpoint + map + recent quiz outcomes,
-                                   #   re-probes what was established with a few quizzes, then continues from "Next"
-/lesson status lessons/tcp.md      # where does this lesson stand? (no teaching)
+/lesson pause                    # writes a Checkpoint block: goal, confirmed nodes, shaky nodes, next node
+/lesson resume lessons/tcp.md    # next time: links the note, reads only the checkpoint + map + recent quiz
+                                 #   outcomes, re-checks what was established, continues from "next"
+/lesson status lessons/tcp.md    # where the lesson stands, no teaching
 ```
 
-Claude also writes the checkpoint on its own when you say you're stopping. `hooks/lesson.py summary <file>` is
-the extractor the skill uses; run it yourself to see what the next session will be told. Prefer this over
-`claude --resume` for anything longer than a same-day gap: the context stays small and the re-probe is a real
-retrieval check.
+The teacher writes the checkpoint by itself when you say you are stopping. A lesson started under pi resumes the
+same way; its `… — Resume Here.md` companion note is picked up automatically.
 
-## Notes
+### The note
 
-- **Quizzes are graded by the tool, instantly.** Exactly as in pi, the model writes the correct answer and the
-  explanation into the tool call; the server shuffles the options, appends "I don't know", pops up the question,
-  grades the pick locally, shows the feedback, and returns the outcome. No model round trip before you see ✓/✗.
-  **Run Claude Code inside tmux** to get the popup. Keys: ↑/↓ or j/k move, 1–9 jump, Space toggles (multi-select),
-  Enter submits, Tab edits a note sent with your answer, `?` sends a question to the teacher *before* answering
-  (the quiz is re-asked after the answer), PgUp/PgDn scroll, Esc cancels; any key dismisses the feedback screen. Text
-  wraps to the popup width. LaTeX in the question, options and explanation is shown as Unicode in the popup
-  (`mcp/latex_text.py`: x² αᵢ √(a²+b²) ∑ᵢ₌₁ⁿ …; `pip install pylatexenc` widens coverage) while the markdown log
-  keeps the real LaTeX for Obsidian.
-- **If you get Claude Code's own form instead** (a one-line truncated question and "Your answer: not set"), the
-  popup did not trigger. Read `.claude/md-log-state/quiz-server.log`: it records why (Claude Code started outside
-  tmux, tmux missing, or a popup error). The MCP server is spawned when the session starts, so after updating the
-  files restart Claude Code from inside tmux. Check the tool is listed with `/mcp` if quizzes go through
-  AskUserQuestion instead.
-- **The transcript format Claude Code writes is internal** and may change between releases. `md_log.py` parses it
-  defensively and never blocks the session; if a release changes the format, assistant prose may stop appearing in
-  the log until the parser is updated (prompts and Q&A are logged from hook payloads and are unaffected).
-- The `Stop` hook waits up to 8 s for the transcript to flush; prose that still lands late is picked up at your
-  next prompt.
-- Subagent models are set to `sonnet` in `agents/*.md`; change `model:` there if you prefer.
-- The teach skill is written for one learner. Edit it to fit how you learn best.
+Each session starts with `## Session — <date>`. Your prompts appear as `YOU` quotes, the teacher's prose is
+written bare, quizzes are callouts with the result, and diagrams are `![[viz-….png|500]]` embeds into `viz/`.
+Session chatter ("I'll load the skill", "waiting on your answer") is filtered out, so the note reads like a
+textbook chapter. `/md-unlog` stops mirroring.
+
+## Layout
+
+```
+.claude/
+  CLAUDE.md              project rules: teach, don't narrate, plain technical English
+  settings.json          hooks (md-log) and pre-approved commands
+  mcp.json               copied to <project>/.mcp.json by install.sh: registers the quiz server
+  skills/
+    teach/               the teaching philosophy and process (the heart of it)
+    visualize/           when and how to ask a maker for a diagram
+    lesson/              /lesson resume | pause | status
+    md-log/, md-unlog/   /md-log <file>, /md-unlog
+  agents/
+    researcher.md        web research and fact verification
+    mermaid-maker.md     draws, renders, LOOKS at, and publishes a Mermaid diagram
+    svg-maker.md         same for hand-written SVG (geometry, plots)
+  mcp/
+    quiz_server.py       the quiz tool: an MCP server, no dependencies
+    quiz_popup.py        the curses popup shown via tmux display-popup
+    latex_text.py        LaTeX → Unicode for the popup
+  hooks/
+    md_log.py            mirrors the session into the note (UserPromptSubmit / PostToolUse / Stop hooks)
+    lesson.py            extracts the resume brief from a note
+  scripts/
+    install.sh           one-off setup
+    render-mermaid.sh    Mermaid → PNG (mermaid-cli + local Chrome)
+    render-svg.sh        SVG → PNG (rsvg-convert → ImageMagick → Chrome)
+  visual-tools/          package.json for mermaid-cli
+```
+
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit and what is fragile.
+
+## Customising
+
+- The teach skill is written for one learner. Edit `skills/teach/SKILL.md` to fit how you learn.
+- Subagent models are `sonnet` in `agents/*.md`. Change `model:` there.
+- `CLAUDE.md` holds the house rules for the teacher's voice.
+
+## Troubleshooting
+
+- **Quiz shows a one-line form with "Your answer: not set"** instead of a popup: the popup did not trigger. See
+  `.claude/md-log-state/quiz-server.log` for the reason (usually Claude Code was started outside tmux). Restart
+  Claude Code from inside tmux; the server is spawned at session start.
+- **No quiz tool at all** (questions come as plain AskUserQuestion prompts): run `/mcp` and check `quiz` is listed
+  and enabled; make sure `.mcp.json` exists in the project root.
+- **Teacher prose missing from the note**: Claude Code's transcript format is internal and may change between
+  releases. `md_log.py` parses it defensively; prompts and quizzes come from hook payloads and are unaffected.
+  Regenerate a note with `python3 .claude/hooks/md_log.py rebuild <out.md> <transcript.jsonl>...`.
+- **Hooks not firing**: Claude Code must be started from the folder that contains `.claude`, not a subfolder.
+
+## Credits
+
+Teaching philosophy, skills and agent prompts: [Amos Blomqvist](https://github.com/amosblomqvist/learn).
+Port to Claude Code: Lachlan Burton, with Claude.
