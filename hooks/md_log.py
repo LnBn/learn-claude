@@ -388,6 +388,7 @@ NARRATION_ANY_RE = re.compile(
     r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
     r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
     r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when|"
+    r"say \*{0,2}(go|yes|ok|continue|next)\*{0,2} (to|when|and|or|if)|"
     r"the lesson is paused|next session (opens|starts|begins|picks up)|stays open until|"
     r"is the first thing next session|checkpoint saved|we (stop|pause) here)",
     re.I,
@@ -782,8 +783,15 @@ def main(argv):
             open(path, "a", encoding="utf-8").close()
         save_json(CONFIG, {"file": path})
         if session:
-            # reset the cursor so the next Stop hook backfills the whole session; pin the file to this session
-            save_json(state_path(session), {"line": 0, "prompts": [], "tool_ids": [], "file": path})
+            st = load_json(state_path(session), {})
+            if st.get("file") == path and st.get("line"):
+                # already mirroring this very file in this session (e.g. /lesson resume after /lesson pause):
+                # keep the cursor and the dedup sets, or everything would be logged a second time
+                pass
+            else:
+                # new file for this session: reset the cursor so the next Stop hook backfills the whole
+                # session into it; pin the file to this session
+                save_json(state_path(session), {"line": 0, "prompts": [], "tool_ids": [], "file": path})
         print(f"🗒 md-log linked: {path}")
         print("The session will be mirrored there (history is backfilled at the end of this turn).")
         return 0
