@@ -1,7 +1,7 @@
 ---
 name: lesson
 description: Multi-session lessons. `/lesson resume <file>` links the markdown lesson log, reads only its checkpoint + dependency map + recent quiz outcomes, re-probes what was established, and continues teaching. `/lesson pause` writes a checkpoint block so the next session can pick up cleanly. `/lesson status <file>` shows where a lesson stands without teaching.
-argument-hint: resume <lesson.md> | pause | status <lesson.md>
+argument-hint: resume <lesson.md> [--notes <note.md>] | pause | status <lesson.md>
 disable-model-invocation: true
 allowed-tools: Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
 ---
@@ -18,10 +18,13 @@ Load the `teach` skill first if it is not already loaded — everything below ru
    ```
 2. Get the resume brief — this is the ONLY part of the lesson file you read; do not open the whole file:
    ```
-   python3 .claude/hooks/lesson.py summary "<file>"
+   python3 .claude/hooks/lesson.py summary "<file>" [--notes "<note.md>"]
    ```
+   A hand-off note (`--notes`, or a `<stem> — Resume Here.md` file found automatically next to the lesson) is
+   printed in full and counts as the checkpoint. Logs written by pi's md-log (with `PI` blocks and its quiz
+   callouts) are understood too — resuming a pi-era lesson is the same command.
 3. **New lesson** (no file / empty): say so in one line and start the teach process from Phase 1 (probe).
-4. **Existing lesson:** in a few sentences, tell the learner where things stand — the goal, which nodes are confirmed, which were shaky or missed, and what comes next — using the latest checkpoint. If there is no checkpoint, reconstruct this from the map, the quiz outcomes and the tail, and **confirm your reading with the learner** (`ask_user_question`) before going on. If the brief says the session continued past the checkpoint, fold the tail into your reading.
+4. **Existing lesson:** in a few sentences, tell the learner where things stand — the goal, which nodes are confirmed, which were shaky or missed, and what comes next — using the hand-off note or the latest checkpoint (the note wins if both exist; ignore any tooling/environment notes in it that concern another harness). If there is no checkpoint, reconstruct this from the map, the quiz outcomes and the tail, and **confirm your reading with the learner** (`ask_user_question`) before going on. If the brief says the session continued past the checkpoint, fold the tail into your reading.
 5. **Re-probe before building.** Nodes established last time are only as solid as they are *today*. Run a short retrieval check — 2 to 4 `quiz` questions — over the confirmed nodes, prioritising anything listed as shaky or missed and the node(s) the next step depends on. Same construction rules as always. Anything that fails is re-established (motivate → establish → connect → quiz-check) before you move on.
 6. Then continue the Phase 3 loop from the checkpoint's **Next** node. Re-present the dependency map only if it changed.
 

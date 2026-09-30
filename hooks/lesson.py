@@ -2,15 +2,19 @@
 """
 lesson — helpers for resuming a multi-session lesson from its markdown log.
 
-    lesson.py summary <lesson.md>    print a compact resume brief:
-                                     latest Checkpoint block, latest mermaid
-                                     dependency map, quiz tally + recent
-                                     quiz outcomes, and (if no checkpoint
-                                     exists) the tail of the lesson
+    lesson.py summary <lesson.md> [--notes <note.md>]
+                                     print a compact resume brief: the hand-off
+                                     note if one exists (given, or found as
+                                     "<stem> — Resume Here.md" / "<stem> - Resume Here.md"
+                                     next to the lesson), latest Checkpoint block,
+                                     latest mermaid dependency map, quiz tally +
+                                     recent quiz outcomes, and (if there is neither
+                                     a note nor a checkpoint) the tail of the lesson
     lesson.py checkpoints <lesson.md>  list every checkpoint (date + Next line)
 
 The lesson file is the md-log mirror written by hooks/md_log.py and the quiz
-server; nothing here is loaded into context except what this script prints.
+server — or by pi's md-log extension (its callout titles are understood too);
+nothing here is loaded into context except what this script prints.
 """
 import os
 import re
@@ -18,11 +22,19 @@ import sys
 
 CHECKPOINT_RE = re.compile(r"^> \[!summary\] Checkpoint", re.I)
 RESULT_KINDS = {
+    # this setup (mcp/quiz_server.py)
     "> [!success] ✓ Correct": "✓",
     "> [!failure] ✗ Incorrect": "✗",
     "> [!info] I don't know": "?",
     "> [!warning] Quiz — cancelled": "skip",
+    # pi's md-log extension
+    "> [!success] Quiz — correct ✓": "✓",
+    "> [!failure] Quiz — incorrect ✗": "✗",
+    "> [!question] Quiz — I don't know": "?",
+    "> [!warning] Quiz — cancelled": "skip",
 }
+NOTE_SUFFIXES = (" — Resume Here.md", " - Resume Here.md", " — resume here.md", " - resume here.md")
+MAX_NOTE_LINES = 200
 MAX_TAIL_LINES = 60
 
 
@@ -77,7 +89,16 @@ def user_prose(lines):
     return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU")
 
 
-def summary(path):
+def find_note(path):
+    stem = os.path.splitext(path)[0]
+    for suf in NOTE_SUFFIXES:
+        cand = stem + suf
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def summary(path, notes=None):
     if not os.path.exists(path):
         print(f"NO LESSON FILE at {path} — this is a new lesson. Start from Phase 1 of the teach skill.")
         return
@@ -85,6 +106,7 @@ def summary(path):
     if not any(ln.strip() for ln in lines):
         print(f"LESSON FILE IS EMPTY ({path}) — this is a new lesson. Start from Phase 1 of the teach skill.")
         return
+    notes = notes or find_note(path)
     cps = checkpoints(lines)
     outcomes = quiz_outcomes(lines)
     tally = {"✓": 0, "✗": 0, "?": 0, "skip": 0}
@@ -95,8 +117,15 @@ def summary(path):
     print(f"LESSON: {path}")
     print(f"prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
           f"(✓ {tally['✓']} · ✗ {tally['✗']} · don't-know {tally['?']} · skipped {tally['skip']}) · "
-          f"checkpoints: {len(cps)}")
+          f"checkpoints: {len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else ""))
     print()
+    if notes:
+        note_lines = read(notes)
+        print(f"HAND-OFF NOTE ({notes}) — written at the end of the previous session; treat it as the checkpoint:")
+        print("\n".join(note_lines[:MAX_NOTE_LINES]))
+        if len(note_lines) > MAX_NOTE_LINES:
+            print(f"… ({len(note_lines) - MAX_NOTE_LINES} more lines — Read the file if you need them)")
+        print()
     if cps:
         i, blk = cps[-1]
         print("LATEST CHECKPOINT:")
@@ -108,7 +137,7 @@ def summary(path):
                   f"(the session continued past it). Recent tail follows.")
             print("--- tail after checkpoint ---")
             print("\n".join(lines[i + len(blk):][-MAX_TAIL_LINES:]))
-    else:
+    elif not notes:
         print("NO CHECKPOINT FOUND. Reconstruct where things stand from the map, the quiz outcomes and the tail "
               "below, then CONFIRM your reading with the learner before teaching.")
         print("--- tail of the lesson ---")
@@ -149,7 +178,10 @@ if __name__ == "__main__":
         sys.exit(2)
     cmd, path = sys.argv[1], os.path.expanduser(sys.argv[2])
     if cmd == "summary":
-        summary(path)
+        notes = None
+        if "--notes" in sys.argv:
+            notes = os.path.expanduser(sys.argv[sys.argv.index("--notes") + 1])
+        summary(path, notes)
     elif cmd == "checkpoints":
         list_checkpoints(path)
     else:
