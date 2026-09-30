@@ -320,7 +320,8 @@ SKIP_ASSISTANT = re.compile(r"^\s*🗒 md-log")
 #   - short text that prefaces a tool call AND announces an intent ("I'll…", "let me…")
 NARRATION_MAX = 300
 NARRATION_RE = re.compile(
-    r"^\s*(I'll|I will|I'm going|I am going|Let me|Let's (load|start|check|run)|Now I|Next I|First I|"
+    r"^\s*(I'll|I will|I'm going|I am going|Let me (load|check|verify|run|look|see|start|pull|fetch|confirm|fire|dispatch|ask)|"
+    r"Let's (load|start|check|run)|Now I|Next I|First I|"
     r"Loading|Waiting|While (that|the)|Once (the|that|its)|One moment|Give me a moment|"
     r"The (researcher|maker|brief|subagent|diagram) (is|has|came|comes)|Got it|Understood|Sure[,.]|"
     r"Okay[,.]|OK[,.]|Great[,.!]|Perfect[,.!]|Still |The (first|next|last|second) (quiz|question|check))",
