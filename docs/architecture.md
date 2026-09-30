@@ -79,7 +79,9 @@ or that starts like "I'll…", "Let me…", "waiting on your answer". Long text 
 
 State: `md-log.json` (the vault-wide default file) and `md-log-state/<session>.json` (cursor, the session's own
 file, dedup keys). A session linked with `--session` keeps its own file, so two sessions can mirror two notes;
-the quiz server only knows the vault-wide default.
+the quiz server only knows the vault-wide default. Linking a note the session is already mirroring (for
+example `/lesson resume` after `/lesson pause`) keeps the cursor and dedup keys; only a different file resets
+them for a backfill.
 
 `md_log.py rebuild <out.md> <transcript.jsonl>...` regenerates a note from transcripts with the current filters.
 
@@ -110,8 +112,9 @@ Chrome.
    the parser is updated. Prompts and quizzes are unaffected.
 2. **Stop-hook timing.** The 8 s wait covers what has been observed; late prose is picked up at the next prompt.
 3. **Narration filter.** Heuristic. Text under 300 characters is dropped when it starts like narration
-   ("I'll…", "Let me load…", "The researcher is…"), says it is waiting or paused, or prefaces a tool call while
-   announcing an intent; short narration paragraphs at the edges of a longer block are trimmed. Tune
+   ("I'll…", "Let me load…", "Trying…", "The researcher is…"), says it is waiting or paused, or prefaces a tool
+   call while announcing an intent or being under 120 characters; short narration paragraphs at the edges of a
+   longer block are trimmed. Harness messages ("[Request interrupted by user]", task notifications) never appear. Tune
    `NARRATION_RE` / `NARRATION_ANY_RE` / `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the
    no-narration rule in `CLAUDE.md` and the teach skill.
 4. **Elicitation fallback.** Claude Code's form truncates the message to one line. Use tmux.
