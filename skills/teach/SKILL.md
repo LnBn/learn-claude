@@ -136,7 +136,7 @@ This is the highest-leverage step; don't rush it. With the learner's level and g
 
 A good plan is what makes the teaching feel inevitable instead of arbitrary.
 
-**Then present the plan in chat — always, before any teaching.** Two parts:
+**Then present the plan — always, before any teaching — as its own section of the note.** Start it with the heading `### Plan` (sessions are `##`, nodes are `###`, so the plan sits beside the nodes in the outline). Two parts under it:
 
 1. **The approach, in prose.** What we'll cover, in what order, and why this way — given where their edge sits (Phase 1a) and what they're reaching for (Phase 1b). A few freeform sentences.
 2. **The dependency map.** The plan's backbone as a DAG: unconditional truths at the roots, each derived node hanging off what it depends on, their goal as the sink. Draw it as a small ```mermaid``` code block in your reply (Obsidian renders mermaid natively in the log; no maker subagent needed for this one). This map *is* the teaching order — Phase 3 builds it node by node. Keep it small: few nodes, short labels — a map, not the territory.
