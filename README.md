@@ -13,6 +13,7 @@ The teaching philosophy is unchanged. What changed is the plumbing:
 | `extensions/quiz` (graded popup tool) | `mcp/quiz_server.py` — a dependency-free MCP server exposing a `quiz` tool. Inside tmux the question opens in a `tmux display-popup` (`mcp/quiz_popup.py`, curses), is graded **instantly** by the server and the ✓/✗ feedback is shown in the popup and logged live. Outside tmux it falls back to Claude Code's elicitation form (which truncates the question, so use tmux). A model-graded `AskUserQuestion` protocol remains in the teach skill for sessions without the server |
 | `extensions/ask-user-question` | the built-in `AskUserQuestion` tool |
 | `extensions/md-log` | `hooks/md_log.py` wired to `UserPromptSubmit` / `PostToolUse` / `Stop` hooks; `/md-log <file>` and `/md-unlog` skills |
+| — (new) | `skills/lesson` + `hooks/lesson.py`: `/lesson resume|pause|status` for multi-session lessons via checkpoint blocks in the log |
 | `extensions/visual-tools` | `scripts/render-mermaid.sh` + `scripts/render-svg.sh` (mermaid-cli via your installed Chrome; rsvg → ImageMagick → headless Chrome for SVG) |
 | `agents/researcher`, `mermaid-maker`, `svg-maker` | `agents/*.md` custom subagents (WebSearch/WebFetch for the researcher; Bash/Read/Write/Edit for the makers, which LOOK at their PNG with Read) |
 
@@ -41,6 +42,22 @@ probe your level with graded questions, ask about your goal, present a plan with
 your go-ahead, then teach node by node. Visuals arrive as `![[viz-…png|500]]` embeds pointing into `viz/`.
 
 `/md-unlog` stops mirroring. Logging state lives in `.claude/md-log.json` and `.claude/md-log-state/` (gitignored).
+
+### Lessons over several sessions
+
+The lesson's markdown file is the state, not the chat context. Keep one file per topic and use:
+
+```
+/lesson pause                      # when stopping: writes a Checkpoint block (goal, confirmed nodes, shaky nodes, next node)
+/lesson resume lessons/tcp.md      # next session: links the log, reads ONLY the checkpoint + map + recent quiz outcomes,
+                                   #   re-probes what was established with a few quizzes, then continues from "Next"
+/lesson status lessons/tcp.md      # where does this lesson stand? (no teaching)
+```
+
+Claude also writes the checkpoint on its own when you say you're stopping. `hooks/lesson.py summary <file>` is
+the extractor the skill uses; run it yourself to see what the next session will be told. Prefer this over
+`claude --resume` for anything longer than a same-day gap: the context stays small and the re-probe is a real
+retrieval check.
 
 ## Notes
 

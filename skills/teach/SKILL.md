@@ -143,6 +143,10 @@ Repeat this full loop per node — don't front-load all the foundations once at 
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
+## Multi-session lessons
+
+A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, end your reply with a **Checkpoint** block in the exact shape defined in the `lesson` skill (`/lesson pause`) — confirmed nodes, shaky nodes, the next node, notes. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, re-probe the established nodes with a few `quiz` questions, and continue from the checkpoint's next node.
+
 ## Formatting — math renders as LaTeX
 
 Everything written in a session is rendered to the learner through Obsidian, which renders LaTeX natively. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:
