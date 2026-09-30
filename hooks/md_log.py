@@ -10,7 +10,7 @@ render natively — no rendering work here.
 
 Captures only reading-relevant content:
   - user prompts                           (> **You:** …)
-  - assistant text (lesson prose)          (<small>**Claude**</small> label line, then bare prose) — minus narration
+  - assistant text (lesson prose)          (bare, no label) — minus narration
                                             ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
   - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
@@ -129,8 +129,7 @@ def user_block(text):
 
 
 def assistant_block(text):
-    # small label line, then the prose bare: marks the speaker without a callout box
-    return f"<small>**Claude**</small>\n\n{text}"
+    return text  # the teacher's prose is written bare; the learner's "> **You:**" quotes mark the turns
 
 
 def question_block(q):

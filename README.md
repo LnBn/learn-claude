@@ -111,8 +111,8 @@ same way; its `… — Resume Here.md` companion note is picked up automatically
 ### The note
 
 Each session starts with `## Session — <date>`. Your prompts appear as `> **You:** …` quotes, the teacher's
-prose follows a small `Claude` label, quizzes are callouts with the result, and diagrams are
-`![[viz-….png|500]]` embeds into `viz/`.
+prose is written bare, quizzes are callouts with the result, and diagrams are `![[viz-….png|500]]` embeds
+into `viz/`.
 Session chatter ("I'll load the skill", "waiting on your answer") is filtered out, so the note reads like a
 textbook chapter. `/md-unlog` stops mirroring.
 
