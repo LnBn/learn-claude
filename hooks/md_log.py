@@ -21,6 +21,7 @@ Captures only reading-relevant content:
 Other tools (Bash, Read, Edit, Agent, ...) are omitted.
 
 Wiring (see settings.json):
+  PreToolUse:quiz/AskUserQuestion -> flushes prose written earlier in the turn (reading order)
   UserPromptSubmit          -> logs the prompt live
   PostToolUse:AskUserQuestion -> logs the question + answer live
   Stop                      -> reads the session transcript from a per-session
@@ -259,10 +260,17 @@ def transcript_start(path):
     return None
 
 
+_STATE_FOR_HEADER = None  # set by handle_hook; append() writes the session header lazily before the first block
+
+
 def append(text):
+    global _STATE_FOR_HEADER
     path = log_file()
     if not path or not text.strip():
         return
+    if _STATE_FOR_HEADER is not None and not text.lstrip("-\n").startswith("## Session"):
+        st, _STATE_FOR_HEADER = _STATE_FOR_HEADER, None
+        ensure_session_header(st)
     try:
         current = ""
         if os.path.exists(path):
@@ -308,8 +316,8 @@ SKIP_ASSISTANT = re.compile(r"^\s*🗒 md-log")
 # The lesson file must read like a lesson, not like a Claude Code session. Assistant text that
 # only narrates the session ("I'll load the teach skill", "waiting on your answer", "the researcher
 # is scoping the topic") is dropped:
-#   - short text that shares an API message with a tool call (that text is the preamble to the call)
-#   - short standalone text that starts like narration
+#   - short text that starts like narration or says it is waiting / holding
+#   - short text that prefaces a tool call AND announces an intent ("I'll…", "let me…")
 NARRATION_MAX = 300
 NARRATION_RE = re.compile(
     r"^\s*(I'll|I will|I'm going|I am going|Let me|Let's (load|start|check|run)|Now I|Next I|First I|"
@@ -325,13 +333,18 @@ NARRATION_ANY_RE = re.compile(
 )
 
 
+NARRATION_INTENT_RE = re.compile(r"\b(I'll|I will|let me|I'm going to|I am going to|I'm about to)\b", re.I)
+
+
 def is_narration(text, shares_message_with_tool):
     t = text.strip()
     if len(t) > NARRATION_MAX:
         return False
-    if shares_message_with_tool:
+    if NARRATION_RE.match(t) or NARRATION_ANY_RE.search(t):
         return True
-    return bool(NARRATION_RE.match(t) or NARRATION_ANY_RE.search(t))
+    # short text that prefaces a tool call is narration only if it also announces an intent;
+    # a short lesson opener followed by the first quiz is content and must stay
+    return shares_message_with_tool and bool(NARRATION_INTENT_RE.search(t))
 
 
 # ---------------------------------------------------------------- answers
@@ -416,6 +429,21 @@ def wait_for_transcript(path, start_line, max_wait=8.0):
             if any('"type":"assistant"' in ln or '"type": "assistant"' in ln for ln in tail):
                 return
         time.sleep(0.15)
+
+
+def wait_for_tool_use(path, tool_use_id, max_wait=3.0):
+    """Wait until the transcript holds the tool_use entry (it is written after the text of the same message)."""
+    if not tool_use_id:
+        return
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        try:
+            with open(path, encoding="utf-8") as f:
+                if tool_use_id in f.read():
+                    return
+        except Exception:
+            return
+        time.sleep(0.1)
 
 
 def replay_transcript(path, state):
@@ -553,7 +581,8 @@ def handle_hook():
         SESSION_FILE = state["file"]
     if not log_file():
         return
-    ensure_session_header(state)
+    global _STATE_FOR_HEADER
+    _STATE_FOR_HEADER = state  # header is written on the first content block, not on hook entry
 
     tp = data.get("transcript_path")
 
@@ -567,6 +596,13 @@ def handle_hook():
         if key and key not in logged_by_replay:  # usual case: transcript doesn't have it yet -> log live
             append(user_block(text))
             state["prompts"] = (state["prompts"] + [key])[-50:]  # so the later Stop replay skips it
+
+    elif event == "PreToolUse" and data.get("tool_name") in (QUIZ_TOOL, "AskUserQuestion"):
+        # the quiz server writes its question block itself, live; prose the teacher wrote just before the
+        # call is only in the transcript, so flush it now to keep the note in reading order
+        if tp and os.path.exists(tp):
+            wait_for_tool_use(tp, data.get("tool_use_id"))
+            replay_transcript(tp, state)
 
     elif event == "PostToolUse" and data.get("tool_name") == "AskUserQuestion":
         if tp and os.path.exists(tp):  # prose written earlier this turn goes first
