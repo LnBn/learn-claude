@@ -21,7 +21,9 @@ Captures only reading-relevant content:
 Other tools (Bash, Read, Edit, Agent, ...) are omitted.
 
 Wiring (see settings.json):
-  PreToolUse:quiz/AskUserQuestion -> flushes prose written earlier in the turn (reading order)
+  PreToolUse:quiz/AskUserQuestion -> flushes prose written earlier in the turn, when it is already persisted
+  PostToolUse:quiz            -> replays; prose that preceded the quiz call (persisted only after the tool
+                                 returns in interactive mode) is INSERTED above the quiz block
   UserPromptSubmit          -> logs the prompt live
   PostToolUse:AskUserQuestion -> logs the question + answer live
   Stop                      -> reads the session transcript from a per-session
@@ -263,6 +265,42 @@ def transcript_start(path):
 _STATE_FOR_HEADER = None  # set by handle_hook; append() writes the session header lazily before the first block
 
 
+def _norm(q):
+    return re.sub(r"\s+", " ", (q or "")).strip().lower()
+
+
+def insert_before_quiz(text, question):
+    """The quiz server writes its question block live, but the teacher's prose that preceded the call in the
+    same message is persisted by Claude Code only after the tool returns. When that prose arrives, put it ABOVE
+    the quiz block it preceded. Returns True if inserted, False if no matching block exists (caller appends)."""
+    path = log_file()
+    if not path or not text.strip() or not question:
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+    except Exception:
+        return False
+    target = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == "> [!question] Quiz":
+            j = i + 1
+            while j < len(lines) and lines[j].strip() in (">", ""):
+                j += 1
+            if j < len(lines) and _norm(lines[j].lstrip("> ")) == _norm(question):
+                target = i  # keep the LAST match
+    if target is None:
+        return False
+    block = text.strip("\n").split("\n")
+    lines[target:target] = block + [""]
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception:
+        return False
+    return True
+
+
 HOOK_LOG = os.path.join(STATE_DIR, "md-log.log")
 
 
@@ -495,15 +533,35 @@ def replay_transcript(path, state):
             if any(isinstance(b, dict) and b.get("type") == "tool_use" for b in (msg.get("content") or [])):
                 tool_msg_ids.add(msg.get("id"))
 
+    def trim_narration_edges(text, shares):
+        """Drop a short narration paragraph at the start or end of a text block ("Let me load the quiz tool:")."""
+        paras = [p for p in text.split("\n\n") if p.strip()]
+        while paras and len(paras) > 1 and is_narration(paras[0], shares) and len(paras[0]) <= NARRATION_MAX:
+            paras.pop(0)
+        while paras and len(paras) > 1 and is_narration(paras[-1], shares) and len(paras[-1]) <= NARRATION_MAX:
+            paras.pop()
+        return "\n\n".join(paras)
+
     def flush_text(parts, msg_id=None):
         nonlocal written
         text = "\n\n".join(p for p in parts if p.strip())
         if not text.strip() or SKIP_ASSISTANT.match(text):
             return
-        if is_narration(text, msg_id in tool_msg_ids):
+        shares = msg_id in tool_msg_ids
+        text = trim_narration_edges(text, shares)  # strip "Let me load…" edges first
+        if not text.strip() or is_narration(text, shares):
             return
         blocks.append(assistant_block(text))
         written += 1
+
+    def place_before_quiz(question):
+        """Blocks collected so far precede this quiz call in the transcript: put them above its block if
+        the quiz server already wrote it; otherwise leave them to be appended in order."""
+        if not blocks:
+            return
+        text = "\n\n".join(blocks)
+        if insert_before_quiz(text, question):
+            blocks.clear()
 
     for raw in lines[start:]:
         try:
@@ -573,6 +631,8 @@ def replay_transcript(path, state):
                     ask_calls[b.get("id")] = b.get("input") or {}
                 elif b.get("type") == "tool_use" and b.get("name") == QUIZ_TOOL:
                     quiz_calls.add(b.get("id"))
+                    if b.get("id") in logged_ids:  # the server already wrote this quiz block
+                        place_before_quiz((b.get("input") or {}).get("question"))
             flush_text(parts, msg.get("id"))
 
     for blk in blocks:
@@ -627,6 +687,12 @@ def handle_hook():
                  f"tool_use_in_transcript={found} blocks_written={n}")
         else:
             diag(f"PreToolUse {data.get('tool_name')}: no transcript_path")
+
+    elif event == "PostToolUse" and data.get("tool_name") == QUIZ_TOOL:
+        if tp and os.path.exists(tp):
+            wait_for_tool_use(tp, data.get("tool_use_id"), data.get("tool_name"), state.get("line", 0))
+            n = replay_transcript(tp, state)
+            diag(f"PostToolUse quiz blocks_written={n}")
 
     elif event == "PostToolUse" and data.get("tool_name") == "AskUserQuestion":
         if tp and os.path.exists(tp):  # prose written earlier this turn goes first
