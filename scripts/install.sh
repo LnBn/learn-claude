@@ -23,4 +23,12 @@ tmp="$(mktemp -d)"; printf 'graph TD\n  A[truth] --> B[derived]\n' > "$tmp/t.mmd
 bash "$CLAUDE_DIR/scripts/render-mermaid.sh" "$tmp/t.mmd" | head -1
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="white"/><circle cx="100" cy="50" r="20" fill="crimson"/></svg>' > "$tmp/t.svg"
 bash "$CLAUDE_DIR/scripts/render-svg.sh" "$tmp/t.svg" | head -1
+# Register the quiz MCP server for this project (project-scope .mcp.json lives at the project root).
+PROJECT_DIR="$(dirname "$CLAUDE_DIR")"
+if [ ! -e "$PROJECT_DIR/.mcp.json" ]; then
+  cp "$CLAUDE_DIR/mcp.json" "$PROJECT_DIR/.mcp.json"
+  echo "Wrote $PROJECT_DIR/.mcp.json (quiz MCP server). Claude Code will ask once to enable it."
+else
+  echo "NOTE: $PROJECT_DIR/.mcp.json already exists — merge the 'quiz' entry from $CLAUDE_DIR/mcp.json into it."
+fi
 echo "Done."

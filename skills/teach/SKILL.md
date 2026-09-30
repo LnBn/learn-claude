@@ -7,8 +7,8 @@ description: Teach the learner anything so it actually locks in and is understoo
 
 **Tools in this harness** (the names used throughout this skill):
 
-- **`quiz`** = the **AskUserQuestion** tool used in *graded* form, following the **Quiz protocol** at the end of this file. Header is exactly `Quiz`.
-- **`ask_user_question`** = the **AskUserQuestion** tool used in *non-graded* form (preferences, decisions, direction). Any header except `Quiz`.
+- **`quiz`** = the **`quiz` tool from the quiz MCP server** (listed as `mcp__quiz__quiz`). You pass the options, the correct answer (by option `value`) and the explanation; the tool shows the learner a form, grades their pick the instant they make it, shows them the feedback, and returns the outcome to you. Only if that tool is not available in this session, fall back to the **Quiz protocol** at the end of this file.
+- **`ask_user_question`** = the built-in **AskUserQuestion** tool (preferences, decisions, direction — anything with no right answer). Never use header `Quiz` on it.
 - **`researcher`** = the `researcher` subagent, dispatched with the **Agent** tool (`subagent_type: "researcher"`). It has no memory of this conversation — put the full question in the prompt.
 - **Visuals** — load the `visualize` skill and dispatch `mermaid-maker` / `svg-maker` the same way.
 
@@ -152,9 +152,9 @@ Everything written in a session is rendered to the learner through Obsidian, whi
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 
-## Quiz protocol — how `quiz` works here
+## Quiz protocol — fallback when the `quiz` tool is unavailable
 
-There is no dedicated quiz tool in this harness; **you are the grader**. A `quiz` is one **AskUserQuestion** call followed immediately by your grading. Follow this exactly, every time:
+Use this ONLY if `mcp__quiz__quiz` is not in your tool list (e.g. the quiz MCP server is not enabled). Then **you are the grader**. A `quiz` is one **AskUserQuestion** call followed immediately by your grading. Follow this exactly, every time:
 
 **The call** — one question per call (`questions` has exactly one entry):
 - `header`: exactly `Quiz` (this is how the log and the learner tell graded from non-graded questions).

@@ -10,7 +10,7 @@ The teaching philosophy is unchanged. What changed is the plumbing:
 |---|---|
 | `skills/teach` | `skills/teach/SKILL.md` — same text, tool names mapped, learner pronouns neutralised |
 | `skills/visualize` | `skills/visualize/SKILL.md` — dispatches makers with the Agent tool |
-| `extensions/quiz` (graded popup tool) | **Quiz protocol** inside the teach skill: one `AskUserQuestion` with header `Quiz` + an automatic "I don't know" option, then Claude grades (✓/✗, correct answer, explanation) |
+| `extensions/quiz` (graded popup tool) | `mcp/quiz_server.py` — a dependency-free MCP server exposing a `quiz` tool. The form is shown through MCP elicitation, graded **instantly** by the server (✓/✗, correct answer, explanation), logged live. A model-graded `AskUserQuestion` fallback protocol lives in the teach skill for sessions without the server |
 | `extensions/ask-user-question` | the built-in `AskUserQuestion` tool |
 | `extensions/md-log` | `hooks/md_log.py` wired to `UserPromptSubmit` / `PostToolUse` / `Stop` hooks; `/md-log <file>` and `/md-unlog` skills |
 | `extensions/visual-tools` | `scripts/render-mermaid.sh` + `scripts/render-svg.sh` (mermaid-cli via your installed Chrome; rsvg → ImageMagick → headless Chrome for SVG) |
@@ -22,8 +22,8 @@ This directory **is** a `.claude` directory. From your learning project's root (
 
 ```bash
 cp -r /path/to/learn-claude .claude      # or: git clone <this repo> .claude
-bash .claude/scripts/install.sh          # installs mermaid-cli (one-off, needs node + npm)
-claude                                   # open Claude Code here and accept the trust dialog
+bash .claude/scripts/install.sh          # installs mermaid-cli and writes .mcp.json (one-off, needs node + npm)
+claude                                   # open Claude Code here, accept the trust dialog and enable the quiz MCP server
 ```
 
 Requirements: Claude Code ≥ 2.1, Python 3, Node ≥ 18. For visuals: Chrome/Chromium installed (Mermaid), and any of
@@ -44,10 +44,11 @@ your go-ahead, then teach node by node. Visuals arrive as `![[viz-…png|500]]` 
 
 ## Notes
 
-- **Quizzes are graded by Claude, not by a tool.** The pi version hid the correct answer inside a tool; here Claude
-  holds it and grades in its next message. It is instructed to randomise option order by hand and never to put
-  justification in options. If you want tool-side grading, the natural upgrade is an MCP server exposing a `quiz`
-  tool that uses MCP elicitation for the popup.
+- **Quizzes are graded by the tool, instantly.** Exactly as in pi, the model writes the correct answer and the
+  explanation into the tool call; the server shuffles the options, appends "I don't know", shows an elicitation
+  form, grades the pick locally and returns the outcome. No model round trip before you see ✓/✗. Multi-select
+  questions are shown as one checkbox per option. Check the tool is listed with `/mcp` if quizzes seem to be
+  going through AskUserQuestion instead.
 - **The transcript format Claude Code writes is internal** and may change between releases. `md_log.py` parses it
   defensively and never blocks the session; if a release changes the format, assistant prose may stop appearing in
   the log until the parser is updated (prompts and Q&A are logged from hook payloads and are unaffected).

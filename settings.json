@@ -3,7 +3,11 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"",
+            "timeout": 10
+          }
         ]
       }
     ],
@@ -11,20 +15,29 @@
       {
         "matcher": "AskUserQuestion",
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"",
+            "timeout": 10
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"", "timeout": 20 }
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/md_log.py\"",
+            "timeout": 20
+          }
         ]
       }
     ]
   },
   "permissions": {
     "allow": [
+      "mcp__quiz__quiz",
       "Bash(python3 .claude/hooks/md_log.py *)",
       "Bash(bash .claude/scripts/render-mermaid.sh *)",
       "Bash(bash .claude/scripts/render-svg.sh *)",

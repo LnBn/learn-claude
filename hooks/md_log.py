@@ -11,7 +11,9 @@ render natively — no rendering work here.
 Captures only reading-relevant content:
   - user prompts                           (> [!quote] YOU)
   - assistant text (lesson prose)          (> [!abstract] CLAUDE)
-  - AskUserQuestion Q&A blocks             (> [!question] Quiz / Question  +  > [!example] Answer)
+  - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
+  - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
+                                            writes these itself, live; the Stop replay only backfills
 Other tools (Bash, Read, Edit, Agent, ...) are omitted.
 
 Wiring (see settings.json):
@@ -46,7 +48,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HERE)  # .../.claude
 CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
+QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")  # written by mcp/quiz_server.py
 QUIZ_HEADER = "quiz"
+QUIZ_TOOL = "mcp__quiz__quiz"
 
 
 # ---------------------------------------------------------------- config/state
@@ -138,6 +142,57 @@ def answer_block(q, selected, other, note):
     if not body:
         body = ["(no answer)"]
     return callout("example", "Answer", body)
+
+
+# ---- graded quiz tool (mcp/quiz_server.py) — formatting kept in sync with the server
+
+def quiz_question_block(r):
+    body = [r["question"]]
+    if r.get("details"):
+        body += ["", r["details"]]
+    body.append("")
+    body += [f"{o['index']}. {o['label']}" for o in r["options"]]
+    if r.get("multiSelect"):
+        body += ["", "(select all that apply)"]
+    return callout("question", "Quiz", body)
+
+
+def quiz_result_block(r):
+    status = r.get("status")
+    if status == "cancelled":
+        return callout("warning", "Quiz — cancelled", ["(user skipped)"])
+    if status == "unavailable":
+        return callout("warning", "Quiz — unavailable", [r.get("message", "")])
+    by_index = {o["index"]: o["label"] for o in r["options"]}
+    correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
+    body = []
+    if r.get("dontKnow"):
+        kind, title = "info", "I don't know"
+        body.append(f"Correct answer: {correct}")
+    else:
+        selected = ", ".join(f"{i}. {by_index[i]}" for i in r.get("answers", []))
+        if r.get("correct"):
+            kind, title = "success", "✓ Correct"
+            body.append(f"Selected: {selected}")
+        else:
+            kind, title = "failure", "✗ Incorrect"
+            body += [f"Selected: {selected}", f"Correct answer: {correct}"]
+    if r.get("explanation"):
+        body += ["", r["explanation"]]
+    if r.get("note"):
+        body += ["", f"Note: {r['note']}"]
+    return callout(kind, title, body)
+
+
+def quiz_blocks_from_result(text):
+    """Parse the QUIZ_JSON line the quiz tool appends to its result."""
+    if not isinstance(text, str) or "QUIZ_JSON:" not in text:
+        return ""
+    try:
+        r = json.loads(text.split("QUIZ_JSON:", 1)[1].strip().splitlines()[0])
+    except Exception:
+        return ""
+    return quiz_question_block(r) + "\n\n" + quiz_result_block(r)
 
 
 def append(text):
@@ -281,8 +336,9 @@ def replay_transcript(path, state):
     if start > len(lines):  # transcript rewritten (e.g. compaction) — start over
         start = 0
     pending_prompts = set(state.get("prompts", []))
-    logged_ids = set(state.get("tool_ids", []))
+    logged_ids = set(state.get("tool_ids", [])) | set(load_json(QUIZ_LOGGED, []))
     ask_calls = {}  # tool_use_id -> input
+    quiz_calls = set()  # tool_use_ids of the graded quiz tool
     written = 0
     blocks = []
 
@@ -339,6 +395,15 @@ def replay_transcript(path, state):
                                 blocks.append(qa)
                                 written += 1
                             logged_ids.add(tid)
+                        elif tid in quiz_calls and tid not in logged_ids:
+                            resp = b.get("content")
+                            if isinstance(resp, list):
+                                resp = "".join(c.get("text", "") for c in resp if isinstance(c, dict))
+                            qa = quiz_blocks_from_result(resp)
+                            if qa:
+                                blocks.append(qa)
+                                written += 1
+                            logged_ids.add(tid)
         elif t == "assistant" and isinstance(content, list):
             parts = []
             for b in content:
@@ -348,13 +413,15 @@ def replay_transcript(path, state):
                     parts.append(b.get("text", ""))
                 elif b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
                     ask_calls[b.get("id")] = b.get("input") or {}
+                elif b.get("type") == "tool_use" and b.get("name") == QUIZ_TOOL:
+                    quiz_calls.add(b.get("id"))
             flush_text(parts)
 
     for blk in blocks:
         append(blk)
     state["line"] = len(lines)
     state["prompts"] = sorted(pending_prompts)
-    state["tool_ids"] = sorted(logged_ids)[-200:]
+    state["tool_ids"] = sorted(logged_ids)[-400:]
     return written
 
 
