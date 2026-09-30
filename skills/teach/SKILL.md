@@ -90,6 +90,10 @@ The tool already tells you to keep options even. That rule isn't enough on its o
 
 If, reading the finished set cold, you can still tell which is right without knowing the material, you skipped step 1 or 2 — regenerate, don't patch.
 
+### Phase 0 — Open the lesson (a few sentences, before any question)
+
+Before the first quiz, write a short opening the learner can read: what the topic is in one or two plain sentences, why it is worth understanding, and what is about to happen — a handful of graded questions to find where their knowledge ends, one question about what they want from it, then a plan for their approval. Three to six sentences. No headings, no list. This is the first thing in the lesson note after their request, so it should read like the opening paragraph of a chapter, not like a status message.
+
 ### Phase 1 — Probe (never skip this)
 
 You can't teach into the learner's zone of proximal development without knowing where its edges are, and you can't aim the teaching without knowing what they're actually reaching for. Two separate unknowns, two separate tools — keep the boundary clean:

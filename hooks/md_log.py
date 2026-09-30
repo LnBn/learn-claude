@@ -217,6 +217,8 @@ def quiz_blocks_from_result(text):
         r = json.loads(text.split("QUIZ_JSON:", 1)[1].strip().splitlines()[0])
     except Exception:
         return ""
+    if r.get("reask"):
+        return quiz_result_block(r)  # the question block was logged with the "asked before answering" note
     return quiz_question_block(r) + "\n\n" + quiz_result_block(r)
 
 

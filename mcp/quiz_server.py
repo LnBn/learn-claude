@@ -35,6 +35,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
+LAST_ASKED = os.path.join(STATE_DIR, "quiz-last-asked.json")  # set when the learner asks before answering
 SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
 
@@ -171,6 +172,23 @@ def diag(msg):
         pass
 
 
+def save_last_asked(displayed):
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(LAST_ASKED, "w", encoding="utf-8") as f:
+            json.dump({"labels": sorted(o["label"].strip().lower() for o in displayed),
+                       "order": [o["label"].strip().lower() for o in displayed]}, f)
+    except Exception:
+        pass
+
+
+def clear_last_asked():
+    try:
+        os.remove(LAST_ASKED)
+    except Exception:
+        pass
+
+
 def mark_logged(tool_use_id):
     if not tool_use_id:
         return
@@ -290,8 +308,16 @@ def run_quiz(args, tool_use_id):
     if len(wanted) > 1 and not multi:
         return err("several correct answers given but multiSelect is not true")
 
+    # A re-ask after "ask the teacher first": same option set as the pending question -> keep the
+    # displayed order the learner already saw and do not log the question block again.
+    prev = load_json(LAST_ASKED, {})
+    key_now = sorted(o["label"].strip().lower() for o in options)
+    reask = bool(prev) and prev.get("labels") == key_now
     displayed = list(options)
-    if shuffle:
+    if reask:
+        order = prev.get("order") or []
+        displayed.sort(key=lambda o: order.index(o["label"].strip().lower()) if o["label"].strip().lower() in order else 99)
+    elif shuffle:
         random.shuffle(displayed)
     for i, o in enumerate(displayed, 1):
         o["index"] = i
@@ -299,11 +325,13 @@ def run_quiz(args, tool_use_id):
     record = {
         "status": "answered", "question": question, "details": details, "multiSelect": multi,
         "options": [{"index": o["index"], "label": o["label"]} for o in displayed],
-        "correctIndices": correct_indices, "explanation": explanation,
+        "correctIndices": correct_indices, "explanation": explanation, "reask": reask,
     }
 
-    # --- show the question (live) before the learner answers
-    append_log(question_block(record))
+    # --- show the question (live) before the learner answers (not again on a re-ask)
+    if not reask:
+        append_log(question_block(record))
+    clear_last_asked()
 
     # --- ask the learner: tmux popup when available (full question + options, like pi),
     #     otherwise Claude Code's elicitation form (which truncates the message to one line)
@@ -318,6 +346,7 @@ def run_quiz(args, tool_use_id):
         record["learnerQuestion"] = q
         append_log(result_block(record))
         mark_logged(tool_use_id)
+        save_last_asked(displayed)
         return result(
             "The learner asked a question BEFORE answering (no answer was given, nothing was graded):\n"
             f"  {q}\n"
