@@ -209,6 +209,8 @@ def result_block(r):
         return callout("warning", "Quiz — cancelled", ["(user skipped)"])
     if status == "unavailable":
         return callout("warning", "Quiz — unavailable", [r.get("message", "")])
+    if status == "asked":
+        return callout("note", "Asked before answering", [r.get("learnerQuestion", "")])
     by_index = {o["index"]: o["label"] for o in r["options"]}
     correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
     body = []
@@ -308,6 +310,18 @@ def run_quiz(args, tool_use_id):
     seen_feedback = ui is not None  # the tmux popup shows the grade itself
     if ui is None:
         ui = ask_via_elicitation(record, displayed, msg_details=details, multi=multi)
+
+    if ui.get("action") == "ask":
+        q = str(ui.get("question") or "").strip()
+        record["status"] = "asked"
+        record["learnerQuestion"] = q
+        append_log(result_block(record))
+        mark_logged(tool_use_id)
+        return result(
+            "The learner asked a question BEFORE answering (no answer was given, nothing was graded):\n"
+            f"  {q}\n"
+            "Answer it now, without giving away the quiz answer. Then call quiz again with the same question, "
+            "options, correctAnswer and explanation so they can answer.", record)
 
     if ui.get("action") != "accept":
         record["status"] = "cancelled"

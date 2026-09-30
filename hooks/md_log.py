@@ -183,6 +183,8 @@ def quiz_result_block(r):
         return callout("warning", "Quiz — cancelled", ["(user skipped)"])
     if status == "unavailable":
         return callout("warning", "Quiz — unavailable", [r.get("message", "")])
+    if status == "asked":
+        return callout("note", "Asked before answering", [r.get("learnerQuestion", "")])
     by_index = {o["index"]: o["label"] for o in r["options"]}
     correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
     body = []

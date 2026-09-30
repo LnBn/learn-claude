@@ -8,10 +8,11 @@ spec:   {"question", "details", "options": [{"index","label","description"}],
          "multiSelect": bool, "dontKnow": "I don't know",
          "correctIndices": [..], "explanation": str}   # revealed only after answering
 result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str}
+        or {"action":"ask","question":str}     # learner wants an answer BEFORE choosing
         or {"action":"cancel"}
 
 Keys: ↑/↓ or j/k move · 1-9 jump · Space toggle (multi) · Enter submit
-      Tab edit note · PgUp/PgDn scroll · Esc cancel
+      Tab edit note · ? ask the teacher first · PgUp/PgDn scroll · Esc cancel
 LaTeX in the question/options/explanation is shown as Unicode (latex_text.py).
 """
 import curses
@@ -116,6 +117,8 @@ def main(stdscr, spec, out_path):
     selected = set()
     note = ""
     editing_note = False
+    asking = False  # typing a question to send BEFORE answering
+    question_text = ""
     scroll = 0
     free_scroll = False
 
@@ -201,12 +204,17 @@ def main(stdscr, spec, out_path):
                 pass
         lines.append(("", 0))
         note_attr = curses.A_REVERSE if editing_note else curses.A_DIM
-        lines.append(("Note / question for the teacher: " + (note if note else "(Tab to type)"), note_attr))
+        lines.append(("Note with your answer: " + (note if note else "(Tab to type)"), note_attr))
+        if asking:
+            for k, ln in enumerate(textwrap.wrap("Ask the teacher first: " + question_text, width) or ["Ask the teacher first: "]):
+                lines.append((ln, curses.A_REVERSE))
         lines.append(("", 0))
-        help_txt = ("↑/↓ move · Space toggle · Enter submit · Tab note · Esc cancel" if multi
-                    else "↑/↓ move · Enter choose · Tab note · Esc cancel")
+        help_txt = ("↑/↓ move · Space toggle · Enter submit · Tab note · ? ask first · Esc cancel" if multi
+                    else "↑/↓ move · Enter choose · Tab note · ? ask first · Esc cancel")
         if editing_note:
             help_txt = "type your note · Tab/Enter back to options · Esc cancel"
+        if asking:
+            help_txt = "type your question · Enter send (quiz re-asked after the answer) · Esc back"
         lines.append((help_txt, curses.A_DIM))
 
         # keep the cursor row visible (PageUp/PageDown scroll freely)
@@ -223,6 +231,22 @@ def main(stdscr, spec, out_path):
         stdscr.refresh()
 
         ch = stdscr.getch()
+        if asking:
+            if ch == 27:
+                asking = False
+            elif ch in (10, 13, curses.KEY_ENTER):
+                if question_text.strip():
+                    write({"action": "ask", "question": question_text.strip()})
+                    return
+                asking = False
+            elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                question_text = question_text[:-1]
+            elif 32 <= ch < 0x110000:
+                try:
+                    question_text += chr(ch)
+                except ValueError:
+                    pass
+            continue
         if editing_note:
             if ch in (27,):
                 write({"action": "cancel"})
@@ -254,6 +278,8 @@ def main(stdscr, spec, out_path):
             cursor = (cursor + 1) % len(entries)
         elif ch == 9:
             editing_note = True
+        elif ch == ord("?"):
+            asking = True
         elif ord("1") <= ch <= ord("9"):
             n = ch - ord("0")
             for i, (idx, _, _) in enumerate(entries):

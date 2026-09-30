@@ -65,7 +65,8 @@ retrieval check.
   explanation into the tool call; the server shuffles the options, appends "I don't know", pops up the question,
   grades the pick locally, shows the feedback, and returns the outcome. No model round trip before you see ✓/✗.
   **Run Claude Code inside tmux** to get the popup. Keys: ↑/↓ or j/k move, 1–9 jump, Space toggles (multi-select),
-  Enter submits, Tab edits the note, PgUp/PgDn scroll, Esc cancels; any key dismisses the feedback screen. Text
+  Enter submits, Tab edits a note sent with your answer, `?` sends a question to the teacher *before* answering
+  (the quiz is re-asked after the answer), PgUp/PgDn scroll, Esc cancels; any key dismisses the feedback screen. Text
   wraps to the popup width. LaTeX in the question, options and explanation is shown as Unicode in the popup
   (`mcp/latex_text.py`: x² αᵢ √(a²+b²) ∑ᵢ₌₁ⁿ …; `pip install pylatexenc` widens coverage) while the markdown log
   keeps the real LaTeX for Obsidian.
