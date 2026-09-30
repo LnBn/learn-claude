@@ -10,7 +10,7 @@ render natively — no rendering work here.
 
 Captures only reading-relevant content:
   - user prompts                           (> [!quote] YOU)
-  - assistant text (lesson prose)          (> [!abstract] CLAUDE) — minus session narration
+  - assistant text (lesson prose)          (written bare, no banner) — minus session narration
                                             ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
   - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
@@ -126,7 +126,7 @@ def user_block(text):
 
 
 def assistant_block(text):
-    return f"> [!abstract] CLAUDE\n\n{text}"
+    return text  # the teacher's prose is the lesson itself; no banner
 
 
 def question_block(q):

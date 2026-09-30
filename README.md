@@ -39,7 +39,9 @@ teach me how TCP achieves reliability
 
 Claude loads the `teach` skill on its own whenever it is explaining something (CLAUDE.md nudges it too). It will
 probe your level with graded questions, ask about your goal, present a plan with a mermaid dependency map, wait for
-your go-ahead, then teach node by node. Visuals arrive as `![[viz-…png|500]]` embeds pointing into `viz/`.
+your go-ahead, then teach node by node. Each node is one section: a `###` heading, a written exposition to read in
+full, a **check** quiz (did you read it closely) and an **apply** quiz (reason, calculate or run code). The log
+mirrors your prompts as `YOU` quotes and the teacher's prose bare, so the note reads like a textbook chapter. Visuals arrive as `![[viz-…png|500]]` embeds pointing into `viz/`.
 
 `/md-unlog` stops mirroring. Logging state lives in `.claude/md-log.json` and `.claude/md-log-state/` (gitignored).
 

@@ -71,6 +71,8 @@ Choose per topic and per the learner's apparent energy:
 
 When unsure, lean Socratic for things they can clearly reason about; otherwise narrate.
 
+In Phase 3 both modes live *inside* the written exposition of a section (see below): Socratic means the text poses the motivating problem and invites the learner to attempt it before reading on; expository means the text narrates the path. Either way the section is read in full before its questions, and the questions (check, then apply) are where the learner's own reasoning is tested and graded.
+
 ## The process: probe → plan → teach
 
 The two principles are *how* you teach. This is *when* — the shape of a teaching session. Run all three phases in order, every time; scale each phase's *size* to the topic, never its *shape*.
@@ -101,6 +103,8 @@ You can't teach into the learner's zone of proximal development without knowing 
 - **One wrong answer is not "done" either — and it is *not* a cue to start teaching.** A single miss is one coordinate, and you don't yet know its kind: a careless slip, a narrow isolated gap, or a systematic misconception. Probe *around* it to characterize it before concluding anything. Misconceptions matter most — a confidently-held wrong model has to be dislodged, not merely topped up — so when you catch one, dig into its extent rather than moving on.
 - **Map every strand the lesson rests on.** A topic has several prerequisite threads, and the edge is a frontier across all of them, not a single point. Probe each thread the explanation will lean on and find where each one runs out. Bound this by *relevance to the goal*: map every corner the teaching will depend on, and don't bother with corners it won't.
 
+Where possible, probe with questions that need a step of reasoning or a small calculation, not recognition of a term: an answer that can be intuited from vocabulary tells you little about understanding.
+
 Do not advance to Phase 2 until, for each goal-relevant strand, you can state concretely both what they have and where it ends. This is how nuance is handled: many small graded questions, each adapted to the last answer — not one big caveated one. Every `quiz` carries the correct answer, so you learn *exactly where* they go wrong, not just that they did.
 
 **1b. Their learning goal — use `ask_user_question`.** Find out what they actually want taught. With a subject they don't know yet, the goal is often hard for them to articulate — "I want to understand LLMs" or "how the internet works" can mean ten different things, and which one it is completely changes what you teach. Interrogate the vision until it's concrete. This has no right answer, so it's `ask_user_question`, never `quiz`.
@@ -126,20 +130,34 @@ A good plan is what makes the teaching feel inevitable instead of arbitrary.
 
 **Then stop and wait for the learner's go-ahead.** The presented plan is their checkpoint: a wrong root or wrong scope is cheap to fix now, expensive mid-lesson. Do not begin Phase 3 until they okay the plan.
 
-### Phase 3 — Teach (the loop)
+### Phase 3 — Teach (the loop of sections)
 
-Build the learner's dependency graph one **node** at a time — and every node gets the same treatment, whether it's a foundational unconditional truth or a derived step. There is almost never just one; most topics need several, and each new one goes through the loop exactly like any other node:
+Build the learner's dependency graph one **node** at a time. Every node — foundational unconditional truth or derived step — is taught as one **section** with a fixed shape, like a textbook section or a lecture segment: **read, then check, then apply**. The shape never changes; only its size does.
 
-For **every node** (each unconditional truth *and* each non-trivial reasoning step toward the goal), run:
+**Why this shape.** Probing questions can be answered by intuition or pattern-matching without the material ever being understood. A section forces the order: the learner reads a complete exposition first, proves they read it closely, and then has to *use* it. Nothing is tested that has not first been taught in writing.
 
-1. **Motivate.** Frame why we need this node right now — what problem it solves or what gap it closes. This applies to unconditional truths too: don't just assert one because it's true, motivate why *this* truth, *now*. "Why are we even bringing this in?"
-2. **Establish.** 
-   - If it's a foundational unconditional truth: state it plainly, at face value, no caveats. Surface an atomic unit if one fits.
-   - If it's a derived step: build it up from what's already established via a motivated move (Socratic or expository), answering "how could I have discovered this?" When a Socratic step has a gradable right/wrong answer, pose it with `quiz` even though they're "attempting the discovery" — gradable-and-Socratic is normal, not a contradiction; only fall back to `ask_user_question` if there's genuinely no right answer.
-3. **Connect.** Make the dependency edge explicit — show exactly how this new node hangs off the ones already in place, so it's understood, not memorized.
-4. **Quiz-check.** Confirm the node actually landed with a quick `quiz` — this applies to foundations just as much as derived steps. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if they miss it, that node isn't solid, so stop and fix it before building anything on top of it.
+For **every node**, in this order:
 
-Repeat this full loop per node — don't front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → quiz-check just like a derived step would.
+1. **Heading.** Start the section with a markdown heading: `### <node name>`. Sessions are `##` in the log, so `###` nests under them and the lesson file gets a table of contents.
+
+2. **Read — the exposition.** One continuous, self-contained piece of prose the learner reads in full before anything is asked. It is written, not conversational, and it carries the whole node:
+   - *Motivate.* Why we need this node now — the problem it solves or the gap it closes. Unconditional truths get motivated too: why *this* truth, *now*.
+   - *Establish.* A foundational truth is stated plainly, at face value, no caveats (surface an atomic unit if one fits). A derived step is built up from what is already established, along the motivated discovery path — "how could I have discovered this?" — so nothing appears from nowhere.
+   - *Connect.* The dependency edge made explicit: exactly how this node hangs off the ones already in place.
+   - *Make it concrete.* At least one worked example, calculation, or minimal code snippet where the topic allows; the notation and the definitions the learner will need, written out.
+   Length is whatever the node needs — typically a few hundred words, more for a heavy node. Do not split it with questions; the Socratic move, if any, is a "try this before reading on" line *inside* the text, never a tool call. A visual goes here when the `visualize` skill applies.
+
+3. **Check — did they read it?** One `quiz` question (occasionally two) answerable directly from a close reading of the exposition. It tests attention and precision, not insight: a definition, a stated condition, a step in the derivation, the direction of an inequality. Distractors are what a skim would produce — a swapped condition, a missing caveat, the neighbouring concept. Easy for someone who read; not guessable from vocabulary alone.
+
+4. **Apply — can they use it?** One `quiz` question that cannot be answered by recognition. The learner must reason from the node, do a calculation, or run code — say so, and give the numbers, the setup, or the snippet to run. Options are the *results* of doing the work (a value, a conclusion, a consequence), with distractors that are the results of the common wrong moves. If a calculation is long enough to need pen and paper or a script, say that plainly and let them take the time.
+
+5. **Respond to the outcome.**
+   - Check missed → they did not read closely, or the text was unclear. Point to the exact sentence, restate that part, re-check with a different question.
+   - Apply missed → diagnose which move went wrong from the distractor they chose, re-teach *that* move in a short addendum to the exposition, then a fresh Apply variant. Do not proceed on a failed Apply.
+   - "I don't know" → a genuine gap: re-teach, do not re-ask the same question.
+   - Both passed → the node is solid. One line to close the section, then the next heading.
+
+Repeat per node; never front-load all the foundations and stop checking. Any new unconditional truth needed mid-session gets its own section like any other node.
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 

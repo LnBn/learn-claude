@@ -89,7 +89,7 @@ def session_count(lines):
 
 
 def user_prose(lines):
-    """Rough count of learner prompts, for the brief."""
+    """Rough count of learner prompts, for the brief (assistant prose has no banner)."""
     return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU")
 
 
