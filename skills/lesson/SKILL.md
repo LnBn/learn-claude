@@ -24,13 +24,7 @@ Load the `teach` skill first if it is not already loaded — everything below ru
    printed in full and counts as the checkpoint. Logs written by pi's md-log (with `PI` blocks and its quiz
    callouts) are understood too — resuming a pi-era lesson is the same command.
 3. **New lesson** (no file / empty): start the teach process from Phase 0 (the opener, as its own reply).
-4. **Existing lesson:** ask, with one `AskUserQuestion` call and **nothing else in the reply** (no prose before or after — the note must not show this exchange, and the hook drops questions with this header):
-   - `header`: exactly `Resume`
-   - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness) followed by: *"Run a short recall check on what was established before continuing?"*
-   - options: **Continue where we left off** — pick up at the next node, no recall check; **Recall check first** — 2 to 4 quizzes on the established nodes, then continue.
-   If there is no checkpoint and no hand-off note, add a third option **Let me say where we got to** and reconstruct the state from the map, quiz outcomes and tail with their answer before going on.
-5. **Continue where we left off** → say nothing about the choice; go straight to step 6. **Recall check first** → run a short retrieval check — 2 to 4 `quiz` questions — over the confirmed nodes, prioritising anything listed as shaky or missed and the node(s) the next step depends on. Anything that fails is re-established (motivate → establish → connect → check) before you move on.
-6. Then continue the Phase 3 loop from the checkpoint's **Next** node. Re-present the dependency map only if it changed.
+4. **Existing lesson:** follow **Resuming a lesson** in the teach skill: the `Resume` question, the optional recall check, then the checkpoint's **Next**. If the learner stopped after reading a node, the session re-opens with a pointer back to that reading, not with its quiz.
 
 ## `pause`
 
@@ -41,7 +35,7 @@ python3 .claude/hooks/lesson.py checkpoint "<lesson.md>" <<'EOF'
 **Goal:** <the concrete goal from Phase 1b>
 **Confirmed nodes:** <node — one line each, quiz-checked this or a previous session>
 **Shaky / missed:** <node — what went wrong, the misconception if you found one; or "none">
-**Next:** <the next node from the map, and the motivating problem you planned to open it with>
+**Next:** <the next node from the map, and the motivating problem you planned to open it with; if its exposition is already written and unchecked, say so — the next session has the learner re-read it before its check>
 **Notes:** <energy, Socratic vs expository preference, anything the next teacher needs>
 EOF
 ```

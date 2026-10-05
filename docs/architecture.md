@@ -108,7 +108,9 @@ With `--from-now` the script finds the transcript by session id under `~/.claude
 - a quiz tally and the last twelve quiz outcomes;
 - the highest equation and example numbers used.
 
-The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node.
+The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node. The procedure is the section "Resuming a lesson" of the teach skill, shared by `/lesson resume` and `/course next`.
+
+**Stopped after reading.** When the next node's exposition is already in the note but unchecked, the session re-opens with a pointer to that reading and a `ready` line, not with its quiz. `lesson.py lastsection <note>` prints that node's text (from the last `###` heading on) so the questions match what was written.
 
 **Quiz outcomes** are read from the note: each `[!question] Quiz` block is paired with the next result callout before the following quiz. pi's callout titles are understood, so pi-era notes resume.
 

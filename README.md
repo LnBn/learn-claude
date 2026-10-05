@@ -123,6 +123,7 @@ A lesson lives in its note, so you can stop and continue in a new session. Keep 
 - If you simply say you are stopping, the teacher saves a checkpoint too.
 - Checkpoints live in a hidden file beside the note (`lessons/.checkpoints/<name>.md`), so the note stays clean.
 - On resume the teacher reads the checkpoint, the map and your recent quiz results, and asks whether you want a short recall check before continuing.
+- If you stopped right after reading a section, the next session points you back to that reading. Its check and apply questions follow when you type `ready`.
 - Notes written by the original pi version resume the same way. A `… — Resume Here.md` companion note is picked up automatically.
 
 ## Following a textbook

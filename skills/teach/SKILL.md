@@ -192,7 +192,23 @@ The learner may ask a question at any point: typed at the prompt, in the note fi
 
 ## Multi-session lessons
 
-A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, save a **checkpoint** exactly as the `lesson` skill's `pause` describes: one Bash call to `.claude/hooks/lesson.py checkpoint` with the checkpoint on stdin — confirmed nodes, shaky nodes, the next node, notes. It goes to a hidden sidecar, never into the note. Reply with only the `🗒` line the script prints. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, offer a recall check (the learner may decline it), and continue from the checkpoint's next node.
+A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, save a **checkpoint** exactly as the `lesson` skill's `pause` describes: one Bash call to `.claude/hooks/lesson.py checkpoint` with the checkpoint on stdin — confirmed nodes, shaky nodes, the next node, notes. It goes to a hidden sidecar, never into the note. Reply with only the `🗒` line the script prints.
+
+### Resuming a lesson
+
+A session that starts with `/lesson resume <file>`, or with `/course next` on a chapter whose note exists, continues an earlier lesson. The skill that started it has linked the note and given you the resume brief; that brief is all you read of the note, apart from the one case in step 3.
+
+1. **Ask once how to start.** One `AskUserQuestion` call and **nothing else in the reply** (no prose before or after; the note must not show this exchange, and the hook drops questions with this header):
+   - `header`: exactly `Resume`
+   - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness), then: *"Run a short recall check on earlier material first?"*
+   - options: **Continue where we left off** and **Recall check first** (2 to 4 quizzes on the established nodes, then continue). Each description says what the learner will actually meet first: "the reading for §1.2.2", or "you re-read §1.2.1 in the note, then answer its questions".
+   - If there is no checkpoint and no hand-off note, add a third option **Let me say where we got to**, and reconstruct the state from the map, the quiz outcomes and the tail with their answer.
+2. **Act on the answer.** *Continue*: say nothing about the choice. *Recall check*: 2 to 4 `quiz` questions over the confirmed nodes, prioritising anything listed as shaky or missed and the nodes the next step depends on. Anything that fails is re-established (motivate, establish, connect, check) before you move on.
+3. **Pick up at the checkpoint's Next.** Re-present the dependency map only if it changed.
+   - *Next is a new node:* write its exposition, as always.
+   - *Next is a node whose exposition is already in the note but was never checked* (the learner stopped after reading it): **do not open with its quiz, whatever the checkpoint says.** They read that text in another session, perhaps days ago. Get the text with `python3 .claude/hooks/lesson.py lastsection "<note>"`, then reply with a short re-entry: two or three sentences recalling what the node established, the heading it sits under in the note, and the closing line `Say **ready** when you have re-read it.` The check and the apply follow when they say ready, written against the text that is in the note.
+
+**A resumed session never opens with a graded question unless the learner chose the recall check.**
 
 ## Teaching from a book (courses)
 

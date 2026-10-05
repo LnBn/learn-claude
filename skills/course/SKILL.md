@@ -50,7 +50,7 @@ Setup is not lesson content, so nothing of it may reach a note.
    ```
 3. Load the `teach` skill if it is not loaded and follow its section **Teaching from a book**.
    - **The note is new** (first unit of a chapter): run the chapter start described there. Your reply to this command is the `### Overview` of the chapter and nothing else: it ends with the ready-or-probe choice, and no quiz or question is asked in it. A probe happens only if the learner then asks for one.
-   - **The note exists**: get the resume brief with `python3 .claude/hooks/lesson.py summary "<note>"` and follow steps 4 to 6 of the `lesson` skill's `resume` (the `Resume` question, the optional recall check, then continue). Which unit comes next is what `book.py` printed; where things stand inside that unit is what the checkpoint says.
+   - **The note exists**: get the resume brief with `python3 .claude/hooks/lesson.py summary "<note>"` and follow **Resuming a lesson** in the teach skill (the `Resume` question, the optional recall check, then the checkpoint's Next). Which unit comes next is what `book.py` printed; where things stand inside that unit is what the checkpoint says.
 4. Read the pages on the `READ` line before you write anything about the unit.
 
 `/lesson pause` works as in any lesson: the checkpoint belongs to the chapter note.
