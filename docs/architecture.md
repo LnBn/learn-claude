@@ -68,6 +68,8 @@ Four hooks call the same script:
 
 Because of that persistence order, the teach skill ends the reading turn before the check quiz: the learner
 types `ready`, and only then is the quiz called. That is the reliable fix; the insertion is the safety net.
+The lesson opener (and the `### Overview` of a course chapter) is a reply of its own for the same reason: a
+quiz called in the reply that carries the opener reaches the learner first.
 
 The session header (`## Session — date`) is written with the first content block, never on hook entry, so an
 abandoned session leaves no header. Every hook invocation is logged to `md-log-state/md-log.log`.
@@ -119,8 +121,12 @@ records, goal, solutions policy). The visible index `<slug>.md` is regenerated f
 end). Nothing is cached; `pdfinfo -dests` takes under half a second on an 860-page book.
 
 `/course next` runs `book.py next`, links the chapter note and hands over to the teach skill's section
-"Teaching from a book": read the pages, then teach the unit as ordinary nodes, in the book's notation and with
-the book's equation numbers as tags (`\tag{2.51}`, `^eq-2-51`). `book.py done <id>` records the unit and
+"Teaching from a book". A new chapter starts with an `### Overview` reply (text and the chapter's map, no
+question); the learner answers `ready` or `probe`, and only `probe` runs the level-finding quizzes. Then:
+read the pages, and teach the unit as ordinary nodes, in the book's notation and with
+the book's equation numbers as tags (`\tag{2.51}`, `^eq-2-51`). The book is the backbone, not the boundary:
+the teacher may add outside material and further reading, marked as not in the book and held to the usual
+accuracy rule (the researcher), not to the page. `book.py done <id>` records the unit and
 prints the next one. The `exercise` skill gives one rung of a five-rung hint ladder per reply and records the
 rung; `ASSESSED` exercises and the solutions policy are printed by `book.py exercise <id>` on every lookup, so
 the rule is in front of the model each time rather than remembered.

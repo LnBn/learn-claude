@@ -25,8 +25,9 @@ lesson → exercises → lesson. **Not tested:** the skills in a live session.
 
 - `/course new ~/Documents/murphybook/book1.pdf pml1`: nothing mirrored during setup; the three questions; the
   syllabus that results from "core sections only".
-- `/course next` on a new chapter: opener, probe, plan as a map of the chapter's units; then whether the teacher
-  reads the pages before every unit and stops for `ready`.
+- `/course next` on a new chapter: the reply is the `### Overview` with the map and the ready-or-probe line,
+  and no quiz (two live runs before this rule went straight to a probe quiz with no text); then whether the
+  teacher reads the pages before every unit and stops for `ready`.
 - Condensing: is a 10-page section (2.2) a readable lesson, or should long sections always split by subsection?
 - Book equation tags (`\tag{2.51}`, `^eq-2-51`) and links in Obsidian.
 - `book.py done` after a unit: silent in the note, next unit follows without `/course next`.

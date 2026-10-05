@@ -162,11 +162,11 @@ def find_note(path):
 
 def summary(path, notes=None):
     if not os.path.exists(path):
-        print(f"NO LESSON FILE at {path} — this is a new lesson. Start from Phase 1 of the teach skill.")
+        print(f"NO LESSON FILE at {path} — this is a new lesson. Start from Phase 0 of the teach skill.")
         return
     lines = read(path)
     if not any(ln.strip() for ln in lines):
-        print(f"LESSON FILE IS EMPTY ({path}) — this is a new lesson. Start from Phase 1 of the teach skill.")
+        print(f"LESSON FILE IS EMPTY ({path}) — this is a new lesson. Start from Phase 0 of the teach skill.")
         return
     notes = notes or find_note(path)
     cps = checkpoints(lines)  # legacy: checkpoint callouts inside the note

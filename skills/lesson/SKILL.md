@@ -23,7 +23,7 @@ Load the `teach` skill first if it is not already loaded — everything below ru
    A hand-off note (`--notes`, or a `<stem> — Resume Here.md` file found automatically next to the lesson) is
    printed in full and counts as the checkpoint. Logs written by pi's md-log (with `PI` blocks and its quiz
    callouts) are understood too — resuming a pi-era lesson is the same command.
-3. **New lesson** (no file / empty): say so in one line and start the teach process from Phase 1 (probe).
+3. **New lesson** (no file / empty): start the teach process from Phase 0 (the opener, as its own reply).
 4. **Existing lesson:** ask, with one `AskUserQuestion` call and **nothing else in the reply** (no prose before or after — the note must not show this exchange, and the hook drops questions with this header):
    - `header`: exactly `Resume`
    - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness) followed by: *"Run a short recall check on what was established before continuing?"*

@@ -368,7 +368,7 @@ def clean_user_text(text):
 
 
 ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sure|proceed|carry on|"
-                    r"i'?m ready|ready to go|go ahead|start|let'?s go|k)\W*$", re.I)
+                    r"i'?m ready|ready to go|go ahead|start|let'?s go|k|probe|probe first|probe me)\W*$", re.I)
 
 
 def is_user_prose(text):
@@ -396,7 +396,7 @@ NARRATION_RE = re.compile(
 NARRATION_ANY_RE = re.compile(
     r"(waiting (on|for) your (answer|reply|response)|I'll hold here|hold here until|"
     r"once (it|that|the \w+) (comes|is) back|will follow it|before asking the next|"
-    r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} when|"
+    r"running in the background|moved to the background|say \*{0,2}ready\*{0,2} (when|to)|"
     r"say \*{0,2}(go|yes|ok|continue|next)\*{0,2} (to|when|and|or|if)|"
     r"waiting for your go-ahead|look right to you|say what you want changed|before we start\?|"
     r"the lesson is paused|next session (opens|starts|begins|picks up)|stays open until|"

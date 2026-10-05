@@ -71,7 +71,8 @@ You can type a question at any prompt. The teacher answers it before moving on.
 
 0. **Open.** A written opening before any question. For a beginner request ("from the basics") it is a one or
    two paragraph overview of the subject, then one question: probe my level first, or start from the beginning,
-   and what do you want from this. Otherwise a few sentences on the topic and what is about to happen.
+   and what do you want from this. Otherwise a few sentences on the topic and what is about to happen; the
+   teacher stops there, and the first quiz comes after you type `ready`. A quiz is never the first thing you read.
 1. **Probe.** Graded questions to find the edge of what you know, with a step of reasoning where possible.
 2. **Plan.** Under a `### Plan` heading: a short approach and a mermaid dependency map, unconditional truths at
    the roots, your goal at the sink. Nothing is taught until you approve it.
@@ -136,9 +137,13 @@ reading the section, like a lecture; the book stays there for depth.
   the preface for suggested tracks and asks three things: what to cover (the whole book, the sections the book
   does not mark optional, or your own list such as `2 3.1-3.4 5`), what you want from it, and when it may show
   full solutions. A PDF without an outline is mapped from its contents pages instead.
-- **Lessons.** Before each section the teacher reads that section's pages, nothing else, and never teaches the
-  book from memory. The section is taught as usual (read, `ready`, check, apply) in the book's notation, with
-  the page reference under each heading. Equations keep the book's numbers, `(2.51)` in the note is `(2.51)`
+- **Lessons.** A new chapter opens with an overview to read: what the chapter covers, section by section, what
+  it rests on, and a map of its sections. Then you choose: `ready` starts the first section, `probe` first runs
+  a few graded questions on the prerequisites. You are never probed unasked. Before each section the teacher reads that section's
+  pages, nothing else, and never quotes the book from memory. The section is taught as usual (read, `ready`, check, apply) in the book's notation, with
+  the page reference under each heading. The book is the backbone, not the boundary: the teacher adds material
+  from outside it when that helps (a better intuition, a link to another field, what has changed since), says
+  when something is not in the book, and may suggest further reading. Equations keep the book's numbers, `(2.51)` in the note is `(2.51)`
   in the book, so the exercises' references resolve. Apply quizzes may be adapted from the book's exercises,
   with the source named.
 - **Exercises.** Help comes one step at a time: what the exercise rests on, the strategy, the next step from
