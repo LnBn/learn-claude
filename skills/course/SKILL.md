@@ -1,14 +1,14 @@
 ---
 name: course
-description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>` manage it.
-argument-hint: new <book.pdf> [name] | next | study <section> | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request>
+description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course list` and `/course use <name>` switch between courses; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>` manage one.
+argument-hint: new <book.pdf> [name] | next | study <section> | list | use <name> | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request>
 disable-model-invocation: true
 allowed-tools: Bash(python3 .claude/hooks/book.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
 ---
 
 Arguments: `$ARGUMENTS`
 
-A course is a textbook, a syllabus chosen from it, and one lesson note per chapter. `book.py` holds the page map and the progress; you never load the whole book, only the pages a command tells you to Read. Every `book.py` command acts on the course used last; add `--course <dir>` to name another.
+A course is a textbook, a syllabus chosen from it, and one lesson note per chapter. `book.py` holds the page map and the progress; you never load the whole book, only the pages a command tells you to Read. Every `book.py` command acts on the **current course**: the one created or chosen last. The learner changes it with `/course use <name>`; do not pass `--course` on your own initiative.
 
 ## `new <book.pdf> [name]`
 
@@ -54,6 +54,17 @@ Setup is not lesson content, so nothing of it may reach a note.
 4. Read the pages on the `READ` line before you write anything about the unit.
 
 `/lesson pause` works as in any lesson: the checkpoint belongs to the chapter note.
+
+## `list`, `use <name>`
+
+Several courses can exist side by side; each keeps its own syllabus, progress, notes and checkpoints.
+
+```
+python3 .claude/hooks/book.py list            # every course, the current one marked
+python3 .claude/hooks/book.py use <name>      # make <name> the current course
+```
+
+For `list`, show the output. For `use`, reply with only the `🗒` line and the progress line under it. Nothing else changes: the next `/course next` continues that course from its own checkpoint. If a lesson of another course is open in this session and has not been paused, save its checkpoint first (as `/lesson pause` does).
 
 ## `status`, `toc [chapter]`
 

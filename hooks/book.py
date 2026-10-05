@@ -23,8 +23,10 @@ or an exercise. Nothing of the book reaches the context except the pages the tea
     book.py assess <id>... [--clear] mark exercises as assessed coursework (never quizzed, never solved)
     book.py set <title|goal|solutions|offset> <value>
     book.py status                   progress in a few lines
+    book.py list                     the courses under ./courses, the current one marked
+    book.py use <name|dir>           make another course the current one
 
-Every command takes --course DIR; without it the course used last is meant.
+Every command takes --course DIR; without it the current course is meant: the one used last.
 
 A course directory:
     <slug>.md                 the visible index: syllabus, progress, links to the chapter notes (generated)
@@ -974,6 +976,38 @@ def cmd_status(a):
     print(f"FULL SOLUTIONS POLICY: {c.state.get('solutions', 'after-attempt')}")
 
 
+def course_dirs():
+    root = os.path.join(os.getcwd(), "courses")
+    found = []
+    if os.path.isdir(root):
+        found = [os.path.join(root, d) for d in sorted(os.listdir(root))
+                 if os.path.exists(os.path.join(root, d, ".course", "book.json"))]
+    last = load_json(POINTER, {}).get("course")
+    if last and last not in found and os.path.exists(os.path.join(last, ".course", "book.json")):
+        found.append(last)  # a course kept outside ./courses
+    return found, last
+
+
+def cmd_list(a):
+    found, last = course_dirs()
+    if not found:
+        print("no courses yet — create one with: book.py new <book.pdf>")
+        return
+    for d in found:
+        c = Course(d)
+        nxt = c.next_unit()
+        print(f"{'→' if d == last else ' '} {os.path.basename(d)}: {c.state.get('title') or c.slug}")
+        print(f"    {progress_line(c)}" + (f"; next {nxt['id']} {nxt['title']}" if nxt else ""))
+    print("→ marks the current course; switch with: book.py use <name>")
+
+
+def cmd_use(a):
+    c = find_course(a.name)  # records it as the current course
+    nxt = c.next_unit()
+    print(f"🗒 current course: {os.path.basename(c.dir)} — {c.state.get('title') or c.slug}")
+    print(progress_line(c) + (f"; next {nxt['id']} {nxt['title']}" if nxt else ""))
+
+
 def main():
     p = argparse.ArgumentParser(prog="book.py", description="Page map and progress for a course that follows a textbook.")
     common = argparse.ArgumentParser(add_help=False)
@@ -1039,6 +1073,11 @@ def main():
     s.set_defaults(fn=cmd_set)
 
     sub.add_parser("status", parents=[common]).set_defaults(fn=cmd_status)
+    sub.add_parser("list").set_defaults(fn=cmd_list)
+
+    s = sub.add_parser("use")
+    s.add_argument("name")
+    s.set_defaults(fn=cmd_use)
 
     a = p.parse_args()
     a.fn(a)

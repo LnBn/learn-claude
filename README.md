@@ -129,6 +129,7 @@ reading the section, like a lecture; the book stays there for depth.
 /course next                               # teach the next section of the syllabus
 /course study 4.2                          # or a section of your choice
 /course status                             # progress; /course toc 4 lists a chapter
+/course list                               # all your courses; /course use <name> switches to another
 /exercise 2.3                              # help with Exercise 2.3 (or just say you are stuck on it)
 /course assess 2.5 2.6                     # these exercises are assessed coursework
 ```
@@ -154,6 +155,9 @@ reading the section, like a lecture; the book stays there for depth.
   edit), `<name>-ch02.md` the lesson note of chapter 2, `<name>-ch02-exercises.md` its exercise help. The page
   map and the progress are in the hidden `.course/` folder beside them. `/lesson pause` and checkpoints work on
   a chapter note as on any lesson.
+- **Several courses.** Each course keeps its own syllabus, progress, notes and checkpoints. Commands act on the
+  current course, the one created or chosen last. `/lesson pause` the one you are in, `/course use <name>` to
+  switch, `/course next` to continue the other from where it stopped.
 
 If the PDF is outside the folder Claude Code runs in, it asks once for permission to read it.
 
