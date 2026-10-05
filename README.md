@@ -9,7 +9,7 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 - **A teacher with a fixed method.** It finds what you already know, agrees a plan with you, then teaches one idea at a time: a text to read, an easy quiz, a harder quiz.
 - **Graded quizzes in a popup.** Your answer is marked the moment you give it, with the explanation.
 - **A lesson note in Obsidian.** Every lesson is mirrored into a markdown file with rendered math, diagrams and quiz results. It reads like a textbook chapter, not a chat log.
-- **Lessons that span days.** Pause with a checkpoint and resume later from the note, not from the chat.
+- **Lessons that span days.** Pause with a checkpoint and pick the lesson up again in a later session.
 - **Courses that follow a textbook.** Give it a PDF and pick the chapters. Lessons are condensed from the book's own pages, and you get hints in steps on the book's exercises.
 - **Checked facts and checked pictures.** A research subagent verifies claims on the web. Diagram subagents render each picture and look at it before it reaches you.
 
@@ -74,7 +74,7 @@ The first line says where the lesson note goes. The second starts the lesson. Op
 
 Every lesson has the same four phases. Their size changes with the topic; their order does not.
 
-1. **Opening.** A few sentences on the topic and on what is about to happen. The teacher stops here and you type `ready`. A quiz is never the first thing you read.
+1. **Opening.** A few sentences on the topic and on what is about to happen. The teacher stops here; type `ready` when you have read it.
    - If you ask to start "from the basics", the opening is a one or two paragraph overview of the subject. It ends with one question: probe my level first, or start from the beginning; and what do you want from this.
 2. **Probe.** Graded questions that find the edge of what you know. They get harder until you miss, then narrow in.
 3. **Plan.** Under a `### Plan` heading: a short approach and a dependency map. The roots are facts you can accept at face value; the sink is your goal. Nothing is taught until you approve it.
@@ -111,7 +111,7 @@ Quizzes open in a popup over the terminal.
 
 ## Stopping and resuming
 
-The note is the state, not the chat. One note per topic.
+A lesson lives in its note, so you can stop and continue in a new session. Keep one note per topic.
 
 ```
 /lesson pause                    # save a checkpoint: goal, confirmed nodes, shaky nodes, next node
@@ -120,10 +120,10 @@ The note is the state, not the chat. One note per topic.
 /lesson reset lessons/tcp.md     # start over; the note and its checkpoints go to a trash folder
 ```
 
-- The teacher also saves a checkpoint by itself when you say you are stopping.
+- If you simply say you are stopping, the teacher saves a checkpoint too.
 - Checkpoints live in a hidden file beside the note (`lessons/.checkpoints/<name>.md`), so the note stays clean.
-- On resume the teacher reads only the checkpoint, the map and the recent quiz results, never the whole note. It asks once whether you want a short recall check first. That question appears in the terminal only.
-- A lesson started under pi resumes the same way. Its `… — Resume Here.md` companion note is picked up automatically.
+- On resume the teacher reads the checkpoint, the map and your recent quiz results, and asks whether you want a short recall check before continuing.
+- Notes written by the original pi version resume the same way. A `… — Resume Here.md` companion note is picked up automatically.
 
 ## Following a textbook
 
@@ -152,9 +152,9 @@ If the PDF is outside the folder Claude Code runs in, Claude Code asks once for 
 
 `/course next` teaches the next section of the syllabus. Use the same command to resume after a pause; it reads the chapter's checkpoint.
 
-- **A new chapter opens with an overview** to read: what the chapter covers section by section, what it rests on, and a map of its sections. Then you choose. `ready` starts the first section. `probe` first runs a few graded questions on the prerequisites. You are never probed unasked.
+- **A new chapter opens with an overview** to read: what the chapter covers section by section, what it rests on, and a map of its sections. Then you choose: `ready` starts the first section, and `probe` first runs a few graded questions on the prerequisites.
 - **Each section is taught like any lesson node**: read, `ready`, check, apply. The heading carries the book's section number and page reference.
-- **The teacher reads the pages first.** Before each section it reads that section's pages and nothing else. It never quotes the book from memory.
+- **The teacher reads the pages first.** Before each section it reads that section's pages, so the lesson matches your edition of the book.
 - **The book is the backbone, not the boundary.** The teacher adds material from outside the book when that helps: a better intuition, a link to another field, what has changed since. It says when something is not in the book, and it may suggest further reading.
 - **Notation and equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
 - **Apply quizzes may come from the book's exercises**, with the source named.

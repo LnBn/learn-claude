@@ -210,7 +210,7 @@ Everything under `.claude/` in this table is gitignored.
 In order of how likely they are to bite.
 
 1. **Transcript format.** It is internal to Claude Code. A release could change it and silence the prose mirror until the parser is updated. Prompts and quizzes are unaffected.
-2. **The teacher skipping written text.** Twice, in live course sessions, the teacher went straight to a quiz with no opening text. The rule that the opener is its own reply fixed it; watch for it wherever a skill lets text and a quiz share a reply.
+2. **The teacher skipping written text.** When a skill lets text and a quiz share a reply, the model can go straight to the quiz and write no text at all. The rule that the opener is its own reply prevents this; keep to it in any new skill.
 3. **Stop-hook timing.** The 8-second wait covers what has been observed. Late prose is picked up at the next prompt.
 4. **The narration filter.** It is a heuristic; every miss so far was a new phrasing. Tune `NARRATION_RE`, `NARRATION_ANY_RE` and `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the no-narration rule in `CLAUDE.md` and the teach skill.
 5. **The first prompt of a fresh session.** It is mirrored into the note linked last, before any skill can relink. `/exercise 2.3` and `/course next` are commands and are not mirrored; "I am stuck on 2.3" typed as the first message is.
