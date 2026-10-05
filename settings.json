@@ -54,6 +54,10 @@
     "allow": [
       "mcp__quiz__quiz",
       "Bash(python3 .claude/hooks/md_log.py *)",
+      "Bash(python3 .claude/hooks/lesson.py *)",
+      "Bash(python3 .claude/hooks/book.py *)",
+      "Bash(mkdir -p /tmp/learn-book*)",
+      "Write(/tmp/learn-book/**)",
       "Bash(bash .claude/scripts/render-mermaid.sh *)",
       "Bash(bash .claude/scripts/render-svg.sh *)",
       "Bash(mkdir -p /tmp/learn-viz*)",

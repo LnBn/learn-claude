@@ -95,6 +95,42 @@ outcomes and the highest equation number used. The teacher reads that brief, nev
 whether to run a recall check (that question is not logged), and continues from the next node. `/lesson reset`
 moves the note and sidecar to `md-log-state/trash/`. pi's callout titles are understood, so pi-era notes resume.
 
+### Courses (`hooks/book.py`, `skills/course`, `skills/exercise`)
+
+A course follows a textbook. The design rule: the teacher never loads the book, only the pages of the unit it
+is about to teach, and `book.py` is what knows which pages those are.
+
+`book.py new <pdf>` builds the page map once. The outline comes from `mutool show <pdf> outline`; named
+destinations are resolved to pages with `pdfinfo -dests`, which also gives the position on the page. An entry
+runs to the next entry at its level or above; when that one starts part-way down a page, the page is shared and
+belongs to both ranges (and the teacher is told so). Ids are the book's own numbers, parsed from the outline
+titles ("2.3", "A", part "II"); an outline without numbers gets positional ids. Printed page labels come from
+hyperref's `page.<label>` anchors, else from an offset set by hand. A PDF with no outline is mapped from a
+contents file the teacher writes after reading the contents pages (`--toc`, `--offset`). Sections titled
+"Exercises" are kept out of the units; a trailing `*` marks a section optional.
+
+The study **unit** is a section (level 2), or a chapter that has none. State is two hidden files in the course
+folder: `.course/book.json` (the map, regenerable) and `.course/state.json` (syllabus, unit status, exercise
+records, goal, solutions policy). The visible index `<slug>.md` is regenerated from the state on every change.
+`md-log-state/course.json` remembers the course used last, so commands need no course argument.
+
+`find` and `exercise` locate an equation, figure or exercise by its hyperref anchor (`equation.2.3.51`,
+`exercisectr.2.3`) and fall back to a `pdftotext` search of the chapter ("Exercise 2.3", "(2.51)" at a line
+end). Nothing is cached; `pdfinfo -dests` takes under half a second on an 860-page book.
+
+`/course next` runs `book.py next`, links the chapter note and hands over to the teach skill's section
+"Teaching from a book": read the pages, then teach the unit as ordinary nodes, in the book's notation and with
+the book's equation numbers as tags (`\tag{2.51}`, `^eq-2-51`). `book.py done <id>` records the unit and
+prints the next one. The `exercise` skill gives one rung of a five-rung hint ladder per reply and records the
+rung; `ASSESSED` exercises and the solutions policy are printed by `book.py exercise <id>` on every lookup, so
+the rule is in front of the model each time rather than remembered.
+
+A session can now move between notes (setup, a chapter's lesson, its exercises note). `md_log.py link
+--from-now` exists for that: it puts the cursor at the end of the transcript, found by session id under
+`~/.claude/projects/*/`, instead of at 0, so nothing said earlier is backfilled into the new note, and it
+remembers which notes already carry this session's header. `/course new` unlinks first, so setup is mirrored
+nowhere.
+
 ### Visuals (`agents/*-maker.md`, `scripts/render-*.sh`)
 
 The `visualize` skill has the teacher brief a maker subagent with one idea and few elements. The maker writes
@@ -119,6 +155,13 @@ Chrome.
    no-narration rule in `CLAUDE.md` and the teach skill.
 4. **Elicitation fallback.** Claude Code's form truncates the message to one line. Use tmux.
 5. **Multi-select in the popup** is checkboxes; in the elicitation fallback it is one boolean per option.
+6. **The book map.** Good when the PDF was made with LaTeX and hyperref. Outlines with wrong or missing
+   destinations give wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. Ranges err
+   on the side of one page too many. A scanned book has no text layer, so the text-search fallback finds
+   nothing there; the Read tool still sees the pages.
+7. **A first prompt typed in a fresh session** is mirrored into the note linked last, before any skill can
+   relink. `/exercise 2.3` and `/course next` are commands and are not mirrored; "I am stuck on 2.3" typed as
+   the first message is.
 
 ## Obsidian side
 

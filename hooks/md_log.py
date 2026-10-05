@@ -32,7 +32,9 @@ Wiring (see settings.json):
                                whole history = backfill)
 
 Commands (called by the /md-log and /md-unlog skills):
-  md_log.py link <file> [--session ID]   link a file (resets the cursor -> backfill on next Stop)
+  md_log.py link <file> [--session ID] [--from-now]
+                                         link a file (resets the cursor -> backfill on next Stop; with
+                                         --from-now only what follows is mirrored, nothing is backfilled)
   md_log.py unlink                       stop logging
   md_log.py status
   md_log.py rebuild <out.md> <transcript.jsonl>...
@@ -282,12 +284,17 @@ def insert_before_quiz(text, question):
     except Exception:
         return False
     target = None
+    want = _norm(question)
     for i, ln in enumerate(lines):
         if ln.strip() == "> [!question] Quiz":
+            # the question may span several lines (a code snippet, two paragraphs): compare the whole callout
+            # body, which starts with the question and continues with the details and the options
+            body = []
             j = i + 1
-            while j < len(lines) and lines[j].strip() in (">", ""):
+            while j < len(lines) and lines[j].startswith(">"):
+                body.append(lines[j][2:] if lines[j].startswith("> ") else lines[j][1:])
                 j += 1
-            if j < len(lines) and _norm(lines[j].lstrip("> ")) == _norm(question):
+            if want and _norm(" ".join(body)).startswith(want):
                 target = i  # keep the LAST match
     if target is None:
         return False
@@ -699,6 +706,14 @@ def replay_transcript(path, state):
 
 # ---------------------------------------------------------------- entry points
 
+def find_transcript(session_id):
+    """The session's transcript file, for commands (hooks are handed the path; commands are not)."""
+    import glob
+    root = os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
+    hits = glob.glob(os.path.join(root, "projects", "*", f"{glob.escape(session_id)}.jsonl"))
+    return max(hits, key=os.path.getmtime) if hits else None
+
+
 def handle_hook():
     try:
         data = json.load(sys.stdin)
@@ -785,18 +800,41 @@ def main(argv):
         if not os.path.exists(path):
             open(path, "a", encoding="utf-8").close()
         save_json(CONFIG, {"file": path})
+        from_now = "--from-now" in argv
         if session:
             st = load_json(state_path(session), {})
             if st.get("file") == path and st.get("line"):
                 # already mirroring this very file in this session (e.g. /lesson resume after /lesson pause):
                 # keep the cursor and the dedup sets, or everything would be logged a second time
                 pass
+            elif from_now:
+                # the session moves to another note part-way (a course going from a chapter's lesson to its
+                # exercises, or course setup before the first lesson): nothing said so far belongs in this
+                # note, so the cursor starts at the end of the transcript instead of at 0
+                tp = find_transcript(session)
+                line = st.get("line", 0)
+                if tp:
+                    try:
+                        with open(tp, encoding="utf-8") as f:
+                            line = sum(1 for _ in f)
+                    except Exception:
+                        pass
+                # remember which notes already carry this session's header, so coming back to one adds no second
+                headers = dict(st.get("headers") or {})
+                if st.get("file") and st.get("header_date"):
+                    headers[st["file"]] = st["header_date"]
+                new = {"line": line, "prompts": st.get("prompts", []), "tool_ids": st.get("tool_ids", []),
+                       "file": path, "headers": headers}
+                if headers.get(path):
+                    new["header_date"] = headers[path]
+                save_json(state_path(session), new)
             else:
                 # new file for this session: reset the cursor so the next Stop hook backfills the whole
                 # session into it; pin the file to this session
                 save_json(state_path(session), {"line": 0, "prompts": [], "tool_ids": [], "file": path})
         print(f"🗒 md-log linked: {path}")
-        print("The session will be mirrored there (history is backfilled at the end of this turn).")
+        print("The session will be mirrored there " + ("from this point on." if from_now else
+              "(history is backfilled at the end of this turn)."))
         return 0
     if cmd == "unlink":
         f = log_file()

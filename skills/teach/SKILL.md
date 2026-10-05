@@ -190,6 +190,33 @@ The learner may ask a question at any point: typed at the prompt, in the note fi
 
 A lesson often spans several sessions. The lesson's markdown log is the state, not the chat context. When the learner says they are stopping, wrapping up, or will continue another day, save a **checkpoint** exactly as the `lesson` skill's `pause` describes: one Bash call to `.claude/hooks/lesson.py checkpoint` with the checkpoint on stdin — confirmed nodes, shaky nodes, the next node, notes. It goes to a hidden sidecar, never into the note. Reply with only the `🗒` line the script prints. When a session starts with `/lesson resume <file>`, follow that skill: read only the resume brief, offer a recall check (the learner may decline it), and continue from the checkpoint's next node.
 
+## Teaching from a book (courses)
+
+When the session was started with `/course next` or `/course study`, the lesson follows a textbook. The book fixes **what** is taught: the scope, the order of sections, the notation, the definitions, the statements of results. The two principles still fix **how** it is taught. The lesson replaces reading the section, the way a lecture does; the book stays there for depth.
+
+**The book is the source — read it, every time.** Before you write anything about a unit, Read the pages on the `READ` line that `book.py` printed (at most 20 PDF pages per Read call). Never teach a section from your memory of the book or of the subject: editions differ, and the learner will hold the note against the page. The `researcher` is for what the book does not settle: a claim that goes beyond it, or a place where it looks wrong. If the book is wrong or out of date, say so plainly and cite the page.
+
+**At the start of a chapter** (its note is new), run the phases at chapter size:
+
+- *Phase 0.* Open with what the chapter is about, what it rests on from earlier chapters, and what it leads to, from the chapter's own opening pages.
+- *Phase 1a.* Probe the prerequisites the chapter leans on, and whether any of its units are already known. Skip 1b: the goal was asked when the course was set up (the `COURSE GOAL` line).
+- *Phase 2.* No researcher scoping; the scope is the chapter's units (the `CHAPTER … UNITS` line, or `book.py toc <chapter>`). Under `### Plan`, give the approach and a map whose nodes are the syllabus units of this chapter, labelled with their section numbers, with what they rest on as roots. A unit the probe showed is already known is marked for a short treatment, not dropped. Wait for the go-ahead as always.
+
+**Each unit** (a section of the book) becomes one or more nodes: split where the section turns to a new idea, usually at its subsections. Each node is an ordinary Phase 3 section — read, `ready`, check, apply.
+
+- *Heading and source.* The heading carries the book's number: `### 2.3 Bayes' rule`, or `### 2.3.1 Testing for COVID-19` for a node that is one subsection. The first line under it is the source, from the `CITE AS` line: `*Book: §2.3, pp. 44–49.*`
+- *Condense; do not transcribe.* Keep every definition, every result, the main line of each derivation and one worked example. Drop asides, history, pointers to the literature and repeated examples. Write in your own words; definitions and statements of results stay precise and in the book's notation, but do not copy long passages. A subsection the book marks optional (`*`) gets a sentence or two and its page reference, unless the learner asks for it.
+- *Supply what the book leaves out.* Where the book states something without motivating it, give the discovery path (Principle ii). Where it leans on something that is not a safe unconditional truth for this learner, ground it: in an earlier unit, by its number, or in a short addendum. Do not reorder the book's sections; inside a section, order the material however teaches best.
+- *Notation is the book's.* The learner goes on to read the book and do its exercises. If the book overloads a symbol or changes notation, say so in a `[!notation]` callout.
+- *Equation numbers are the book's.* An equation the book numbers keeps that number, so that references in the exercises and in later sections resolve in the note: `\tag{2.51}`, block id `^eq-2-51`, cited as `[[#^eq-2-51|(2.51)]]`. An equation of your own that needs a reference takes the section number and a letter: `\tag{2.3a}`, `^eq-2-3a`. In a course note, ignore the equation count in the resume brief. Worked examples are numbered `Example n` as in any lesson.
+- *Figures.* You cannot embed the book's figures. Refer to them by number and page ("Figure 2.7, p. 45"); when the note itself needs a picture, use the `visualize` skill.
+
+**Quizzes from the book.** The check comes from your exposition, as always. The apply may be your own, or adapted from one of the book's worked examples or exercises; then name the source in the quiz's `details` ("Adapted from Exercise 2.3, p. 74."). Before you use an exercise, run `python3 .claude/hooks/book.py exercise <id>`: one marked `ASSESSED` is never used. You need the answer to write the options, so solve it and check every number by running code. Afterwards record it with `book.py exercise <id> --status quizzed`.
+
+**Record progress.** When every node of a unit has passed, run `python3 .claude/hooks/book.py done <id>`, with `--status shaky` if an apply in the unit was missed more than once or is still failing when the learner stops. Write nothing about the call. Its output names the next unit and its pages: go on to it in the same session. When it says the chapter is complete, close the chapter in two or three sentences on what was built, save a checkpoint as for `/lesson pause`, and tell the learner that `/course next` opens the next chapter.
+
+**Help with the book's exercises** follows the `exercise` skill: hints in steps, never the whole solution unprompted.
+
 ## Formatting — math renders as LaTeX
 
 Everything written in a session is rendered to the learner through Obsidian, which renders LaTeX natively. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:

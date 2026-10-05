@@ -104,7 +104,11 @@ def last_mermaid(lines):
 
 
 def quiz_outcomes(lines):
-    """Pair each Quiz question block with the result callout that follows it."""
+    """Pair each Quiz question block with the result callout that follows it.
+
+    The result is usually the very next block. When the learner asked the teacher first (`?` in the popup),
+    an "Asked before answering" note and the teacher's answer (which may hold callouts of its own) sit
+    between the question and its grade, so look ahead as far as the next Quiz block."""
     blocks = list(callout_blocks(lines))
     out = []
     for k, (i, blk) in enumerate(blocks):
@@ -113,9 +117,13 @@ def quiz_outcomes(lines):
         body = [ln[2:] if ln.startswith("> ") else ln[1:] for ln in blk[1:]]
         question = next((b for b in body if b.strip()), "").strip()
         outcome = "(unanswered)"
-        if k + 1 < len(blocks):
-            head = blocks[k + 1][1][0].strip()
-            outcome = RESULT_KINDS.get(head, outcome)
+        for _, nxt in blocks[k + 1:]:
+            head = nxt[0].strip()
+            if head in RESULT_KINDS:
+                outcome = RESULT_KINDS[head]
+                break
+            if head == "> [!question] Quiz":
+                break
         out.append((question, outcome))
     return out
 

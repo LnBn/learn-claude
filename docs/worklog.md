@@ -2,6 +2,45 @@
 
 Running notes on the state of the project, for picking work back up. Newest first.
 
+## 2026-10-05 — textbook courses
+
+**Fixed.** `insert_before_quiz` matched only the first line of a quiz question, so prose before a multi-line
+question landed below the quiz. `lesson.py quiz_outcomes` counted a quiz answered after `?` (ask first) as
+unanswered; one such quiz in `lessons/test3.md` now counts.
+
+**Built.** Courses that follow a textbook PDF: `hooks/book.py` (page map, syllabus, progress, exercise
+records), `/course` and `/exercise` skills, the section "Teaching from a book" in the teach skill, and
+`md_log.py link --from-now` for moving between notes in one session. Design decisions: the lesson replaces
+reading the section; one note per chapter plus an exercises note; equations keep the book's numbers; full
+solutions by default only after an attempt and on request; assessed exercises are never solved or quizzed;
+PDF only for now.
+
+**Tested.** `book.py` against Murphy, *Probabilistic Machine Learning: An Introduction* (860 pages, 714 outline
+entries, 132 units; section 2.3, Equation 2.51, Figure 2.7 and Exercise 2.3 spot-checked against the pages), three other
+PDFs (outline with `#page=` targets, outline without numbers, a paper), a PDF without an outline, a hand-written
+contents file, and the text-search fallback with anchors disabled. `--from-now` with a simulated session moving
+lesson → exercises → lesson. **Not tested:** the skills in a live session.
+
+### To verify in a real session
+
+- `/course new ~/Documents/murphybook/book1.pdf pml1`: nothing mirrored during setup; the three questions; the
+  syllabus that results from "core sections only".
+- `/course next` on a new chapter: opener, probe, plan as a map of the chapter's units; then whether the teacher
+  reads the pages before every unit and stops for `ready`.
+- Condensing: is a 10-page section (2.2) a readable lesson, or should long sections always split by subsection?
+- Book equation tags (`\tag{2.51}`, `^eq-2-51`) and links in Obsidian.
+- `book.py done` after a unit: silent in the note, next unit follows without `/course next`.
+- `/exercise 2.3` mid-lesson: the exercises note gets only the exercise; `/course next` returns to the chapter
+  note without a second session header.
+- The hint ladder: one rung per reply, and the refusal of a full solution before an attempt.
+
+### Ideas
+
+- Render a book figure into `viz/` (crop a page with `pdftoppm`) so lessons can embed the book's own figures.
+- A reader subagent that returns a digest of a long section, if reading 20+ pages per unit proves heavy.
+- Other sources: lecture-note PDFs work as they are; web pages and video transcripts would need their own mapper.
+- The lists from 2026-09-30 below are still open (no real session has run since).
+
 ## 2026-09-30 — first day
 
 **State.** The port is complete and in daily use. Repo: https://github.com/LnBn/learn-claude (private). Installed
