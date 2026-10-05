@@ -198,6 +198,8 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 
 ## The lesson note
 
+A note holds the lesson and nothing else. A session writes to a note once you point it there, with `/md-log`, `/lesson resume`, `/course next`, `/course study` or `/exercise`; a session you have not pointed anywhere is not mirrored.
+
 Each session starts with a `## Session — <date>` heading. Under it:
 
 - your prompts, as `> **You:** …` quotes;
@@ -205,7 +207,14 @@ Each session starts with a `## Session — <date>` heading. Under it:
 - quizzes, as callouts with your answer, the result and the explanation;
 - diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`.
 
-**Kept out of the note:** session chatter ("I'll load the skill", "waiting on your answer"), pacing words (`ready`, `ok`, `next`, `probe`), the resume question, checkpoints and status lines from the scripts. `/md-unlog` stops mirroring altogether.
+**Kept out of the note:**
+
+- housekeeping commands and their replies, such as `/course list`, `/course status` or `/lesson pause`;
+- session chatter ("I'll load the skill", "waiting on your answer");
+- pacing words (`ready`, `ok`, `next`, `probe`);
+- the resume question, checkpoints and status lines from the scripts.
+
+`/md-unlog` stops mirroring altogether.
 
 If you ask a question in the quiz popup with `?`, the note shows the quiz, an "Asked before answering" note, the teacher's answer, then the grade.
 

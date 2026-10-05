@@ -42,10 +42,14 @@ Commands (called by the /md-log and /md-unlog skills):
                                          (in the order given) with the current filters
 
 State lives next to this script's .claude dir:
-  <project>/.claude/md-log.json              {"file": "/abs/path.md"}
+  <project>/.claude/md-log.json              {"file": "/abs/path.md", "session": "<id that linked it>"}
   <project>/.claude/md-log-state/<session>.json   {"line": N, "prompts": [...], "tool_ids": [...], "file": ...}
-  (the session's own file wins over md-log.json, so two sessions can log to two notes;
-   the quiz server only knows md-log.json, i.e. the most recently linked file)
+  <project>/.claude/md-log-state/quiz-target.json {"<tool_use_id>": "/abs/path.md" | null}
+
+A note receives only what a session that LINKED it says (/md-log, /lesson resume, /course next, /exercise).
+A fresh session mirrors nowhere until it links a note. Two sessions can log to two notes; the quiz server is
+told which note a quiz belongs to through quiz-target.json, written by the PreToolUse hook. Inside a linked
+session, replies to housekeeping commands (/course list, /lesson status, ...) are not mirrored either.
 
 NOTE: the transcript JSONL is an internal Claude Code format and may change
 between versions; parsing here is defensive and fails silently (never blocks
@@ -63,6 +67,7 @@ CLAUDE_DIR = os.path.dirname(HERE)  # .../.claude
 CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")  # written by mcp/quiz_server.py
+QUIZ_TARGET = os.path.join(STATE_DIR, "quiz-target.json")  # read by mcp/quiz_server.py
 QUIZ_HEADER = "quiz"
 QUIZ_TOOL = "mcp__quiz__quiz"
 
@@ -371,8 +376,44 @@ ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sur
                     r"i'?m ready|ready to go|go ahead|start|let'?s go|k|probe|probe first|probe me)\W*$", re.I)
 
 
+# Housekeeping commands: their replies manage the course or the log and are not lesson content.
+# (/course next, /course study, /lesson resume and /exercise start or continue teaching.)
+ADMIN_COMMANDS = {
+    "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions"},
+    "lesson": {"pause", "status", "reset"},
+    "md-log": None,    # None: every use of the command
+    "md-unlog": None,
+}
+# a command typed without its slash ("course next"): still a command, not something the learner said
+TYPED_COMMAND_RE = re.compile(
+    r"^\W*(?:(course)\s+(new|next|study|list|use|status|toc|select|assess|solutions)\b|"
+    r"(lesson)\s+(pause|resume|status|reset)\b|(md-log|md-unlog)\b)", re.I)
+
+
+def command_of(text):
+    """(name, first argument) of a slash command in a user message, typed with or without the slash; else None."""
+    if not isinstance(text, str):
+        return None
+    m = re.search(r"<command-name>/?([\w:-]+)</command-name>", text)
+    if m:
+        a = re.search(r"<command-args>\s*([^\s<]*)", text)
+        return m.group(1).lower(), (a.group(1).lower() if a else "")
+    if len(text) <= 80:
+        m = TYPED_COMMAND_RE.match(text)
+        if m:
+            return (m.group(1) or m.group(3) or m.group(5)).lower(), (m.group(2) or m.group(4) or "").lower()
+    return None
+
+
+def is_admin_command(cmd):
+    if not cmd or cmd[0] not in ADMIN_COMMANDS:
+        return False
+    subs = ADMIN_COMMANDS[cmd[0]]
+    return subs is None or cmd[1] in subs
+
+
 def is_user_prose(text):
-    if not text or text.startswith("/"):
+    if not text or text.startswith("/") or command_of(text):
         return False
     return not ACK_RE.match(text)  # "ready", "ok", "next" are pacing, not lesson content
 
@@ -545,6 +586,17 @@ def replay_transcript(path, state):
     written = 0
     blocks = []
     state["_logged_user_keys"] = set()
+    # True while the turn in progress answers a housekeeping command: nothing of it belongs in the note
+    mute = bool(state.get("mute")) if start else False
+
+    def turn_starts(raw_text):
+        """A user message opens a new turn: decide whether its reply is lesson content."""
+        nonlocal mute
+        cmd = command_of(raw_text)
+        if cmd:
+            mute = is_admin_command(cmd)
+        elif clean_user_text(raw_text):
+            mute = False
 
     # first pass: which API messages contain a tool call (their text is narration, see is_narration), and
     # the results of backgrounded quiz calls, which arrive later as task notifications (task id -> text)
@@ -622,6 +674,7 @@ def replay_transcript(path, state):
                     logged_ids.add(key)
                 continue
             if isinstance(content, str):
+                turn_starts(content)
                 text = clean_user_text(content)
                 if is_user_prose(text):
                     key = h(text)
@@ -636,6 +689,7 @@ def replay_transcript(path, state):
                     if not isinstance(b, dict):
                         continue
                     if b.get("type") == "text":
+                        turn_starts(b.get("text", ""))
                         text = clean_user_text(b.get("text", ""))
                         if is_user_prose(text):
                             key = h(text)
@@ -653,7 +707,7 @@ def replay_transcript(path, state):
                                 resp = b.get("content")
                                 if isinstance(resp, list):
                                     resp = "".join(c.get("text", "") for c in resp if isinstance(c, dict))
-                            qa = qa_blocks(ask_calls[tid], resp)
+                            qa = "" if mute else qa_blocks(ask_calls[tid], resp)
                             if qa:
                                 blocks.append(qa)
                                 written += 1
@@ -694,10 +748,12 @@ def replay_transcript(path, state):
                     quiz_calls.add(b.get("id"))
                     if b.get("id") in logged_ids:  # the server already wrote this quiz block
                         place_before_quiz((b.get("input") or {}).get("question"))
-            flush_text(parts, msg.get("id"))
+            if not mute:
+                flush_text(parts, msg.get("id"))
 
     for blk in blocks:
         append(blk)
+    state["mute"] = mute
     state["line"] = len(lines)
     state["prompts"] = sorted(pending_prompts)
     state["tool_ids"] = sorted(logged_ids)[-400:]
@@ -723,11 +779,19 @@ def handle_hook():
     session = data.get("session_id")
     state = load_state(session)
     global SESSION_FILE
-    SESSION_FILE = state.get("file")  # a session linked with --session keeps its own file
-    if state.get("file") is None and log_file():
-        state["file"] = log_file()  # adopt the project default the first time this session writes
-        SESSION_FILE = state["file"]
-    if not log_file():
+    SESSION_FILE = state.get("file")  # the note THIS session linked; a fresh session has none
+    cfg = load_json(CONFIG, {})
+    if SESSION_FILE is None and cfg.get("file") and "session" in cfg and not cfg["session"]:
+        # a note linked from the command line without --session belongs to the first session that writes
+        state["file"] = SESSION_FILE = cfg["file"]
+        save_json(CONFIG, {"file": cfg["file"], "session": session or "unknown"})
+    if data.get("hook_event_name") == "PreToolUse" and data.get("tool_name") == QUIZ_TOOL and data.get("tool_use_id"):
+        # tell the quiz server which note this quiz belongs to (none, if this session mirrors nowhere)
+        targets = load_json(QUIZ_TARGET, {})
+        targets = dict(list(targets.items())[-50:]) if isinstance(targets, dict) else {}
+        targets[data["tool_use_id"]] = SESSION_FILE
+        save_json(QUIZ_TARGET, targets)
+    if not SESSION_FILE:
         return
     global _STATE_FOR_HEADER
     _STATE_FOR_HEADER = state  # header is written on the first content block, not on hook entry
@@ -768,7 +832,7 @@ def handle_hook():
             replay_transcript(tp, state)
         tid = data.get("tool_use_id")
         resp = data.get("tool_response", data.get("tool_output"))
-        qa = qa_blocks(data.get("tool_input") or {}, resp)
+        qa = "" if state.get("mute") else qa_blocks(data.get("tool_input") or {}, resp)
         if qa:
             append(qa)
             if tid:
@@ -799,7 +863,7 @@ def main(argv):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if not os.path.exists(path):
             open(path, "a", encoding="utf-8").close()
-        save_json(CONFIG, {"file": path})
+        save_json(CONFIG, {"file": path, "session": session or ""})
         from_now = "--from-now" in argv
         if session:
             st = load_json(state_path(session), {})
@@ -837,13 +901,17 @@ def main(argv):
               "(history is backfilled at the end of this turn)."))
         return 0
     if cmd == "unlink":
-        f = log_file()
-        save_json(CONFIG, {"file": None})
-        if "--session" in argv:
-            sp = state_path(argv[argv.index("--session") + 1])
+        cfg = load_json(CONFIG, {})
+        f = cfg.get("file")
+        sid = argv[argv.index("--session") + 1] if "--session" in argv else None
+        if sid:
+            sp = state_path(sid)
             st = load_json(sp, {})
+            f = st.get("file") or (f if cfg.get("session") in (None, "", sid) else None)
             st["file"] = None
             save_json(sp, st)
+        if not sid or cfg.get("session") in (None, "", sid):  # never unlink a note another session is mirroring
+            save_json(CONFIG, {"file": None, "session": ""})
         print(f"🗒 md-log unlinked" + (f" (was {f})" if f else ""))
         return 0
     if cmd == "status":

@@ -60,11 +60,13 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 
 | Hook | When | What the script does |
 |---|---|---|
-| `UserPromptSubmit` | the learner sends a prompt | Replays anything the last `Stop` missed, then logs the prompt. Pacing words (`ready`, `ok`, `next`, `probe`) and slash commands are not logged. |
-| `PreToolUse` | before `quiz` or `AskUserQuestion` | Replays the transcript, so prose already on disk lands before the tool's own block. |
+| `UserPromptSubmit` | the learner sends a prompt | Replays anything the last `Stop` missed, then logs the prompt. Pacing words (`ready`, `ok`, `next`, `probe`) and commands are not logged. |
+| `PreToolUse` | before `quiz` or `AskUserQuestion` | For a quiz, records which note it belongs to. Replays the transcript, so prose already on disk lands before the tool's own block. |
 | `PostToolUse` | after `quiz` | Replays the transcript and **inserts** prose that preceded the call above the quiz block. |
 | `PostToolUse` | after `AskUserQuestion` | Logs the question and the answer. Questions with the header `Resume` are not logged. |
 | `Stop` | the teacher's reply ends | Logs the teacher's prose from the transcript. |
+
+**Who writes to a note.** Only a session that linked it. Each session's state file names its note; a hook called by a session with no note does nothing. A fresh session therefore mirrors nowhere until `/md-log`, `/lesson resume`, `/course next`, `/course study` or `/exercise` links one.
 
 **Replay.** The script reads Claude Code's session transcript (JSONL) from a per-session cursor and writes everything new. The transcript format is internal, so the parser is defensive and never blocks the session.
 
@@ -76,6 +78,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 
 - Harness messages: `<system-reminder>`, `<task-notification>`, slash-command payloads, "[Request interrupted by user]".
 - Status lines from the scripts (they start with `🗒`), and checkpoint callouts.
+- Housekeeping turns. The reply to a command that manages the course or the log is not lesson content: `/course new`, `list`, `use`, `status`, `toc`, `select`, `assess`, `solutions`; `/lesson pause`, `status`, `reset`; `/md-log`, `/md-unlog`. The replay mutes everything from such a command to the learner's next prompt. `/course next`, `/course study`, `/lesson resume` and `/exercise` start teaching and are not muted. A command typed without its slash ("course list") is treated the same way and is not logged as a prompt. The list is `ADMIN_COMMANDS` in `md_log.py`.
 - Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept.
 
 **The session header** (`## Session — date`) is written with the first content block, never on hook entry, so an abandoned session leaves no header.
@@ -90,7 +93,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 
 With `--from-now` the script finds the transcript by session id under `~/.claude/projects/*/`. It also remembers which notes already carry this session's header, so returning to a note adds no second header.
 
-**Two notes at once.** A session linked with `--session` keeps its own file, so two sessions can mirror two notes. The quiz server, however, only knows the vault-wide default in `md-log.json`: the note linked last.
+**Two notes at once.** Two sessions can mirror two notes. The quiz server does not know which session calls it, so the `PreToolUse` hook, which does, writes the calling session's note into `quiz-target.json` under the tool-use id. The server looks its call up there. A quiz from a session with no note is written nowhere and is left unmarked, so a later `/md-log` backfill still logs it from the transcript. Without an entry (hooks not running) the server falls back to `md-log.json`, the note linked last.
 
 **Rebuild.** `md_log.py rebuild <out.md> <transcript.jsonl>...` regenerates a note from transcripts with the current filters.
 
@@ -192,10 +195,11 @@ Everything under `.claude/` in this table is gitignored.
 | File | Holds | Written by |
 |---|---|---|
 | `<project>/.mcp.json` | registration of the quiz server | `install.sh` |
-| `.claude/md-log.json` | the note linked last (the vault-wide default) | `md_log.py link` / `unlink` |
+| `.claude/md-log.json` | the note linked last and the session that linked it | `md_log.py link` / `unlink` |
 | `.claude/md-log-state/<session>.json` | per session: transcript cursor, linked note, dedup keys, header dates | `md_log.py` |
 | `.claude/md-log-state/quiz-logged.json` | tool-use ids of quizzes the server has logged | `quiz_server.py` |
 | `.claude/md-log-state/quiz-last-asked.json` | option order of a quiz waiting to be re-asked | `quiz_server.py` |
+| `.claude/md-log-state/quiz-target.json` | which note each recent quiz call belongs to | `md_log.py` (`PreToolUse`) |
 | `.claude/md-log-state/course.json` | the current course | `book.py` |
 | `.claude/md-log-state/md-log.log` | one line per hook invocation | `md_log.py` |
 | `.claude/md-log-state/quiz-server.log` | why a popup fell back to the form | `quiz_server.py` |
@@ -213,10 +217,11 @@ In order of how likely they are to bite.
 2. **The teacher skipping written text.** When a skill lets text and a quiz share a reply, the model can go straight to the quiz and write no text at all. The rule that the opener is its own reply prevents this; keep to it in any new skill.
 3. **Stop-hook timing.** The 8-second wait covers what has been observed. Late prose is picked up at the next prompt.
 4. **The narration filter.** It is a heuristic; every miss so far was a new phrasing. Tune `NARRATION_RE`, `NARRATION_ANY_RE` and `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the no-narration rule in `CLAUDE.md` and the teach skill.
-5. **The first prompt of a fresh session.** It is mirrored into the note linked last, before any skill can relink. `/exercise 2.3` and `/course next` are commands and are not mirrored; "I am stuck on 2.3" typed as the first message is.
-6. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing; the Read tool still sees the pages.
-7. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
-8. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
+5. **The first prompt of a fresh session.** A session mirrors nowhere until a skill links a note, so a first message typed as plain text ("I am stuck on 2.3") is not in the note, though the teacher's later replies are. Starting with the command (`/exercise 2.3`) avoids the gap.
+6. **The housekeeping list.** Which commands are muted is a fixed list. A new command, or a new sub-command of `/course` or `/lesson`, has to be added to `ADMIN_COMMANDS` if its reply is not lesson content.
+7. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing; the Read tool still sees the pages.
+8. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
+9. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
 
 ## Testing
 

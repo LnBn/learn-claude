@@ -14,9 +14,12 @@ Options-only: single-select or multi-select. An "I don't know" choice is always
 added so the learner can signal a genuine gap instead of guessing. An optional
 free-text note travels with any answer.
 
-Logging: if `.claude/md-log.json` links a file, the question block is appended
+Logging: if the calling session mirrors a note, the question block is appended
 BEFORE the learner answers (so it appears live, never containing the answer),
-and the answer + feedback block after. The tool-use id is recorded in
+and the answer + feedback block after. Which note that is comes from
+`.claude/md-log-state/quiz-target.json`, written per call by the md-log
+PreToolUse hook (the server itself does not know its session); without an
+entry it falls back to `.claude/md-log.json`. The tool-use id is recorded in
 `.claude/md-log-state/quiz-logged.json` so the md-log Stop hook does not log it
 a second time when replaying the transcript.
 """
@@ -35,6 +38,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
+QUIZ_TARGET = os.path.join(STATE_DIR, "quiz-target.json")  # tool-use id -> note, from hooks/md_log.py
 LAST_ASKED = os.path.join(STATE_DIR, "quiz-last-asked.json")  # set when the learner asks before answering
 SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
@@ -142,7 +146,19 @@ def load_json(path, default):
         return default
 
 
+_NO_TARGET = object()
+_target = _NO_TARGET  # the note of the quiz being run: a path, None (mirror nowhere), or unknown
+
+
+def set_target(tool_use_id):
+    global _target
+    targets = load_json(QUIZ_TARGET, {})
+    _target = targets[tool_use_id] if isinstance(targets, dict) and tool_use_id in targets else _NO_TARGET
+
+
 def log_file():
+    if _target is not _NO_TARGET:
+        return _target
     return load_json(MDLOG_CONFIG, {}).get("file")
 
 
@@ -190,8 +206,8 @@ def clear_last_asked():
 
 
 def mark_logged(tool_use_id):
-    if not tool_use_id:
-        return
+    if not tool_use_id or not log_file():
+        return  # nothing was written to a note: a later backfill must still log this quiz from the transcript
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
         ids = load_json(QUIZ_LOGGED, [])
@@ -284,6 +300,7 @@ def coerce_correct(ca):
 
 
 def run_quiz(args, tool_use_id, progress_token=None):
+    set_target(tool_use_id)
     question = str(args.get("question", "")).strip()
     details = str(args.get("details") or "").strip()
     options = normalize_options(args.get("options"))

@@ -23,6 +23,12 @@ the backbone, not the boundary: outside material and further reading are allowed
 readability. Confirmed live by the learner: overview first, `ready` into §1.1, `/lesson pause` writes the
 chapter checkpoint. Resume a course with `/course next`, not `/lesson resume`.
 
+**Note hygiene.** A chapter note picked up a `/course list` reply and a mistyped "course next" from two fresh
+sessions, because a new session adopted the note linked last. Now only a session that linked a note writes to
+it; the quiz server learns the note per call from `quiz-target.json`; replies to housekeeping commands are muted
+even inside a linked session (`ADMIN_COMMANDS`). Consequence: a new session that just starts talking is not
+mirrored until `/md-log`, `/lesson resume`, `/course next` or `/exercise`.
+
 **Tested.** `book.py` against Murphy, *Probabilistic Machine Learning: An Introduction* (860 pages, 714 outline
 entries, 132 units; section 2.3, Equation 2.51, Figure 2.7 and Exercise 2.3 spot-checked against the pages), three other
 PDFs (outline with `#page=` targets, outline without numbers, a paper), a PDF without an outline, a hand-written
