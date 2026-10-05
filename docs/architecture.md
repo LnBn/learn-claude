@@ -1,186 +1,235 @@
 # Architecture
 
-How the pieces of learn-claude fit together, and where it is fragile. Read the [README](../README.md) first.
+How the pieces of learn-claude fit together, why they are built the way they are, and where the system is fragile. Read the [README](../README.md) first; this document is for changing the code.
 
-## The pieces
+**Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
 
-```
-              ┌──────────────────────────── Claude Code session (in tmux) ────────────────────────────┐
-              │                                                                                        │
-  you ──────▶ │  teach skill ──▶ model ──┬─▶ quiz tool (MCP) ──▶ tmux popup ──▶ graded ──▶ note + model │
-              │       ▲                  ├─▶ Agent: researcher (WebSearch/WebFetch)                     │
-              │       │                  ├─▶ Agent: mermaid-maker / svg-maker ──▶ render-*.sh ──▶ viz/ │
-              │  lesson skill            └─▶ AskUserQuestion (non-graded questions)                    │
-              │       ▲                                                                                 │
-              │  hooks: UserPromptSubmit / PostToolUse / Stop ──▶ md_log.py ──▶ the note                │
-              └────────────────────────────────────────────────────────────────────────────────────────┘
-```
+## Components
 
-### Skills (`skills/*/SKILL.md`)
+The teacher is the Claude Code session itself. Everything else is a prompt it loads, a tool it calls, or a hook that runs around it.
 
-Prompt files Claude Code loads on demand. `teach` is auto-loaded whenever the model explains something (its
-description says so; `CLAUDE.md` reinforces it). `lesson`, `md-log` and `md-unlog` are user-invoked slash
-commands; they run a script via Bash and are pre-approved in `settings.json`.
+| Component | Files | Job |
+|---|---|---|
+| Skills | `skills/*/SKILL.md` | Prompts loaded on demand. `teach` holds the method; `lesson`, `course`, `exercise`, `md-log`, `md-unlog` and `visualize` are procedures. |
+| House rules | `CLAUDE.md` | Always in context: teach, do not narrate, open with text. |
+| Quiz tool | `mcp/quiz_server.py`, `quiz_popup.py`, `latex_text.py` | An MCP server with one tool. Shows a quiz, grades it, writes it to the note. |
+| Note mirror | `hooks/md_log.py` | Called by four hooks. Copies prompts and the teacher's prose into the note. |
+| Resume helper | `hooks/lesson.py` | Writes checkpoints; prints a short brief of a note for resuming. |
+| Course helper | `hooks/book.py` | Maps a textbook PDF to page ranges; keeps syllabus and progress. |
+| Subagents | `agents/*.md` | `researcher` checks facts on the web. `mermaid-maker` and `svg-maker` draw diagrams. |
+| Renderers | `scripts/render-*.sh` | Turn Mermaid or SVG source into a PNG. |
 
-### The quiz tool (`mcp/`)
+Skills come in two kinds. `teach`, `visualize` and `exercise` can be loaded by the model when their description fits. `lesson`, `course`, `md-log` and `md-unlog` are slash commands only the user can invoke. The scripts they run are pre-approved in `settings.json`.
 
-`quiz_server.py` is a stdio MCP server written against the JSON-RPC protocol directly, so it needs nothing
-installed. Claude Code starts it from `.mcp.json` when the session starts. One tool, `quiz`:
+## One lesson section, step by step
 
-1. The model calls it with the question, options (each with a `value`), `correctAnswer` by value, and an
-   `explanation`. Bad input (unknown value, a hand-added "not sure" option) is returned as an error.
+This sequence explains most of the design. It is the "read, ready, check, apply" loop of one node.
+
+1. The teacher writes the exposition and **ends its reply**.
+2. The `Stop` hook runs `md_log.py`, which reads the new text from the session transcript and appends it to the note.
+3. The learner reads the note in Obsidian and types `ready`. The `UserPromptSubmit` hook sees a pacing word and logs nothing.
+4. The teacher calls the `quiz` tool. The server writes the question to the note, opens the popup and waits.
+5. The learner answers. The popup shows the grade. The server writes the result to the note and returns it to the teacher.
+6. The teacher calls `quiz` again for the apply question, then continues from the outcome.
+
+**Why the reply ends at step 1.** In interactive mode Claude Code writes an assistant message to the transcript only after the tool calls in it have returned. Text written in the same reply as a quiz call is therefore not on disk when the quiz appears, and the popup covers the terminal. If the teacher wrote the exposition and called the quiz in one reply, the learner would get the quiz first. Ending the reply is the reliable fix. The lesson opener and a course chapter's overview are replies of their own for the same reason.
+
+## The quiz tool
+
+`quiz_server.py` is a stdio MCP server written directly against JSON-RPC, so it needs nothing installed. Claude Code starts it from `.mcp.json` when a session starts. It has one tool, `quiz`.
+
+**A call, in order:**
+
+1. The model sends the question, the options (each with a `value`), `correctAnswer` by value and an `explanation`. Bad input is returned as an error: an unknown value, or a hand-added "not sure" option.
 2. The server shuffles the options, appends "I don't know", and writes the question block to the note.
-3. If `$TMUX` is set, it runs `tmux display-popup -E python3 quiz_popup.py spec.json result.json` and blocks.
-   The popup is plain curses: wrapped text, bold, Unicode math (`latex_text.py`), a note field, `?` to ask
-   first. On submit it shows the grade and explanation, then writes `result.json`.
-   Without tmux it falls back to MCP elicitation, which Claude Code renders as a cramped one-line form.
-4. The server grades, writes the result block to the note, and returns a short text result to the model plus
-   a `QUIZ_JSON:` line the log hook can parse when rebuilding a note. It records the tool-use id in
-   `md-log-state/quiz-logged.json` as soon as it has written the question block, so the hook's replay never
-   logs that quiz a second time.
+3. It records the tool-use id in `quiz-logged.json`. From now on this quiz's blocks are the server's to write, and the mirror will not log it a second time.
+4. It shows the quiz.
+   - Inside tmux: `tmux display-popup -E python3 quiz_popup.py spec.json result.json`. The popup is plain curses, with wrapped text, bold, Unicode math from `latex_text.py`, and a note field. On submit it shows the grade and the explanation, then writes `result.json`.
+   - Outside tmux: MCP elicitation, which Claude Code renders as a cramped one-line form.
+5. It grades, writes the result block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
 
-`?` in the popup sends a question instead of an answer: the server logs an "Asked before answering" note and
-tells the model to answer, then call `quiz` again. The re-ask is recognised by its option set; it reuses the
-order the learner saw and does not log the question block again (`md-log-state/quiz-last-asked.json`).
+**Asking first.** `?` in the popup sends a question instead of an answer. The server logs an "Asked before answering" note and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and does not log the question block again.
 
-Claude Code moves a tool call to the background after two minutes. `settings.json` sets
-`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` so a quiz can stay open as long as the learner needs. If a call is
-backgrounded anyway (setting not loaded), the result arrives as a `<task-notification>`; the teach skill waits
-for it, and rebuilds place it where the quiz was asked.
+**Long quizzes.** Claude Code moves a tool call to the background after two minutes. `settings.json` sets `CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` so a quiz can stay open as long as the learner needs. If a call is backgrounded anyway, its result arrives as a `<task-notification>`; the teach skill waits for it, and a rebuild places it where the quiz was asked.
 
-Why a tool rather than the model grading: the model would need a second turn to mark the answer. The server
-grades on the keypress, exactly like the original pi extension.
+**Why a tool, and not the model grading.** The model would need a second turn to mark the answer. The server grades on the keypress, as the original pi extension did.
 
-### The note mirror (`hooks/md_log.py`)
+## The note mirror
 
-Four hooks call the same script:
+`hooks/md_log.py` is called by four hooks. It also has commands: `link`, `unlink`, `status` and `rebuild`.
 
-- `UserPromptSubmit` logs your prompt live (after replaying anything the previous Stop missed). Pacing prompts
-  (`ready`, `ok`, `next`, …) are not logged.
-- `PreToolUse` on the quiz tool and `AskUserQuestion` replays the transcript first, so prose already persisted
-  lands before the tool's own block.
-- `PostToolUse` on `AskUserQuestion` logs non-graded Q&A live (except the `Resume` question); on the quiz tool
-  it replays the transcript and **inserts** prose that preceded the call above the quiz block. This matters
-  because in interactive mode Claude Code persists an assistant message only after its tool call returns, so
-  text written in the same message as a quiz call is not on disk when the server logs the question.
-- `Stop` reads the session transcript from a per-session cursor and logs the teacher's prose. Claude Code
-  sometimes fires Stop before the transcript is flushed, so the hook waits up to 8 s for an assistant entry.
+| Hook | When | What the script does |
+|---|---|---|
+| `UserPromptSubmit` | the learner sends a prompt | Replays anything the last `Stop` missed, then logs the prompt. Pacing words (`ready`, `ok`, `next`, `probe`) and slash commands are not logged. |
+| `PreToolUse` | before `quiz` or `AskUserQuestion` | Replays the transcript, so prose already on disk lands before the tool's own block. |
+| `PostToolUse` | after `quiz` | Replays the transcript and **inserts** prose that preceded the call above the quiz block. |
+| `PostToolUse` | after `AskUserQuestion` | Logs the question and the answer. Questions with the header `Resume` are not logged. |
+| `Stop` | the teacher's reply ends | Logs the teacher's prose from the transcript. |
 
-Because of that persistence order, the teach skill ends the reading turn before the check quiz: the learner
-types `ready`, and only then is the quiz called. That is the reliable fix; the insertion is the safety net.
-The lesson opener (and the `### Overview` of a course chapter) is a reply of its own for the same reason: a
-quiz called in the reply that carries the opener reaches the learner first.
+**Replay.** The script reads Claude Code's session transcript (JSONL) from a per-session cursor and writes everything new. The transcript format is internal, so the parser is defensive and never blocks the session.
 
-The session header (`## Session — date`) is written with the first content block, never on hook entry, so an
-abandoned session leaves no header. Every hook invocation is logged to `md-log-state/md-log.log`.
+**Late prose.** Because of the persistence order described above, prose can arrive after the quiz block it preceded. There are two defences. The teach skill ends the reading reply before any quiz; that is the real fix. The `PostToolUse` insertion is the safety net. The `PreToolUse` replay has rarely found anything in the sessions observed so far, because the message is usually not on disk yet.
 
-The transcript is Claude Code's internal JSONL; the parser is defensive and never blocks the session.
-Filters drop harness-injected user messages (`<system-reminder>`, `<task-notification>`, slash-command
-payloads) and short assistant narration: text under 300 characters that shares an API message with a tool call,
-or that starts like "I'll…", "Let me…", "waiting on your answer". Long text is always kept.
+**Timing.** Claude Code sometimes fires `Stop` before the transcript is flushed, so the hook waits up to 8 seconds for an assistant entry.
 
-State: `md-log.json` (the vault-wide default file) and `md-log-state/<session>.json` (cursor, the session's own
-file, dedup keys). A session linked with `--session` keeps its own file, so two sessions can mirror two notes;
-the quiz server only knows the vault-wide default. Linking a note the session is already mirroring (for
-example `/lesson resume` after `/lesson pause`) keeps the cursor and dedup keys; only a different file resets
-them for a backfill.
+**What is filtered out:**
 
-`md_log.py rebuild <out.md> <transcript.jsonl>...` regenerates a note from transcripts with the current filters.
+- Harness messages: `<system-reminder>`, `<task-notification>`, slash-command payloads, "[Request interrupted by user]".
+- Status lines from the scripts (they start with `🗒`), and checkpoint callouts.
+- Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept.
 
-### Resuming (`hooks/lesson.py`, `skills/lesson`)
+**The session header** (`## Session — date`) is written with the first content block, never on hook entry, so an abandoned session leaves no header.
 
-`/lesson pause` has the teacher run `lesson.py checkpoint <note>` with the handoff on stdin; it is appended to
-the hidden sidecar `<dir>/.checkpoints/<name>.md`, never to the note. `/lesson resume <file>` links the note
-and runs `lesson.py summary`, which prints only: the latest sidecar checkpoint (or a legacy in-note checkpoint,
-or a pi hand-off note `<stem> — Resume Here.md`), the latest mermaid map, a quiz tally, the last twelve quiz
-outcomes and the highest equation number used. The teacher reads that brief, never the whole note, asks once
-whether to run a recall check (that question is not logged), and continues from the next node. `/lesson reset`
-moves the note and sidecar to `md-log-state/trash/`. pi's callout titles are understood, so pi-era notes resume.
+**Linking a note** (`md_log.py link <file> --session <id>`) has three behaviours:
 
-### Courses (`hooks/book.py`, `skills/course`, `skills/exercise`)
+| Situation | Cursor | Effect |
+|---|---|---|
+| A new note for this session | reset to 0 | The whole session so far is backfilled into the note. |
+| The note this session already mirrors | kept | Nothing is logged twice (for example `/lesson resume` after `/lesson pause`). |
+| `--from-now` | end of the transcript | Nothing said earlier is backfilled. Used when a session moves between notes. |
 
-A course follows a textbook. The design rule: the teacher never loads the book, only the pages of the unit it
-is about to teach, and `book.py` is what knows which pages those are.
+With `--from-now` the script finds the transcript by session id under `~/.claude/projects/*/`. It also remembers which notes already carry this session's header, so returning to a note adds no second header.
 
-`book.py new <pdf>` builds the page map once. The outline comes from `mutool show <pdf> outline`; named
-destinations are resolved to pages with `pdfinfo -dests`, which also gives the position on the page. An entry
-runs to the next entry at its level or above; when that one starts part-way down a page, the page is shared and
-belongs to both ranges (and the teacher is told so). Ids are the book's own numbers, parsed from the outline
-titles ("2.3", "A", part "II"); an outline without numbers gets positional ids. Printed page labels come from
-hyperref's `page.<label>` anchors, else from an offset set by hand. A PDF with no outline is mapped from a
-contents file the teacher writes after reading the contents pages (`--toc`, `--offset`). Sections titled
-"Exercises" are kept out of the units; a trailing `*` marks a section optional.
+**Two notes at once.** A session linked with `--session` keeps its own file, so two sessions can mirror two notes. The quiz server, however, only knows the vault-wide default in `md-log.json`: the note linked last.
 
-The study **unit** is a section (level 2), or a chapter that has none. State is two hidden files in the course
-folder: `.course/book.json` (the map, regenerable) and `.course/state.json` (syllabus, unit status, exercise
-records, goal, solutions policy). The visible index `<slug>.md` is regenerated from the state on every change.
-`md-log-state/course.json` remembers the course used last, so commands need no course argument.
+**Rebuild.** `md_log.py rebuild <out.md> <transcript.jsonl>...` regenerates a note from transcripts with the current filters.
 
-`find` and `exercise` locate an equation, figure or exercise by its hyperref anchor (`equation.2.3.51`,
-`exercisectr.2.3`) and fall back to a `pdftotext` search of the chapter ("Exercise 2.3", "(2.51)" at a line
-end). Nothing is cached; `pdfinfo -dests` takes under half a second on an 860-page book.
+## Pause and resume
 
-`/course next` runs `book.py next`, links the chapter note and hands over to the teach skill's section
-"Teaching from a book". A new chapter starts with an `### Overview` reply (text and the chapter's map, no
-question); the learner answers `ready` or `probe`, and only `probe` runs the level-finding quizzes. Then:
-read the pages, and teach the unit as ordinary nodes, in the book's notation and with
-the book's equation numbers as tags (`\tag{2.51}`, `^eq-2-51`). The book is the backbone, not the boundary:
-the teacher may add outside material and further reading, marked as not in the book and held to the usual
-accuracy rule (the researcher), not to the page. `book.py done <id>` records the unit and
-prints the next one. The `exercise` skill gives one rung of a five-rung hint ladder per reply and records the
-rung; `ASSESSED` exercises and the solutions policy are printed by `book.py exercise <id>` on every lookup, so
-the rule is in front of the model each time rather than remembered.
+**Pause.** The teacher runs `lesson.py checkpoint <note>` with the handoff on stdin: goal, confirmed nodes, shaky nodes, next node, notes. It is appended to the hidden sidecar `<dir>/.checkpoints/<name>.md`, never to the note.
 
-A session can now move between notes (setup, a chapter's lesson, its exercises note). `md_log.py link
---from-now` exists for that: it puts the cursor at the end of the transcript, found by session id under
-`~/.claude/projects/*/`, instead of at 0, so nothing said earlier is backfilled into the new note, and it
-remembers which notes already carry this session's header. `/course new` unlinks first, so setup is mirrored
-nowhere.
+**Resume.** `/lesson resume <note>` links the note and runs `lesson.py summary`, which prints only:
 
-### Visuals (`agents/*-maker.md`, `scripts/render-*.sh`)
+- the latest checkpoint (from the sidecar, or a legacy checkpoint inside the note, or a pi hand-off note named `<stem> — Resume Here.md`);
+- the latest mermaid map;
+- a quiz tally and the last twelve quiz outcomes;
+- the highest equation and example numbers used.
 
-The `visualize` skill has the teacher brief a maker subagent with one idea and few elements. The maker writes
-source to `/tmp/learn-viz/`, renders with the script, **reads the PNG** (Claude Code's Read tool shows images),
-iterates, then renders with `--publish <slug>` which copies the PNG to `<project>/viz/viz-<slug>-<ts>.png`.
-The teacher embeds `![[viz-….png|500]]`; Obsidian resolves embeds by filename anywhere in the vault.
+The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node.
 
-Mermaid renders through the bundled `@mermaid-js/mermaid-cli` driven by an installed Chrome (puppeteer
-downloads nothing). SVG tries `rsvg-convert`, then ImageMagick 7 (`magick`), then 6 (`convert`), then headless
-Chrome.
+**Quiz outcomes** are read from the note: each `[!question] Quiz` block is paired with the next result callout before the following quiz. pi's callout titles are understood, so pi-era notes resume.
 
-## Fragile parts, in order
+**Reset.** `/lesson reset` moves the note and its sidecar to `md-log-state/trash/<timestamp>/`.
 
-1. **Transcript format.** Internal to Claude Code. A release could change it and silence the prose mirror until
-   the parser is updated. Prompts and quizzes are unaffected.
-2. **Stop-hook timing.** The 8 s wait covers what has been observed; late prose is picked up at the next prompt.
-3. **Narration filter.** Heuristic. Text under 300 characters is dropped when it starts like narration
-   ("I'll…", "Let me load…", "Trying…", "The researcher is…"), says it is waiting or paused, or prefaces a tool
-   call while announcing an intent or being under 120 characters; short narration paragraphs at the edges of a
-   longer block are trimmed. Harness messages ("[Request interrupted by user]", task notifications) never appear. Tune
-   `NARRATION_RE` / `NARRATION_ANY_RE` / `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the
-   no-narration rule in `CLAUDE.md` and the teach skill.
-4. **Elicitation fallback.** Claude Code's form truncates the message to one line. Use tmux.
-5. **Multi-select in the popup** is checkboxes; in the elicitation fallback it is one boolean per option.
-6. **The book map.** Good when the PDF was made with LaTeX and hyperref. Outlines with wrong or missing
-   destinations give wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. Ranges err
-   on the side of one page too many. A scanned book has no text layer, so the text-search fallback finds
-   nothing there; the Read tool still sees the pages.
-7. **A first prompt typed in a fresh session** is mirrored into the note linked last, before any skill can
-   relink. `/exercise 2.3` and `/course next` are commands and are not mirrored; "I am stuck on 2.3" typed as
-   the first message is.
+## Courses
+
+A course follows a textbook. The design rule: **the teacher never loads the book.** It reads only the pages of the unit it is about to teach, and `book.py` is what knows which pages those are.
+
+### The page map
+
+`book.py new <pdf>` builds the map once.
+
+- **Outline.** From `mutool show <pdf> outline`. Named destinations are resolved to pages with `pdfinfo -dests`, which also gives the position on the page.
+- **Ranges.** An entry runs to the next entry at its level or above. When that one starts part-way down a page, the page is shared and belongs to both ranges; the teacher is told so. Ranges err on the side of one page too many.
+- **Ids.** The book's own numbers, parsed from the outline titles ("2.3", appendix "A", part "II"). An outline without numbers gets positional ids.
+- **Printed page numbers.** From hyperref's `page.<label>` anchors, else from an offset set by hand.
+- **No outline.** The teacher reads the contents pages and writes a contents file; `new --toc <file> --offset <n>` builds the map from it.
+- **Conventions.** Sections titled "Exercises" are not study units. A trailing `*` in a title marks the section optional.
+
+### Units and state
+
+The study **unit** is a section (level 2 of the outline), or a chapter that has no sections. A unit is `todo`, `done`, `shaky` or `skipped`.
+
+State is two hidden files in the course folder. `.course/book.json` is the map and can be regenerated. `.course/state.json` holds the syllabus, unit status, exercise records, the goal and the solutions policy. The visible index `<name>.md` is regenerated from the state on every change.
+
+Commands act on the **current course**, remembered in `md-log-state/course.json`. `book.py use <name>` changes it.
+
+### Finding things in the book
+
+`find` and `exercise` locate an equation, figure or exercise by its hyperref anchor (`equation.2.3.51`, `exercisectr.2.3`). Without an anchor they fall back to a `pdftotext` search of the chapter, for "Exercise 2.3" at a line start or "(2.51)" at a line end. Nothing is cached; `pdfinfo -dests` takes under half a second on an 860-page book.
+
+### Teaching a unit
+
+`/course next` runs `book.py next`, links the chapter note with `--from-now`, and hands over to the teach skill's section "Teaching from a book".
+
+1. **A new chapter starts with an `### Overview` reply:** text and the chapter's map, no question. The learner answers `ready` or `probe`. Only `probe` runs the level-finding quizzes.
+2. **Before each unit the teacher reads its pages**, then teaches it as ordinary nodes, in the book's notation.
+3. **Equations keep the book's numbers** as tags (`\tag{2.51}`, `^eq-2-51`), so references in the exercises resolve in the note.
+4. **`book.py done <id>`** records the unit and prints the next one with its pages.
+
+The book is the backbone, not the boundary. The teacher may add outside material and further reading. That material is marked as not in the book, and it is held to the usual accuracy rule (the researcher), not to the page.
+
+### Exercises
+
+The `exercise` skill gives one rung of a five-rung hint ladder per reply and records the rung with `book.py exercise <id> --hint <n>`.
+
+The solutions policy and the `ASSESSED` flag are printed by `book.py exercise <id>` on every lookup. The rule is therefore in front of the model each time, not something it has to remember.
+
+### Moving between notes
+
+A course session can touch several notes: none during setup, a chapter's lesson note, its exercises note. `/course new` unlinks first, so setup is mirrored nowhere. The course and exercise skills link with `--from-now`, so each note receives only what belongs to it.
+
+## Visuals
+
+The `visualize` skill has the teacher brief a maker subagent with one idea and few elements. The maker:
+
+1. writes the source to `/tmp/learn-viz/`;
+2. renders it with the script;
+3. **reads the PNG** (Claude Code's Read tool shows images) and iterates until the picture is correct;
+4. renders with `--publish <slug>`, which copies the PNG to `<project>/viz/viz-<slug>-<timestamp>.png`.
+
+The teacher embeds `![[viz-….png|500]]`. Obsidian resolves embeds by filename anywhere in the vault.
+
+Mermaid renders through the bundled `@mermaid-js/mermaid-cli`, driven by an installed Chrome, so puppeteer downloads nothing. SVG tries `rsvg-convert`, then ImageMagick 7 (`magick`), then ImageMagick 6 (`convert`), then headless Chrome.
 
 ## Obsidian side
 
-`obsidian/learn-callouts.css` styles the environment callouts (`definition`, `theorem`, `lemma`,
-`proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples);
-`install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`. Equation and
-example references use core features only: `\tag{n}` for an equation number, `Example n — …` in the callout
-title for a worked example, a `^eq-n` / `^ex-n` block id on the line after the block, and `[[#^eq-n|(n)]]` /
-`[[#^ex-n|Example n]]` links. Both counters run through the whole note; `lesson.py summary` reports the last
-value of each so a resumed session continues them. Calculations inside an example are set out one step per
-line (a list or an `aligned` display block), not run inline.
+`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
 
-## Testing notes
+Equation and example references use core Obsidian features only:
 
-Everything here was tested with scripted clients and detached tmux sessions (keys fed through the attached
-client's pty), plus headless `claude -p` runs for the hooks, skills and subagents. See the commit messages.
+| Thing | In the note | Cited as |
+|---|---|---|
+| Equation | `\tag{n}` inside the math, `^eq-n` on the line after | `[[#^eq-n\|(n)]]` |
+| Worked example | `> [!example] Example n — …`, `^ex-n` on the line after | `[[#^ex-n\|Example n]]` |
+
+Both counters run through the whole note. `lesson.py summary` reports the last value of each, so a resumed session continues them. Course notes use the book's equation numbers instead.
+
+## State files
+
+Everything under `.claude/` in this table is gitignored.
+
+| File | Holds | Written by |
+|---|---|---|
+| `<project>/.mcp.json` | registration of the quiz server | `install.sh` |
+| `.claude/md-log.json` | the note linked last (the vault-wide default) | `md_log.py link` / `unlink` |
+| `.claude/md-log-state/<session>.json` | per session: transcript cursor, linked note, dedup keys, header dates | `md_log.py` |
+| `.claude/md-log-state/quiz-logged.json` | tool-use ids of quizzes the server has logged | `quiz_server.py` |
+| `.claude/md-log-state/quiz-last-asked.json` | option order of a quiz waiting to be re-asked | `quiz_server.py` |
+| `.claude/md-log-state/course.json` | the current course | `book.py` |
+| `.claude/md-log-state/md-log.log` | one line per hook invocation | `md_log.py` |
+| `.claude/md-log-state/quiz-server.log` | why a popup fell back to the form | `quiz_server.py` |
+| `.claude/md-log-state/trash/` | reset lessons | `lesson.py reset` |
+| `<notes>/.checkpoints/<note>.md` | checkpoints of a lesson note | `lesson.py checkpoint` |
+| `courses/<name>/.course/book.json` | the page map | `book.py new` |
+| `courses/<name>/.course/state.json` | syllabus, progress, exercise records, settings | `book.py` |
+| `<project>/viz/` | published diagrams | the render scripts |
+
+## Fragile parts
+
+In order of how likely they are to bite.
+
+1. **Transcript format.** It is internal to Claude Code. A release could change it and silence the prose mirror until the parser is updated. Prompts and quizzes are unaffected.
+2. **The teacher skipping written text.** Twice, in live course sessions, the teacher went straight to a quiz with no opening text. The rule that the opener is its own reply fixed it; watch for it wherever a skill lets text and a quiz share a reply.
+3. **Stop-hook timing.** The 8-second wait covers what has been observed. Late prose is picked up at the next prompt.
+4. **The narration filter.** It is a heuristic; every miss so far was a new phrasing. Tune `NARRATION_RE`, `NARRATION_ANY_RE` and `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the no-narration rule in `CLAUDE.md` and the teach skill.
+5. **The first prompt of a fresh session.** It is mirrored into the note linked last, before any skill can relink. `/exercise 2.3` and `/course next` are commands and are not mirrored; "I am stuck on 2.3" typed as the first message is.
+6. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing; the Read tool still sees the pages.
+7. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
+8. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
+
+## Testing
+
+There is no test suite. Changes have been tested in three ways:
+
+- **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
+- **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
+- **Skills** with a headless run in a scratch copy of the project:
+
+  ```bash
+  claude -p "/course next" --allowedTools "Read" "Bash(python3 .claude/hooks/*)" "Skill" --output-format json
+  ```
+
+  A scratch folder is not trusted, so the allow list in `settings.json` is ignored there; pass `--allowedTools`. The hooks still run, so the note is written and can be inspected.
+
+See the commit messages and [worklog.md](worklog.md) for what was verified when.

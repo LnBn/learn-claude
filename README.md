@@ -1,48 +1,50 @@
 # learn-claude
 
 A personal AI tutor that runs inside [Claude Code](https://code.claude.com) on a Claude subscription.
-It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), the learning system from
-[How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU), from the pi harness to Claude Code.
-The teaching philosophy is his. The plumbing is new.
+
+It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), the learning system from [How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU), from the pi harness to Claude Code. The teaching philosophy is his. The plumbing is new.
 
 **What you get**
 
-- A teacher that follows a fixed process: probe what you know, agree a plan with a dependency map, then teach one
-  node at a time as a *section*: written exposition, an easy check quiz, a harder apply quiz.
-- Graded quizzes in a terminal popup, marked the instant you answer, with the explanation.
-- A markdown mirror of every lesson that renders in Obsidian (LaTeX, mermaid maps, diagrams), split by session.
-- Lessons that span days: pause with a checkpoint, resume later from the note, not from the chat.
-- Courses that follow a textbook: give it a PDF, pick the chapters, and the lessons are condensed from the book's
-  own pages, with hints in steps for the book's exercises.
-- Fact checks by a web-research subagent and diagrams drawn, rendered and visually verified by maker subagents.
+- **A teacher with a fixed method.** It finds what you already know, agrees a plan with you, then teaches one idea at a time: a text to read, an easy quiz, a harder quiz.
+- **Graded quizzes in a popup.** Your answer is marked the moment you give it, with the explanation.
+- **A lesson note in Obsidian.** Every lesson is mirrored into a markdown file with rendered math, diagrams and quiz results. It reads like a textbook chapter, not a chat log.
+- **Lessons that span days.** Pause with a checkpoint and resume later from the note, not from the chat.
+- **Courses that follow a textbook.** Give it a PDF and pick the chapters. Lessons are condensed from the book's own pages, and you get hints in steps on the book's exercises.
+- **Checked facts and checked pictures.** A research subagent verifies claims on the web. Diagram subagents render each picture and look at it before it reaches you.
 
-Everything runs locally except the model calls, which go through your Claude Code login. No API key.
+Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-## Requirements
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+
+## Quick start
+
+### Requirements
 
 | Needed | For |
 |---|---|
 | Claude Code ≥ 2.1, Python 3.10+ | everything |
-| tmux ≥ 3.2 | the quiz popup (outside tmux you get Claude Code's cramped form) |
-| Obsidian (or any markdown viewer) | reading the lesson notes rendered |
-| Node ≥ 18 + npm, Chrome or Chromium | Mermaid diagrams |
-| poppler (`pdfinfo`, `pdftotext`), `mutool` | textbook courses (`mutool` reads the PDF's outline) |
-| `rsvg-convert`, ImageMagick, or Chrome | SVG diagrams |
+| tmux ≥ 3.2 | the quiz popup |
+| Obsidian, or any markdown viewer | reading the lesson notes rendered |
+| poppler (`pdfinfo`, `pdftotext`) and `mutool` | textbook courses |
+| Node ≥ 18 with npm, and Chrome or Chromium | Mermaid diagrams |
+| `rsvg-convert`, ImageMagick or Chrome | SVG diagrams |
 
-Without Node or Chrome everything still works; you lose the pictures.
+Only the first row is essential. Without tmux, quizzes fall back to a cramped one-line form. Without Node or Chrome you lose the pictures and nothing else.
 
-## Install
+### Install
 
-This repository **is** a `.claude` directory. Clone it into the folder you will learn in, ideally a folder inside
-your Obsidian vault so the notes and diagrams render in place.
+This repository **is** a `.claude` directory. Clone it into the folder you will learn in. The best place is the root of your Obsidian vault, so that notes and diagrams render in place.
 
 ```bash
 cd ~/path/to/vault
 git clone https://github.com/LnBn/learn-claude .claude
-bash .claude/scripts/install.sh      # installs mermaid-cli, writes .mcp.json, smoke-tests the renderers
+bash .claude/scripts/install.sh
 ```
 
-Then start Claude Code **from that folder, inside tmux**:
+The install script installs the Mermaid renderer, registers the quiz server in `.mcp.json`, and smoke-tests the renderers. If the folder is an Obsidian vault, it also adds the callout styles to it.
+
+Then start Claude Code from that folder, inside tmux:
 
 ```bash
 tmux
@@ -50,123 +52,178 @@ claude
 ```
 
 The first time, accept the trust dialog and the prompt to enable the project's `quiz` MCP server.
-Update later with `git -C .claude pull`. Your log state is gitignored, so pulling never touches it.
 
-## Daily use
+### Update
+
+```bash
+git -C .claude pull
+```
+
+Then start a new Claude Code session; a running session keeps the old skills and settings. Your notes and log state are gitignored, so pulling never touches them.
+
+### Your first lesson
 
 ```
-/md-log lessons/tcp.md                  # mirror this session into a note
+/md-log lessons/tcp.md
 teach me how TCP achieves reliability
 ```
 
-or, to continue a lesson from an earlier day:
+The first line says where the lesson note goes. The second starts the lesson. Open `lessons/tcp.md` in Obsidian and read along there.
 
-```
-/lesson resume lessons/tcp.md
-```
+## How a lesson runs
+
+Every lesson has the same four phases. Their size changes with the topic; their order does not.
+
+1. **Opening.** A few sentences on the topic and on what is about to happen. The teacher stops here and you type `ready`. A quiz is never the first thing you read.
+   - If you ask to start "from the basics", the opening is a one or two paragraph overview of the subject. It ends with one question: probe my level first, or start from the beginning; and what do you want from this.
+2. **Probe.** Graded questions that find the edge of what you know. They get harder until you miss, then narrow in.
+3. **Plan.** Under a `### Plan` heading: a short approach and a dependency map. The roots are facts you can accept at face value; the sink is your goal. Nothing is taught until you approve it.
+4. **Teach.** One node of the map at a time. Each node is a section with a fixed shape:
+
+   | Step | What happens |
+   |---|---|
+   | Read | A complete written exposition: why this node now, the fact or derivation, how it hangs off earlier nodes, a worked example. The teacher stops. Read it in the note, then type `ready`. |
+   | Check | One quiz that a close reading answers. |
+   | Apply | One quiz that needs reasoning, a calculation or running code. |
+
+   A failed apply is re-taught, with a fresh question, before anything is built on it.
 
 You can type a question at any prompt. The teacher answers it before moving on.
 
-### What a lesson looks like
+## Quizzes
 
-0. **Open.** A written opening before any question. For a beginner request ("from the basics") it is a one or
-   two paragraph overview of the subject, then one question: probe my level first, or start from the beginning,
-   and what do you want from this. Otherwise a few sentences on the topic and what is about to happen; the
-   teacher stops there, and the first quiz comes after you type `ready`. A quiz is never the first thing you read.
-1. **Probe.** Graded questions to find the edge of what you know, with a step of reasoning where possible.
-2. **Plan.** Under a `### Plan` heading: a short approach and a mermaid dependency map, unconditional truths at
-   the roots, your goal at the sink. Nothing is taught until you approve it.
-3. **Teach**, one node per section:
-   - `### Node name`
-   - **Read.** A complete written exposition: why this node now, the truth or derivation, how it hangs off earlier
-     nodes, a worked example or code. The teacher stops here; read it in the note, then type `ready`.
-   - **Check.** One quiz answerable from a close reading.
-   - **Apply.** One quiz that needs reasoning, a calculation, or running code.
-   - A failed apply is re-taught before anything is built on it.
-
-### The quiz popup
+Quizzes open in a popup over the terminal.
 
 | Key | Action |
 |---|---|
 | ↑ ↓ or j k | move |
 | 1–9 | jump to an option (toggles it in multi-select) |
-| Space | toggle (multi-select) |
+| Space | toggle an option (multi-select) |
 | Enter | submit |
 | Tab | type a note that is sent with your answer |
-| `?` | ask the teacher a question *before* answering; the quiz is re-asked after the answer |
+| `?` | ask the teacher a question *before* answering; the quiz comes back after the answer |
 | PgUp PgDn | scroll |
 | Esc | cancel the quiz |
 
-"I don't know" is always the last option. Choosing it is recorded as a gap, not a wrong answer.
-After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
-Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²), ∑ᵢ₌₁ⁿ); the note keeps the real LaTeX.
+- "I don't know" is always the last option. It is recorded as a gap, not as a wrong answer.
+- After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
+- Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²)). The note keeps the real LaTeX.
 
-### Lessons over several sessions
+## Stopping and resuming
 
 The note is the state, not the chat. One note per topic.
 
 ```
-/lesson pause                    # saves a checkpoint (goal, confirmed nodes, shaky nodes, next node) to
-                                 #   lessons/.checkpoints/<name>.md — hidden from Obsidian, the note stays clean
-/lesson resume lessons/tcp.md    # next time: links the note, reads only the checkpoint + map + recent quiz
-                                 #   outcomes, asks once whether to run a recall check, continues from "next"
+/lesson pause                    # save a checkpoint: goal, confirmed nodes, shaky nodes, next node
+/lesson resume lessons/tcp.md    # another day: continue from the checkpoint
 /lesson status lessons/tcp.md    # where the lesson stands, no teaching
-/lesson reset lessons/tcp.md     # start over: note + checkpoints moved to .claude/md-log-state/trash/
+/lesson reset lessons/tcp.md     # start over; the note and its checkpoints go to a trash folder
 ```
 
-The teacher writes the checkpoint by itself when you say you are stopping. The resume question (recall check or
-continue) is asked in the terminal only and never appears in the note; declining it resumes straight from the
-next node. A lesson started under pi resumes the same way; its `… — Resume Here.md` companion note is picked up
-automatically.
+- The teacher also saves a checkpoint by itself when you say you are stopping.
+- Checkpoints live in a hidden file beside the note (`lessons/.checkpoints/<name>.md`), so the note stays clean.
+- On resume the teacher reads only the checkpoint, the map and the recent quiz results, never the whole note. It asks once whether you want a short recall check first. That question appears in the terminal only.
+- A lesson started under pi resumes the same way. Its `… — Resume Here.md` companion note is picked up automatically.
 
-### Following a textbook
+## Following a textbook
 
-A course is a textbook (PDF), a syllabus chosen from it, and one lesson note per chapter. The lesson replaces
-reading the section, like a lecture; the book stays there for depth.
+A course is a textbook PDF, a syllabus chosen from it, and one lesson note per chapter. The lesson replaces reading the section, as a lecture does. The book stays there for depth.
 
 ```
-/course new ~/books/murphy-pml1.pdf pml1   # map the book, read the preface, ask what to cover and why
-/course next                               # teach the next section of the syllabus
+/course new ~/books/murphy-pml1.pdf pml1   # set up a course
+/course next                               # study the next section (also how you resume)
 /course study 4.2                          # or a section of your choice
-/course status                             # progress; /course toc 4 lists a chapter
-/course list                               # all your courses; /course use <name> switches to another
-/exercise 2.3                              # help with Exercise 2.3 (or just say you are stuck on it)
-/course assess 2.5 2.6                     # these exercises are assessed coursework
+/exercise 2.3                              # help with Exercise 2.3
 ```
 
-- **Setup.** The book is mapped once, from its PDF outline: every section gets a page range. The teacher reads
-  the preface for suggested tracks and asks three things: what to cover (the whole book, the sections the book
-  does not mark optional, or your own list such as `2 3.1-3.4 5`), what you want from it, and when it may show
-  full solutions. A PDF without an outline is mapped from its contents pages instead.
-- **Lessons.** A new chapter opens with an overview to read: what the chapter covers, section by section, what
-  it rests on, and a map of its sections. Then you choose: `ready` starts the first section, `probe` first runs
-  a few graded questions on the prerequisites. You are never probed unasked. Before each section the teacher reads that section's
-  pages, nothing else, and never quotes the book from memory. The section is taught as usual (read, `ready`, check, apply) in the book's notation, with
-  the page reference under each heading. The book is the backbone, not the boundary: the teacher adds material
-  from outside it when that helps (a better intuition, a link to another field, what has changed since), says
-  when something is not in the book, and may suggest further reading. Equations keep the book's numbers, `(2.51)` in the note is `(2.51)`
-  in the book, so the exercises' references resolve. Apply quizzes may be adapted from the book's exercises,
-  with the source named.
-- **Exercises.** Help comes one step at a time: what the exercise rests on, the strategy, the next step from
-  where your work stops, a check of your answer. You can paste your work or give the path of a photo. A full
-  solution is shown only as the course allows (by default: after you have shown an attempt and asked), and
-  never for an exercise marked assessed, which is also never used as a quiz.
-- **Files.** `courses/<name>/<name>.md` is the index (syllabus with progress, exercise table; generated, do not
-  edit), `<name>-ch02.md` the lesson note of chapter 2, `<name>-ch02-exercises.md` its exercise help. The page
-  map and the progress are in the hidden `.course/` folder beside them. `/lesson pause` and checkpoints work on
-  a chapter note as on any lesson.
-- **Several courses.** Each course keeps its own syllabus, progress, notes and checkpoints. Commands act on the
-  current course, the one created or chosen last. `/lesson pause` the one you are in, `/course use <name>` to
-  switch, `/course next` to continue the other from where it stopped.
+### Setting up
 
-If the PDF is outside the folder Claude Code runs in, it asks once for permission to read it.
+`/course new <book.pdf> [name]` maps the book once: every section gets a page range, taken from the PDF's outline. A PDF without an outline is mapped from its contents pages instead.
 
-### Environments, notation and equation numbers
+The teacher then reads the preface and asks three things:
 
-Definitions, theorems, proofs, notation lists, remarks and intuition boxes are written as callouts
-(`> [!definition] Best response`, `> [!theorem] …`, `> [!notation]`, …), styled by the CSS snippet the installer
-adds to the vault. Every symbol in an equation is defined in the text before it appears, or in a `[!notation]`
-callout directly after the equation.
+1. **What to cover.** The whole book, only the sections the book does not mark optional, or your own selection such as `2 3.1-3.4 5`.
+2. **What you want from it.** This is the goal the whole course is aimed at.
+3. **When it may show full solutions** to exercises. The default is: after you have shown an attempt and asked.
+
+If the PDF is outside the folder Claude Code runs in, Claude Code asks once for permission to read it.
+
+### Studying
+
+`/course next` teaches the next section of the syllabus. Use the same command to resume after a pause; it reads the chapter's checkpoint.
+
+- **A new chapter opens with an overview** to read: what the chapter covers section by section, what it rests on, and a map of its sections. Then you choose. `ready` starts the first section. `probe` first runs a few graded questions on the prerequisites. You are never probed unasked.
+- **Each section is taught like any lesson node**: read, `ready`, check, apply. The heading carries the book's section number and page reference.
+- **The teacher reads the pages first.** Before each section it reads that section's pages and nothing else. It never quotes the book from memory.
+- **The book is the backbone, not the boundary.** The teacher adds material from outside the book when that helps: a better intuition, a link to another field, what has changed since. It says when something is not in the book, and it may suggest further reading.
+- **Notation and equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
+- **Apply quizzes may come from the book's exercises**, with the source named.
+
+When a chapter is finished the teacher says so, and `/course next` opens the next chapter in a new note.
+
+### Exercises
+
+Run `/exercise 2.3`, or just say you are stuck on Exercise 2.3. You can paste your work or give the path of a photo of it.
+
+Help comes one step per reply:
+
+1. **Orient.** What is asked, and which result of the chapter it rests on.
+2. **Strategy.** The approach, without computation.
+3. **Next step.** The first move from where your work stops.
+4. **Check.** Whether your answer is right, and if not, the first line that goes wrong.
+5. **Full solution.** Only as the course allows.
+
+`/course assess 2.5 2.6` marks exercises as assessed coursework. Those get hints and checks, never a full solution, and they are never used as quiz questions.
+
+### Several courses
+
+Each course keeps its own syllabus, progress, notes and checkpoints. Commands act on the current course: the one created or chosen last.
+
+```
+/lesson pause        # save where you are in this course
+/course list         # all courses, the current one marked
+/course use pml1     # switch
+/course next         # continue that course from its own checkpoint
+```
+
+### Files of a course
+
+| File | What it is |
+|---|---|
+| `courses/<name>/<name>.md` | The index: syllabus with progress, and a table of exercises. Generated; do not edit. |
+| `courses/<name>/<name>-ch02.md` | The lesson note of chapter 2. |
+| `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
+| `courses/<name>/.course/` | Hidden: the page map and the progress record. |
+| `courses/<name>/.checkpoints/` | Hidden: checkpoints, as for any lesson. |
+
+## The lesson note
+
+Each session starts with a `## Session — <date>` heading. Under it:
+
+- your prompts, as `> **You:** …` quotes;
+- the teacher's prose, written bare;
+- quizzes, as callouts with your answer, the result and the explanation;
+- diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`.
+
+**Kept out of the note:** session chatter ("I'll load the skill", "waiting on your answer"), pacing words (`ready`, `ok`, `next`, `probe`), the resume question, checkpoints and status lines from the scripts. `/md-unlog` stops mirroring altogether.
+
+If you ask a question in the quiz popup with `?`, the note shows the quiz, an "Asked before answering" note, the teacher's answer, then the grade.
+
+### Definitions, theorems and notation
+
+Definitions, theorems, proofs, notation lists, remarks and intuition boxes are callouts, styled by the CSS snippet the installer adds to the vault:
+
+```markdown
+> [!definition] Best response
+> A strategy $s_i^*$ is a **best response** to $s_{-i}$ if …
+
+> [!notation]
+> - $S_i$ — the set of strategies available to player $i$
+```
+
+Every symbol in an equation is defined in the text before it appears, or in a `[!notation]` callout directly after the equation.
+
+### Numbered equations and examples
 
 Equations the lesson refers back to are numbered and linkable, with no plugin:
 
@@ -179,82 +236,101 @@ $$
 By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
 ```
 
-Numbers run through the whole note; a resumed session continues from the last one. Worked examples are
-`> [!example] Example n — …` callouts with a `^ex-n` id, numbered the same way and cited as `[[#^ex-n|Example n]]`.
-Their calculations are set out one step per line, in a list or an `aligned` display block, so each line can be
-checked on paper.
+- Numbers run through the whole note. A resumed session continues from the last one.
+- In a course note, equations carry the book's numbers instead: `\tag{2.51}` with the id `^eq-2-51`.
+- Worked examples are `> [!example] Example n — …` callouts with a `^ex-n` id, cited as `[[#^ex-n|Example n]]`.
+- Calculations in an example are set out one step per line, so each line can be checked on paper.
 
-### The note
+## Commands
 
-Each session starts with `## Session — <date>`. Your prompts appear as `> **You:** …` quotes, the teacher's
-prose is written bare, quizzes are callouts with the result, and diagrams are `![[viz-….png|500]]` embeds
-into `viz/`. Blocks are separated by one blank line. Kept out of the note: session chatter ("I'll load the
-skill", "waiting on your answer", "the lesson is paused at…"), pacing prompts (`ready`, `ok`, `next`), the
-resume question, checkpoints (they live in the sidecar) and status lines from the scripts. The note reads like
-a textbook chapter. `/md-unlog` stops mirroring.
+| Command | What it does |
+|---|---|
+| `/md-log <note.md>` | Mirror this session into a note, including what was said so far. |
+| `/md-unlog` | Stop mirroring. |
+| `/lesson pause` | Save a checkpoint for the lesson in progress. |
+| `/lesson resume <note.md>` | Continue a lesson from its checkpoint. |
+| `/lesson status <note.md>` | Show where a lesson stands. |
+| `/lesson reset <note.md>` | Start a lesson over; the note and checkpoints are moved to a trash folder. |
+| `/course new <book.pdf> [name]` | Map a textbook and set up a course. |
+| `/course next` | Study the next section of the current course, or resume it. |
+| `/course study <section>` | Study a given section, for example `4.2`. |
+| `/course status` | Progress of the current course. |
+| `/course toc [chapter]` | The syllabus, or one chapter's sections, with progress marks. |
+| `/course list` | All courses, the current one marked. |
+| `/course use <name>` | Make another course the current one. |
+| `/course select <spec>` | Change the syllabus: `all`, `unstarred`, or chapters, sections and ranges. |
+| `/course assess <exercise>...` | Mark exercises as assessed coursework. |
+| `/course solutions <policy>` | When full solutions may be shown: `never`, `after-attempt` or `on-request`. |
+| `/exercise <id>` | Step-by-step help with an exercise from the course's book. |
 
-If you ask a question in the quiz popup with `?`, the note shows the quiz block, an "Asked before answering"
-note, the teacher's answer, then the grade; the re-asked quiz is not repeated.
+Words you type at a prompt: `ready` when you have read a section, `probe` at a chapter overview to be tested first, or any question.
 
-## Layout
+## Repository layout
 
 ```
 .claude/
-  CLAUDE.md              project rules: teach, don't narrate, plain technical English
-  settings.json          hooks (md-log) and pre-approved commands
-  mcp.json               copied to <project>/.mcp.json by install.sh: registers the quiz server
+  CLAUDE.md              house rules for the teacher: teach, do not narrate, plain technical English
+  settings.json          hooks, pre-approved commands, and the setting that keeps long quizzes in the foreground
+  mcp.json               registers the quiz server; install.sh copies it to <project>/.mcp.json
   skills/
     teach/               the teaching philosophy and process (the heart of it)
-    visualize/           when and how to ask a maker for a diagram
-    lesson/              /lesson resume | pause | status
-    course/              /course new | next | study | status | toc | select | assess | solutions
-    exercise/            hints in steps for the textbook's exercises
+    visualize/           when and how to ask for a diagram
+    lesson/              /lesson pause | resume | status | reset
+    course/              /course new | next | study | status | toc | list | use | select | assess | solutions
+    exercise/            hints in steps for a textbook's exercises
     md-log/, md-unlog/   /md-log <file>, /md-unlog
   agents/
     researcher.md        web research and fact verification
-    mermaid-maker.md     draws, renders, LOOKS at, and publishes a Mermaid diagram
-    svg-maker.md         same for hand-written SVG (geometry, plots)
+    mermaid-maker.md     draws, renders, looks at and publishes a Mermaid diagram
+    svg-maker.md         the same for hand-written SVG (geometry, plots)
   mcp/
-    quiz_server.py       the quiz tool: an MCP server, no dependencies
-    quiz_popup.py        the curses popup shown via tmux display-popup
-    latex_text.py        LaTeX → Unicode for the popup
+    quiz_server.py       the quiz tool: an MCP server with no dependencies
+    quiz_popup.py        the popup, shown with tmux display-popup
+    latex_text.py        LaTeX to Unicode, for the popup
   hooks/
-    md_log.py            mirrors the session into the note (UserPromptSubmit / PostToolUse / Stop hooks)
-    lesson.py            extracts the resume brief from a note
+    md_log.py            mirrors the session into the note
+    lesson.py            checkpoints and the resume brief
     book.py              maps a textbook PDF to page ranges; keeps a course's syllabus and progress
   scripts/
     install.sh           one-off setup
-    render-mermaid.sh    Mermaid → PNG (mermaid-cli + local Chrome)
-    render-svg.sh        SVG → PNG (rsvg-convert → ImageMagick → Chrome)
-  visual-tools/          package.json for mermaid-cli
+    render-mermaid.sh    Mermaid to PNG
+    render-svg.sh        SVG to PNG
+  visual-tools/          package.json for the Mermaid renderer
   obsidian/
-    learn-callouts.css   styles for the lesson environments (definition, theorem, proof, notation, …);
-                         install.sh copies it into <vault>/.obsidian/snippets and enables it
+    learn-callouts.css   styles for definition, theorem, proof, notation and the other callouts
+  docs/
+    architecture.md      how the pieces fit and what is fragile
+    worklog.md           running notes on the state of the project
 ```
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit and what is fragile.
+[docs/architecture.md](docs/architecture.md) explains how the pieces fit, why they are built this way, and what is fragile.
 
 ## Customising
 
-- The teach skill is written for one learner. Edit `skills/teach/SKILL.md` to fit how you learn.
-- Subagent models are `sonnet` in `agents/*.md`. Change `model:` there.
-- `CLAUDE.md` holds the house rules for the teacher's voice.
+- **How it teaches.** The teach skill is written for one learner. Edit `skills/teach/SKILL.md` to fit how you learn.
+- **The teacher's voice.** `CLAUDE.md` holds the house rules.
+- **The teacher's model.** The teacher is the Claude Code session itself, so it uses that session's model. Use `/model` in a session, or set `"model"` in `.claude/settings.local.json` to pin one for this folder only.
+- **The subagents' model.** The researcher and the diagram makers are set to `sonnet` in `agents/*.md`. Change `model:` there.
 
 ## Troubleshooting
 
-- **Quiz shows a one-line form with "Your answer: not set"** instead of a popup: the popup did not trigger. See
-  `.claude/md-log-state/quiz-server.log` for the reason (usually Claude Code was started outside tmux). Restart
-  Claude Code from inside tmux; the server is spawned at session start.
-- **No quiz tool at all** (questions come as plain AskUserQuestion prompts): run `/mcp` and check `quiz` is listed
-  and enabled; make sure `.mcp.json` exists in the project root.
-- **Teacher prose missing from the note**: Claude Code's transcript format is internal and may change between
-  releases. `md_log.py` parses it defensively; prompts and quizzes come from hook payloads and are unaffected.
-  Regenerate a note with `python3 .claude/hooks/md_log.py rebuild <out.md> <transcript.jsonl>...`.
-- **Hooks not firing**: Claude Code must be started from the folder that contains `.claude`, not a subfolder.
-- **"The quiz is running in the background"**: Claude Code moves tool calls that run longer than two minutes to
-  the background. `settings.json` sets `CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` to turn that off for this project,
-  so a quiz can wait as long as you need. If you see the message, the setting is not in effect: restart Claude
-  Code from the project folder.
+**The quiz is a one-line form with "Your answer: not set", not a popup.**
+Claude Code was probably started outside tmux. `.claude/md-log-state/quiz-server.log` gives the reason. Restart Claude Code from inside tmux; the quiz server is started with the session.
+
+**There is no quiz tool; questions come as plain prompts.**
+Run `/mcp` and check that `quiz` is listed and enabled. Check that `.mcp.json` exists in the project root.
+
+**"The quiz is running in the background."**
+Claude Code moves tool calls longer than two minutes to the background. `settings.json` turns that off for this project (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0`). If you see the message, the setting is not in effect: restart Claude Code from the project folder.
+
+**The teacher's text is missing from the note.**
+The mirror reads Claude Code's session transcript, whose format is internal and may change between releases. Prompts and quizzes are not affected. Regenerate a note with `python3 .claude/hooks/md_log.py rebuild <out.md> <transcript.jsonl>...`.
+
+**Hooks do not fire.**
+Claude Code must be started from the folder that contains `.claude`, not from a subfolder.
+
+**A change I pulled has no effect.**
+Skills and settings are read when a session starts. Start a new session.
 
 ## Credits
 

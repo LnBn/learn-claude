@@ -15,6 +15,14 @@ reading the section; one note per chapter plus an exercises note; equations keep
 solutions by default only after an attempt and on request; assessed exercises are never solved or quizzed;
 PDF only for now.
 
+**Later the same day, after the first live runs.** The lesson opener is now a reply of its own, and a course
+chapter opens with an `### Overview` (text and map) that ends in a choice: `ready` or `probe`; the probe is
+opt-in. Reason: two live `/course next` runs went straight to a probe quiz with no text. In a course the book is
+the backbone, not the boundary: outside material and further reading are allowed, marked as not in the book.
+`/course list` and `/course use <name>` switch between courses. README and architecture.md rewritten for
+readability. Confirmed live by the learner: overview first, `ready` into §1.1, `/lesson pause` writes the
+chapter checkpoint. Resume a course with `/course next`, not `/lesson resume`.
+
 **Tested.** `book.py` against Murphy, *Probabilistic Machine Learning: An Introduction* (860 pages, 714 outline
 entries, 132 units; section 2.3, Equation 2.51, Figure 2.7 and Exercise 2.3 spot-checked against the pages), three other
 PDFs (outline with `#page=` targets, outline without numbers, a paper), a PDF without an outline, a hand-written
