@@ -26,7 +26,6 @@ a second time when replaying the transcript.
 import json
 import os
 import random
-import re
 import shutil
 import subprocess
 import sys
@@ -37,6 +36,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 POPUP = os.path.join(HERE, "quiz_popup.py")
 CLAUDE_DIR = os.path.dirname(HERE)
 VAULT_DIR = os.path.dirname(CLAUDE_DIR)  # relative figure paths resolve here
+sys.path.insert(0, os.path.join(CLAUDE_DIR, "hooks"))
+import figures  # noqa: E402  (book figures named in a course quiz: cropped, embedded once, linked)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
@@ -44,8 +45,6 @@ QUIZ_TARGET = os.path.join(STATE_DIR, "quiz-target.json")  # tool-use id -> note
 LAST_ASKED = os.path.join(STATE_DIR, "quiz-last-asked.json")  # set when the learner asks before answering
 SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
-BOOK = os.path.join(CLAUDE_DIR, "hooks", "book.py")
-FIGURE_RE = re.compile(r"\bFig(?:ure|\.)\s+(\d+(?:\.\d+)+)")
 
 TOOL = {
     "name": "quiz",
@@ -176,6 +175,7 @@ def append_log(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
+        text = figures.process(text, path, existing=current)
         prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
             f.write(prefix + text.strip("\n") + "\n")
@@ -237,8 +237,8 @@ def question_block(r):
     body = [r["question"]]
     if r.get("details"):
         body += ["", r["details"]]
-    if r.get("figure"):
-        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]
+    if r.get("figure") and not figures.mentions(r["question"] + " " + r.get("details", "")):
+        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]  # a book figure the text names is embedded by figures.py
     body.append("")
     body += [f"{o['index']}. {o['label']}" for o in r["options"]]
     if r.get("multiSelect"):
@@ -307,28 +307,10 @@ def coerce_correct(ca):
 
 
 def course_figure(text):
-    """For a quiz in a course note that names one of the book's figures ("Figure 1.4a"), crop the first
-    such figure with book.py and return its path, so the learner can see it without being told to.
-    None when the note is not a course note, no figure is named, or the crop fails."""
-    m = FIGURE_RE.search(text)
-    note = log_file()
-    if not m or not note:
-        return None
-    course = os.path.dirname(os.path.abspath(note))
-    if not os.path.exists(os.path.join(course, ".course", "book.json")):
-        return None
-    try:
-        out = subprocess.run([sys.executable, BOOK, "figure", m.group(1), "--course", course], cwd=VAULT_DIR,
-                             capture_output=True, text=True, timeout=60).stdout
-    except Exception as exc:
-        diag(f"book.py figure {m.group(1)} failed: {exc}")
-        return None
-    path = next((ln[len("FILE: "):].strip() for ln in out.splitlines() if ln.startswith("FILE: ")), None)
-    if not path:
-        diag(f"book.py figure {m.group(1)} printed no FILE line")
-        return None
-    path = os.path.join(VAULT_DIR, path)
-    return path if os.path.isfile(path) else None
+    """The book figure a quiz in a course note names ("Figure 1.4a"), cropped by book.py, or None."""
+    ids = figures.mentions(text)
+    course = figures.course_of(log_file())
+    return figures.crop(course, ids[0]) if ids and course else None
 
 
 def run_quiz(args, tool_use_id, progress_token=None):

@@ -16,6 +16,7 @@ The teacher is the Claude Code session itself. Everything else is a prompt it lo
 | Note mirror | `hooks/md_log.py` | Called by four hooks. Copies prompts and the teacher's prose into the note. |
 | Resume helper | `hooks/lesson.py` | Writes checkpoints; prints a short brief of a note for resuming. |
 | Course helper | `hooks/book.py` | Maps a textbook PDF to page ranges; keeps syllabus and progress. |
+| Figures | `hooks/figures.py` | Embeds a book figure the note names, once, and links every mention. |
 | Subagents | `agents/*.md` | `researcher` checks facts on the web. `mermaid-maker` and `svg-maker` draw diagrams. |
 | Renderers | `scripts/render-*.sh` | Turn Mermaid or SVG source into a PNG. |
 
@@ -47,7 +48,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
    - Inside tmux: `tmux display-popup -E python3 quiz_popup.py spec.json result.json`. The popup is plain curses, with wrapped text, bold, Unicode math from `latex_text.py`, and a note field. On submit it shows the grade and the explanation, then writes `result.json`.
    - Outside tmux: MCP elicitation, which Claude Code renders as a cramped one-line form.
 
-   An optional `figure` argument names an image, relative to the vault. The question block embeds it, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open. Without the argument, a quiz whose note belongs to a course and whose text names "Figure N.M" gets that figure attached: the server runs `book.py figure` itself. The teacher does not have to remember.
+   An optional `figure` argument names an image, relative to the vault, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open. Without the argument, a quiz whose note belongs to a course and whose text names "Figure N.M" gets that figure: the server crops it with `book.py figure` itself. In the note, a book figure the question names is embedded by `figures.py` (see [Courses](#courses)); any other image is embedded inside the question block.
 5. It grades, writes the result block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
 
 **Asking first.** `?` in the popup sends a question instead of an answer. The server logs an "Asked before answering" note and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and does not log the question block again.
@@ -152,7 +153,17 @@ Commands act on the **current course**, remembered in `md-log-state/course.json`
 3. The top is the nearest full-width text block above the caption (body text or another figure's caption), or the running head. Narrow blocks are labels inside the figure and are passed over.
 4. Render that band at 50 dpi in grey, trim the white margins, and render the result at 150 dpi as PNG.
 
-The rule assumes the caption sits below the figure, as in Murphy. The teacher looks at every crop before using it; `--box TOP BOTTOM` (points from the top of the page) and `--page` override the rule. A figure already cropped is reused.
+The rule assumes the caption sits below the figure, as in Murphy. `--box TOP BOTTOM` (points from the top of the page) and `--page` override the rule. A figure already cropped is reused.
+
+### Figures in the note
+
+The teacher only names figures. `hooks/figures.py` puts them in the note. Every block written to a note in a course directory passes through `figures.process`: the prose and replayed quiz blocks from `md_log.append` and `insert_before_quiz`, and the quiz blocks the server writes live.
+
+1. Find "Figure 1.4", "Figure 1.4a" or "Fig. 1.4", skipping headings, code, math and existing links.
+2. A figure without a `^fig-1-4` block in the note yet is cropped and embedded once, as `![[pml1-fig-1-4.png|600]] ^fig-1-4`. It goes below the paragraph or callout of the first mention, or above it when that is a quiz question.
+3. Every mention becomes `[[#^fig-1-4|Figure 1.4a]]`.
+
+`insert_before_quiz` compares question text with links reduced to their labels, so the rewriting does not break the matching. `figures.py <note>` applies the same pass to a whole note written earlier.
 
 ### Teaching a unit
 

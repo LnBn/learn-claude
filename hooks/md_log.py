@@ -62,6 +62,8 @@ import re
 import sys
 import time
 
+import figures
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HERE)  # .../.claude
 CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
@@ -183,8 +185,8 @@ def quiz_question_block(r):
     body = [r["question"]]
     if r.get("details"):
         body += ["", r["details"]]
-    if r.get("figure"):
-        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]
+    if r.get("figure") and not figures.mentions(r["question"] + " " + r.get("details", "")):
+        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]  # a book figure the text names is embedded by figures.py
     body.append("")
     body += [f"{o['index']}. {o['label']}" for o in r["options"]]
     if r.get("multiSelect"):
@@ -275,7 +277,8 @@ _STATE_FOR_HEADER = None  # set by handle_hook; append() writes the session head
 
 
 def _norm(q):
-    return re.sub(r"\s+", " ", (q or "")).strip().lower()
+    q = re.sub(r"\[\[#\^[^|\]]*\|([^\]]*)\]\]", r"\1", q or "")  # "[[#^fig-1-4|Figure 1.4]]" reads "Figure 1.4"
+    return re.sub(r"\s+", " ", q).strip().lower()
 
 
 def insert_before_quiz(text, question):
@@ -305,7 +308,7 @@ def insert_before_quiz(text, question):
                 target = i  # keep the LAST match
     if target is None:
         return False
-    block = text.strip("\n").split("\n")
+    block = figures.process(text, path, existing="\n".join(lines)).strip("\n").split("\n")
     lines[target:target] = block + [""]
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -341,6 +344,7 @@ def append(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
+        text = figures.process(text, path, existing=current)
         # exactly one blank line between blocks: the file always ends with "\n", add one more
         prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:

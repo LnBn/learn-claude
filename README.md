@@ -160,7 +160,9 @@ If the PDF is outside the folder Claude Code runs in, Claude Code asks once for 
 - **The book is the backbone, not the boundary.** The teacher adds material from outside the book when that helps: a better intuition, a link to another field, what has changed since. It says when something is not in the book, and it may suggest further reading.
 - **Notation and equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
 - **Apply quizzes may come from the book's exercises**, with the source named.
-- **The book's figures come into the note.** When a section or a quiz leans on a figure, the teacher crops it from the page into `viz/` and embeds it. A quiz that names a figure of the book shows it in the note, and `f` in the popup opens it.
+- **The book's figures come into the note.** The first time the lesson names a figure ("Figure 1.4a"), it is cropped from the page into `viz/` and embedded once, below that paragraph or above the quiz that names it. Every mention of it, then and later, is a link that jumps to the figure. In a quiz that names a figure, `f` opens it in your image viewer.
+
+  For a note written before this, run `python3 .claude/hooks/figures.py <note>` once (it keeps a `.bak` copy).
 
 When a chapter is finished the teacher says so, and `/course next` opens the next chapter in a new note.
 
@@ -303,6 +305,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     md_log.py            mirrors the session into the note
     lesson.py            checkpoints and the resume brief
     book.py              maps a textbook PDF to page ranges; keeps a course's syllabus and progress
+    figures.py           embeds the book figures a course note names, and links the mentions
   scripts/
     install.sh           one-off setup
     render-mermaid.sh    Mermaid to PNG
