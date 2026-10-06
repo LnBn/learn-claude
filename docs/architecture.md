@@ -47,7 +47,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
    - Inside tmux: `tmux display-popup -E python3 quiz_popup.py spec.json result.json`. The popup is plain curses, with wrapped text, bold, Unicode math from `latex_text.py`, and a note field. On submit it shows the grade and the explanation, then writes `result.json`.
    - Outside tmux: MCP elicitation, which Claude Code renders as a cramped one-line form.
 
-   An optional `figure` argument names an image, relative to the vault. The question block embeds it, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open.
+   An optional `figure` argument names an image, relative to the vault. The question block embeds it, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open. Without the argument, a quiz whose note belongs to a course and whose text names "Figure N.M" gets that figure attached: the server runs `book.py figure` itself. The teacher does not have to remember.
 5. It grades, writes the result block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
 
 **Asking first.** `?` in the popup sends a question instead of an answer. The server logs an "Asked before answering" note and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and does not log the question block again.

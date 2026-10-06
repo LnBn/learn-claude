@@ -26,6 +26,7 @@ a second time when replaying the transcript.
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,8 @@ QUIZ_TARGET = os.path.join(STATE_DIR, "quiz-target.json")  # tool-use id -> note
 LAST_ASKED = os.path.join(STATE_DIR, "quiz-last-asked.json")  # set when the learner asks before answering
 SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
+BOOK = os.path.join(CLAUDE_DIR, "hooks", "book.py")
+FIGURE_RE = re.compile(r"\bFig(?:ure|\.)\s+(\d+(?:\.\d+)+)")
 
 TOOL = {
     "name": "quiz",
@@ -303,6 +306,31 @@ def coerce_correct(ca):
     return [s]
 
 
+def course_figure(text):
+    """For a quiz in a course note that names one of the book's figures ("Figure 1.4a"), crop the first
+    such figure with book.py and return its path, so the learner can see it without being told to.
+    None when the note is not a course note, no figure is named, or the crop fails."""
+    m = FIGURE_RE.search(text)
+    note = log_file()
+    if not m or not note:
+        return None
+    course = os.path.dirname(os.path.abspath(note))
+    if not os.path.exists(os.path.join(course, ".course", "book.json")):
+        return None
+    try:
+        out = subprocess.run([sys.executable, BOOK, "figure", m.group(1), "--course", course], cwd=VAULT_DIR,
+                             capture_output=True, text=True, timeout=60).stdout
+    except Exception as exc:
+        diag(f"book.py figure {m.group(1)} failed: {exc}")
+        return None
+    path = next((ln[len("FILE: "):].strip() for ln in out.splitlines() if ln.startswith("FILE: ")), None)
+    if not path:
+        diag(f"book.py figure {m.group(1)} printed no FILE line")
+        return None
+    path = os.path.join(VAULT_DIR, path)
+    return path if os.path.isfile(path) else None
+
+
 def run_quiz(args, tool_use_id, progress_token=None):
     set_target(tool_use_id)
     question = str(args.get("question", "")).strip()
@@ -357,6 +385,10 @@ def run_quiz(args, tool_use_id, progress_token=None):
     }
     if figure:
         record["figure"] = figure
+    else:
+        auto = course_figure(" ".join([question, details] + [o["label"] for o in options]))
+        if auto:
+            record["figure"] = auto
 
     # --- show the question (live) before the learner answers (not again on a re-ask)
     if not reask:
