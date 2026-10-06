@@ -2,6 +2,54 @@
 
 Running notes on the state of the project, for picking work back up. Newest first.
 
+## 2026-10-06 — book figures, PDF export
+
+**Built.** The book's figures come into course notes and quizzes.
+- `book.py figure <id>` crops a figure with its caption into `viz/<slug>-fig-<id>.png`, in about a second.
+  - The crop runs from the caption block (`pdftotext -bbox-layout`) up to the nearest full-width text above it.
+  - White margins are trimmed from a 50 dpi grey render, and the final crop is a 150 dpi PNG.
+  - `--box TOP BOTTOM` and `--page` override the crop.
+  - Spot-checked on ten Murphy figures: photos, vector diagrams with labels, side-by-side panels, a figure mid-page. All were clean.
+- `hooks/figures.py` handles every block written to a course note: `md_log.append`, `insert_before_quiz`, and the quiz server's live blocks.
+  - The first mention of "Figure N.M" (or "Figure N.Ma", "Fig. N.M") embeds the figure once, as `![[<slug>-fig-1-4.png|600]] ^fig-1-4`.
+  - The embed goes below that paragraph or callout, or above a quiz question.
+  - Every mention becomes `[[#^fig-1-4|Figure 1.4a]]`.
+  - `figures.py <note>` retrofits a note written earlier; it was applied to `courses/pml1/pml1-ch01.md` (Figures 1.3 and 1.4).
+- The quiz tool takes an optional `figure`. Without it, a course quiz that names a figure gets it attached by the server.
+  - The popup shows "Figure: … press f to view". `f` runs `xdg-open`, detached, on the question screen and the grade screen.
+- The teach skill now only names figures; the teacher never embeds them.
+
+**Why the server attaches figures itself.** The first live quiz that named Figure 1.4a had no figure. The rule was
+in the exposition guidance, and the resume path skips that. Mechanical rules belong in the hooks, not in the skill.
+
+**PDF export.** Obsidian's built-in export leaves same-note links dead, so we use the community plugin Better Export PDF.
+- That plugin only turns heading links into PDF jumps. Block links (`#^…`) stay as fragment hrefs, and those do nothing in the PDF.
+- `scripts/patch-better-export-pdf.py` gives each `span.blockid` an `af://blk-<id>` anchor and points block links at `an://blk-<id>`.
+  - The patch is idempotent, keeps `main.js.orig`, and refuses a plugin version it was not written for.
+  - It is applied to the vault's plugin (2.0.3). The learner confirmed that figure, equation and example links jump.
+- `learn-callouts.css` gained print rules: headings and the `---` above a session header stay with what follows; callouts, display math, figures, tables and code don't split across pages.
+  - The learner confirmed the PDF is right.
+  - `git pull` does not update the vault's copy of the snippet; the README says to copy it again.
+
+**Fixed by hand.** In `pml1-ch01.md`, the `[!remark] Data versus parameters` callout lost its `>` after the first
+line, so three paragraphs fell outside it. The lines were re-quoted. The cause is not known; the teacher wrote it that way.
+
+**Explained, not changed.** A resumed session that left off right after a reading opens with a pointer back to
+that reading. Two sessions in a row without progress therefore open with two similar recaps.
+
+### To verify in a real session
+
+- `f` in the real tmux popup opens the image viewer. It was tested only with a stub `xdg-open`. If nothing opens, pass `DISPLAY`/`WAYLAND_DISPLAY` to the popup.
+- A fresh lesson unit that names a figure: the embed lands below the right paragraph, and the crop is good. Since the teacher no longer reads the PNG, a bad crop is only caught by the learner.
+- A quiz naming a figure not yet in the note: the embed goes above the quiz, and prose written before the quiz still lands above both.
+
+### Ideas
+
+- Repeated-resume recap: when nothing happened since the last pointer, make it one line.
+- Callouts missing `>`: a mirror-side repair is possible (a line right after a callout that continues its topic), but it is heuristic.
+- Figures whose caption sits above the figure (some books) or beside it: `book.py figure` assumes below.
+- Tables (`Table 2.1`) could use the same crop-and-embed path.
+
 ## 2026-10-05 — textbook courses
 
 **Fixed.** `insert_before_quiz` matched only the first line of a quiz question, so prose before a multi-line
