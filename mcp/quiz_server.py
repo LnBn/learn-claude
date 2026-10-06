@@ -35,6 +35,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 POPUP = os.path.join(HERE, "quiz_popup.py")
 CLAUDE_DIR = os.path.dirname(HERE)
+VAULT_DIR = os.path.dirname(CLAUDE_DIR)  # relative figure paths resolve here
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
@@ -85,6 +86,7 @@ TOOL = {
                 "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
             },
             "explanation": {"type": "string", "description": "REQUIRED. Explanation revealed AFTER the user answers (right or wrong). Say why the correct answer is correct."},
+            "figure": {"type": "string", "description": "Optional path of an image the question refers to (e.g. the FILE that `book.py figure` printed, relative to the vault). It is embedded in the note above the options, and the learner can open it from the quiz with `f`."},
             "shuffle": {"type": "boolean", "description": "Defaults to true: options are reordered before display. Set false only when order is meaningful (ordered numeric values, or an 'All/None of the above' option that must stay last)."},
         },
         "required": ["question", "options", "correctAnswer", "explanation"],
@@ -232,6 +234,8 @@ def question_block(r):
     body = [r["question"]]
     if r.get("details"):
         body += ["", r["details"]]
+    if r.get("figure"):
+        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]
     body.append("")
     body += [f"{o['index']}. {o['label']}" for o in r["options"]]
     if r.get("multiSelect"):
@@ -307,6 +311,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
     multi = bool(args.get("multiSelect"))
     shuffle = args.get("shuffle", True) is not False
     explanation = str(args.get("explanation") or "").strip()
+    figure = str(args.get("figure") or "").strip()
 
     if not question:
         return err("question is required")
@@ -326,6 +331,10 @@ def run_quiz(args, tool_use_id, progress_token=None):
         return err(f"correctAnswer {bad[0]!r} does not match any option value ({known})")
     if len(wanted) > 1 and not multi:
         return err("several correct answers given but multiSelect is not true")
+    if figure:
+        figure = os.path.join(VAULT_DIR, os.path.expanduser(figure))
+        if not os.path.isfile(figure):
+            return err(f"figure {args.get('figure')!r} not found (paths are relative to {VAULT_DIR})")
 
     # A re-ask after "ask the teacher first": same option set as the pending question -> keep the
     # displayed order the learner already saw and do not log the question block again.
@@ -346,6 +355,8 @@ def run_quiz(args, tool_use_id, progress_token=None):
         "options": [{"index": o["index"], "label": o["label"]} for o in displayed],
         "correctIndices": correct_indices, "explanation": explanation, "reask": reask,
     }
+    if figure:
+        record["figure"] = figure
 
     # --- show the question (live) before the learner answers (not again on a re-ask)
     if not reask:
@@ -426,14 +437,15 @@ def ask_via_tmux(record):
     spec = {"question": record["question"], "details": record.get("details", ""),
             "options": record["options"], "multiSelect": record.get("multiSelect", False),
             "dontKnow": DONT_KNOW, "correctIndices": record["correctIndices"],
-            "explanation": record.get("explanation", "")}
+            "explanation": record.get("explanation", ""), "figure": record.get("figure", "")}
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(spec, f, ensure_ascii=False)
     # size the popup from the content, assuming ~70 usable columns; PgUp/PgDn cover the rest
     def rows(text):
         return sum(max(1, len(par) // 70 + 1) for par in str(text).split("\n")) if text else 0
     n_lines = 9 + rows(record["question"]) + rows(record.get("details")) \
-        + sum(rows(o["label"]) for o in record["options"]) + rows(record.get("explanation"))
+        + sum(rows(o["label"]) for o in record["options"]) + rows(record.get("explanation")) \
+        + (2 if record.get("figure") else 0)
     height = str(min(max(n_lines, 14), 45))
     cmd = ["tmux", "display-popup", "-E", "-w", "85%", "-h", height, "-T", " quiz ",
            f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]

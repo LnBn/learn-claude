@@ -183,6 +183,8 @@ def quiz_question_block(r):
     body = [r["question"]]
     if r.get("details"):
         body += ["", r["details"]]
+    if r.get("figure"):
+        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]
     body.append("")
     body += [f"{o['index']}. {o['label']}" for o in r["options"]]
     if r.get("multiSelect"):

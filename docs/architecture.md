@@ -46,6 +46,8 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 4. It shows the quiz.
    - Inside tmux: `tmux display-popup -E python3 quiz_popup.py spec.json result.json`. The popup is plain curses, with wrapped text, bold, Unicode math from `latex_text.py`, and a note field. On submit it shows the grade and the explanation, then writes `result.json`.
    - Outside tmux: MCP elicitation, which Claude Code renders as a cramped one-line form.
+
+   An optional `figure` argument names an image, relative to the vault. The question block embeds it, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open.
 5. It grades, writes the result block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
 
 **Asking first.** `?` in the popup sends a question instead of an answer. The server logs an "Asked before answering" note and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and does not log the question block again.
@@ -142,6 +144,15 @@ Commands act on the **current course**, remembered in `md-log-state/course.json`
 ### Finding things in the book
 
 `find` and `exercise` locate an equation, figure or exercise by its hyperref anchor (`equation.2.3.51`, `exercisectr.2.3`). Without an anchor they fall back to a `pdftotext` search of the chapter, for "Exercise 2.3" at a line start or "(2.51)" at a line end. Nothing is cached; `pdfinfo -dests` takes under half a second on an 860-page book.
+
+`figure <id>` crops a figure into `viz/<slug>-fig-<id>.png` (about a second):
+
+1. Locate the page as `find fig` does.
+2. Read the page's text blocks with `pdftotext -bbox-layout` and find the block that starts "Figure 2.7:". That is the caption, and the bottom of the crop.
+3. The top is the nearest full-width text block above the caption (body text or another figure's caption), or the running head. Narrow blocks are labels inside the figure and are passed over.
+4. Render that band at 50 dpi in grey, trim the white margins, and render the result at 150 dpi as PNG.
+
+The rule assumes the caption sits below the figure, as in Murphy. The teacher looks at every crop before using it; `--box TOP BOTTOM` (points from the top of the page) and `--page` override the rule. A figure already cropped is reused.
 
 ### Teaching a unit
 

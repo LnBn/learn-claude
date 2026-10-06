@@ -17,6 +17,8 @@ or an exercise. Nothing of the book reaches the context except the pages the tea
                                      record a unit's outcome; prints what comes next
     book.py find <eq|ex|fig|table|thm|page> <id>
                                      where the book's Equation 2.51 / Exercise 2.3 / printed page 45 is
+    book.py figure <id> [--box TOP BOTTOM | --page] [--force]
+                                     crop the book's Figure <id> into viz/<slug>-fig-<id>.png
     book.py exercise <id> [--hint N] [--status open|attempted|solved|quizzed|shown]
                                      locate an exercise, show and update its record
     book.py exercises [CHAPTER]      the exercises of a chapter with their records
@@ -36,7 +38,7 @@ A course directory:
     .course/state.json        syllabus, unit status, exercise records, settings
     .checkpoints/             lesson checkpoints, as for any lesson note
 
-Needs poppler (pdfinfo, pdftotext) and, to read the PDF outline, mutool. No Python dependencies.
+Needs poppler (pdfinfo, pdftotext, pdftoppm) and, to read the PDF outline, mutool. No Python dependencies.
 """
 import argparse
 import json
@@ -858,6 +860,91 @@ def cmd_find(a):
     print(f"READ: {c.book['pdf']}  pages: {page}")
 
 
+def page_blocks(pdf, page):
+    """(width, height, [(x0, y0, x1, y1, text)]) of the text blocks on a page; y runs down from the top."""
+    out = run(["pdftotext", "-f", str(page), "-l", str(page), "-bbox-layout", pdf, "-"]) or ""
+    m = re.search(r'<page width="([\d.]+)" height="([\d.]+)"', out)
+    if not m:
+        return None, None, []
+    blocks = []
+    for b in re.finditer(r'<block xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</block>', out, re.S):
+        words = re.findall(r"<word [^>]*>(.*?)</word>", b.group(5))
+        blocks.append(tuple(float(b.group(i)) for i in range(1, 5)) + (" ".join(words),))
+    return float(m.group(1)), float(m.group(2)), blocks
+
+
+def ink_box(pdf, page, top, bottom, width):
+    """(x0, y0, x1, y1) in points of the non-white part of a horizontal band of the page, or None."""
+    dpi = 50
+    s = dpi / 72
+    args = ["pdftoppm", "-f", str(page), "-l", str(page), "-r", str(dpi), "-gray", "-singlefile",
+            "-x", "0", "-y", str(int(top * s)), "-W", str(int(width * s)), "-H", str(max(1, int((bottom - top) * s))),
+            pdf]
+    try:
+        raw = subprocess.run(args, capture_output=True, timeout=60).stdout
+    except Exception:
+        return None
+    m = re.match(rb"P5\s+(\d+)\s+(\d+)\s+(\d+)\s", raw)
+    if not m:
+        return None
+    w, h = int(m.group(1)), int(m.group(2))
+    px = raw[m.end():m.end() + w * h]
+    rows = [y for y in range(h) if min(px[y * w:(y + 1) * w], default=255) < 230]
+    if not rows:
+        return None
+    cols = [x for x in range(w) if min(px[x::w][:h], default=255) < 230]
+    return cols[0] / s, top + rows[0] / s, (cols[-1] + 1) / s, top + (rows[-1] + 1) / s
+
+
+def cmd_figure(a):
+    c = find_course(a.course)
+    page, _ = locate(c, "fig", a.id)
+    if not page:
+        die(f"figure {a.id} not found in the book's anchors or text; look it up from: book.py toc {a.id.split('.')[0]}", 1)
+    pdf = c.book["pdf"]
+    name = f"{c.slug}-fig-{slugify(a.id)}.png"
+    viz = os.path.join(os.getcwd(), "viz")
+    path = os.path.join(viz, name)
+    width, height, blocks = page_blocks(pdf, page)
+    how = None
+    if os.path.exists(path) and not (a.force or a.box or a.page):
+        how = "already cropped"
+    elif a.page or not width:
+        top, bottom, how = 0, height or c.book.get("height") or 792, "whole page"
+    elif a.box:
+        top, bottom, how = a.box[0], a.box[1], "box given"
+    else:
+        rx = re.compile(r"^\s*(?:Figure|Fig\.)\s+" + re.escape(a.id) + r"\s*[:.]")
+        cap = next((b for b in blocks if rx.match(b[4])), None)
+        if not cap:
+            top, bottom, how = 0, height, "whole page (caption not found)"
+        else:
+            # the figure sits between the caption and the nearest full-width text above it (body text, another
+            # caption), or the running head; labels inside a figure are narrow blocks and are passed over
+            left, right = min(b[0] for b in blocks), max(b[2] for b in blocks)
+            above = [b[3] for b in blocks if b[3] <= cap[1] - 2 and b[2] - b[0] > 0.6 * (right - left)]
+            head = [b[3] for b in blocks if b[3] < 0.1 * height]
+            top = max(above) if above else max(head) if head else 0
+            bottom, how = cap[3], "caption found"
+    if how != "already cropped":
+        box = ink_box(pdf, page, top + 1, min(bottom + 2, height or bottom + 2), width or 612)
+        x0, y0, x1, y1 = box if box else (0, top, width or 612, bottom)
+        pad, dpi = 6, 150
+        x0, y0, x1, y1 = max(0, x0 - pad), max(0, y0 - pad), x1 + pad, y1 + pad
+        s = dpi / 72
+        os.makedirs(viz, exist_ok=True)
+        if run(["pdftoppm", "-f", str(page), "-l", str(page), "-r", str(dpi), "-png", "-singlefile",
+                "-x", str(int(x0 * s)), "-y", str(int(y0 * s)), "-W", str(int((x1 - x0) * s)),
+                "-H", str(int((y1 - y0) * s)), pdf, path[:-4]]) is None:
+            die("pdftoppm could not render the page (is poppler installed?)")
+        how += f"; cropped to {y0:.0f}–{y1:.0f} pt from the top of a {height or 0:.0f} pt page"
+    print(f"FIGURE {a.id}: PDF page {page} ({c.cite(page, page)}); {how}")
+    print(f"FILE: {rel(path)}")
+    print(f"EMBED: ![[{name}|600]]")
+    print(f"CHECK: Read the file before using it. If the crop is wrong, rerun with --box TOP BOTTOM "
+          f"(points from the top of the page) or --page.")
+
+
 def exercise_record(c, id_):
     return c.state.setdefault("exercises", {}).setdefault(id_, {"status": "open", "hints": 0, "assessed": False})
 
@@ -1051,6 +1138,14 @@ def main():
     s.add_argument("kind", choices=sorted(ANCHORS) + ["page"])
     s.add_argument("id")
     s.set_defaults(fn=cmd_find)
+
+    s = sub.add_parser("figure", parents=[common])
+    s.add_argument("id")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--box", nargs=2, type=float, metavar=("TOP", "BOTTOM"))
+    g.add_argument("--page", action="store_true")
+    s.add_argument("--force", action="store_true")
+    s.set_defaults(fn=cmd_figure)
 
     s = sub.add_parser("exercise", parents=[common])
     s.add_argument("id")

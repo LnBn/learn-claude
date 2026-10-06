@@ -26,7 +26,7 @@ Everything runs locally except the model calls, which go through your Claude Cod
 | Claude Code ≥ 2.1, Python 3.10+ | everything |
 | tmux ≥ 3.2 | the quiz popup |
 | Obsidian, or any markdown viewer | reading the lesson notes rendered |
-| poppler (`pdfinfo`, `pdftotext`) and `mutool` | textbook courses |
+| poppler (`pdfinfo`, `pdftotext`, `pdftoppm`) and `mutool` | textbook courses |
 | Node ≥ 18 with npm, and Chrome or Chromium | Mermaid diagrams |
 | `rsvg-convert`, ImageMagick or Chrome | SVG diagrams |
 
@@ -102,6 +102,7 @@ Quizzes open in a popup over the terminal.
 | Enter | submit |
 | Tab | type a note that is sent with your answer |
 | `?` | ask the teacher a question *before* answering; the quiz comes back after the answer |
+| `f` | open the figure the question refers to, in your image viewer (shown only when there is one) |
 | PgUp PgDn | scroll |
 | Esc | cancel the quiz |
 
@@ -159,6 +160,7 @@ If the PDF is outside the folder Claude Code runs in, Claude Code asks once for 
 - **The book is the backbone, not the boundary.** The teacher adds material from outside the book when that helps: a better intuition, a link to another field, what has changed since. It says when something is not in the book, and it may suggest further reading.
 - **Notation and equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
 - **Apply quizzes may come from the book's exercises**, with the source named.
+- **The book's figures come into the note.** When a section or a quiz leans on a figure, the teacher crops it from the page into `viz/` and embeds it. A quiz about a figure shows it in the note, and `f` in the popup opens it.
 
 When a chapter is finished the teacher says so, and `/course next` opens the next chapter in a new note.
 
@@ -206,7 +208,7 @@ Each session starts with a `## Session — <date>` heading. Under it:
 - your prompts, as `> **You:** …` quotes;
 - the teacher's prose, written bare;
 - quizzes, as callouts with your answer, the result and the explanation;
-- diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`.
+- diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`, and figures cropped from a course's book (`![[pml1-fig-2-7.png|600]]`).
 
 **Kept out of the note:**
 

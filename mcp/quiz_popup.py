@@ -12,13 +12,14 @@ result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str}
         or {"action":"cancel"}
 
 Keys: ↑/↓ or j/k move · 1-9 jump · Space toggle (multi) · Enter submit
-      Tab edit note · ? ask the teacher first · PgUp/PgDn scroll · Esc cancel
+      Tab edit note · ? ask the teacher first · f view the figure · PgUp/PgDn scroll · Esc cancel
 LaTeX in the question/options/explanation is shown as Unicode (latex_text.py).
 """
 import curses
 import json
 import os
 import re
+import subprocess
 import sys
 import textwrap
 
@@ -95,6 +96,15 @@ def wrap_keep_bold(text, width):
     return out
 
 
+def open_figure(path):
+    """Show the figure in the desktop's image viewer, detached from the popup."""
+    try:
+        subprocess.Popen(["xdg-open", path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception:
+        pass
+
+
 def main(stdscr, spec, out_path):
     curses.curs_set(0)
     curses.use_default_colors()
@@ -111,6 +121,7 @@ def main(stdscr, spec, out_path):
     question = render_math(spec["question"])
     details = render_math(spec.get("details") or "")
     explanation = render_math(spec.get("explanation") or "")
+    figure = spec.get("figure") or ""
     entries = [(o["index"], render_math(o["label"]), render_math(o.get("description") or "")) for o in options] \
         + [(0, dk_label, "")]
     cursor = 0
@@ -159,12 +170,15 @@ def main(stdscr, spec, out_path):
                     for ln in wrap_keep_bold(para, width):
                         rows.append((ln, 0))
             rows.append(("", 0))
-            rows.append(("press any key to continue", curses.A_DIM))
+            rows.append(("f view the figure · any other key to continue" if figure else "press any key to continue",
+                         curses.A_DIM))
             for r, (text, attr) in enumerate(rows[:h]):
                 addline(stdscr, r, 2, text, attr, w - 3)
             stdscr.refresh()
             ch = stdscr.getch()
-            if ch != curses.KEY_RESIZE:
+            if figure and ch == ord("f"):
+                open_figure(figure)
+            elif ch != curses.KEY_RESIZE:
                 return
 
     def finish(result):
@@ -186,6 +200,9 @@ def main(stdscr, spec, out_path):
             lines.append(("", 0))
             for ln in wrap_keep_bold(details, width):
                 lines.append((ln, curses.A_DIM))
+        if figure:
+            lines.append(("", 0))
+            lines.append((f"Figure: {os.path.basename(figure)} — press **f** to view", curses.color_pair(1)))
         lines.append(("", 0))
         option_rows = {}
         for i, (idx, label, desc) in enumerate(entries):
@@ -211,6 +228,8 @@ def main(stdscr, spec, out_path):
         lines.append(("", 0))
         help_txt = ("↑/↓ move · Space toggle · Enter submit · Tab note · ? ask first · Esc cancel" if multi
                     else "↑/↓ move · Enter choose · Tab note · ? ask first · Esc cancel")
+        if figure:
+            help_txt = help_txt.replace(" · Esc", " · f figure · Esc")
         if editing_note:
             help_txt = "type your note · Tab/Enter back to options · Esc cancel"
         if asking:
@@ -280,6 +299,8 @@ def main(stdscr, spec, out_path):
             editing_note = True
         elif ch == ord("?"):
             asking = True
+        elif ch == ord("f") and figure:
+            open_figure(figure)
         elif ord("1") <= ch <= ord("9"):
             n = ch - ord("0")
             for i, (idx, _, _) in enumerate(entries):
