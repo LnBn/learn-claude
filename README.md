@@ -61,6 +61,12 @@ git -C .claude pull
 
 Then start a new Claude Code session; a running session keeps the old skills and settings. Your notes and log state are gitignored, so pulling never touches them.
 
+The callout styles are a copy in the vault. When an update changes them, copy them again:
+
+```bash
+cp .claude/obsidian/learn-callouts.css .obsidian/snippets/
+```
+
 ### Your first lesson
 
 ```
@@ -255,6 +261,20 @@ By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
 - Worked examples are `> [!example] Example n — …` callouts with a `^ex-n` id, cited as `[[#^ex-n|Example n]]`.
 - Calculations in an example are set out one step per line, so each line can be checked on paper.
 
+### Exporting to PDF
+
+Obsidian's own *Export to PDF* keeps the formatting, but links inside the note (to figures, equations, examples) do nothing in the PDF. Use the community plugin **Better Export PDF** instead. It also gives the PDF an outline of the sessions and sections.
+
+1. Install it under Settings → Community plugins → Browse → "Better Export PDF".
+2. Let block links jump as well as heading links. Run this from the vault root, and again after each update of the plugin:
+   ```bash
+   python3 .claude/scripts/patch-better-export-pdf.py
+   ```
+   Then turn the plugin off and on.
+3. Export from the note's ⋯ menu → *Better Export PDF*.
+
+The callout snippet carries the print rules: a heading stays on the page of the text it introduces, and a callout, an equation or a figure is not split across pages unless it is longer than one.
+
 ## Commands
 
 | Command | What it does |
@@ -310,9 +330,10 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     install.sh           one-off setup
     render-mermaid.sh    Mermaid to PNG
     render-svg.sh        SVG to PNG
+    patch-better-export-pdf.py  lets block links jump in PDFs exported with Better Export PDF
   visual-tools/          package.json for the Mermaid renderer
   obsidian/
-    learn-callouts.css   styles for definition, theorem, proof, notation and the other callouts
+    learn-callouts.css   styles for definition, theorem, proof, notation and the other callouts, and print rules
   docs/
     architecture.md      how the pieces fit and what is fragile
     worklog.md           running notes on the state of the project

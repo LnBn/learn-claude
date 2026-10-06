@@ -38,3 +38,16 @@
   content: " ∎";
   float: right;
 }
+
+/* PDF export (built-in and Better Export PDF): a heading, and the rule above a session header, stay with what
+   follows; callouts, display math, figures, tables and code are not split across pages unless longer than one */
+@media print {
+  h1, h2, h3, h4, h5, h6, hr,
+  .el-h1, .el-h2, .el-h3, .el-h4, .el-h5, .el-h6, .el-hr {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+  .callout, .math-block, mjx-container[display="true"], .image-embed, img, table, pre {
+    break-inside: avoid;
+  }
+}
