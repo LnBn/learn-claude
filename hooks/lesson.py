@@ -12,7 +12,8 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      a note nor a checkpoint) the tail of the lesson
     lesson.py checkpoints <lesson.md>  list every checkpoint (date + Next line)
     lesson.py lastsection <lesson.md>  print the note from its last "### " heading on: the node
-                                     the learner stopped in, for a check on a text already written
+                                     the learner stopped in, for a check on a text already written;
+                                     the first line counts the sessions that already re-opened it
     lesson.py reset <lesson.md>        start over: move the note and its sidecar checkpoints
                                      to <project>/.claude/md-log-state/trash/<timestamp>/
     lesson.py checkpoint <lesson.md>   read a checkpoint from stdin and append it to the
@@ -268,6 +269,9 @@ if __name__ == "__main__":
             print("no section heading in " + path)
             sys.exit(1)
         body = lines[heads[-1]:]
+        reopened = sum(1 for ln in body if ln.startswith("## Session"))
+        print(f"REOPENED: {reopened} earlier session(s) already re-opened this node"
+              + (" — its recap is in the note; point back in one line" if reopened else ""))
         print("\n".join(body[:MAX_SECTION_LINES]))
         if len(body) > MAX_SECTION_LINES:
             print(f"… ({len(body) - MAX_SECTION_LINES} more lines)")
