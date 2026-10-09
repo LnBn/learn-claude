@@ -2,6 +2,17 @@
 
 Running notes on the state of the project, for picking work back up. Newest first.
 
+## 2026-10-09 — key ideas, re-entry in the review note
+
+**Built.**
+- Every node's exposition ends with a `> [!summary] Key idea` callout of one to three sentences.
+- The re-entry for a node read but not checked goes in the review note, not the lesson note. With a key idea it is one line, a link to the section. `lesson.py lastsection` now reports whether the node has a key idea, in place of the `REOPENED` count.
+
+**Fixed in the mirror** (seen in the first live recall check, session `97d9638f`):
+- `### Before 2.1.1 …` and its line of links were dropped. Text under 120 characters that shares a message with a tool call counts as narration. A heading or a wikilink now exempts text.
+- The session header landed below the recall quizzes, because the server writes quizzes live and the header waited for the first prose block. `PreToolUse` on a quiz now writes the header first.
+- Both fixes were replayed against that session's transcript in a scratch copy, with the prose persisted before and after the quiz.
+
 ## 2026-10-09 — review notes for recall checks
 
 **Built.** A recall check on resume goes in a review note, not in the lesson note.
