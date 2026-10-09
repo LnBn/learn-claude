@@ -82,9 +82,9 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 - Harness messages: `<system-reminder>`, `<task-notification>`, slash-command payloads, "[Request interrupted by user]".
 - Status lines from the scripts (they start with `🗒`), and checkpoint callouts.
 - Housekeeping turns. The reply to a command that manages the course or the log is not lesson content: `/course new`, `list`, `use`, `status`, `toc`, `select`, `assess`, `solutions`; `/lesson pause`, `status`, `reset`; `/md-log`, `/md-unlog`. The replay mutes everything from such a command to the learner's next prompt. `/course next`, `/course study`, `/lesson resume` and `/exercise` start teaching and are not muted. A command typed without its slash ("course list") is treated the same way and is not logged as a prompt. The list is `ADMIN_COMMANDS` in `md_log.py`.
-- Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept.
+- Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept, and so is text that starts with a heading or holds a wikilink.
 
-**The session header** (`## Session — date`) is written with the first content block, never on hook entry, so an abandoned session leaves no header.
+**The session header** (`## Session — date`) is written with the first content block, never on hook entry, so an abandoned session leaves no header. A quiz counts as content: `PreToolUse` writes the header before the server writes the quiz, so a session that opens with one (a recall check) has its header on top.
 
 **Linking a note** (`md_log.py link <file> --session <id>`) has three behaviours:
 
@@ -113,7 +113,7 @@ With `--from-now` the script finds the transcript by session id under `~/.claude
 
 The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node. The procedure is the section "Resuming a lesson" of the teach skill, shared by `/lesson resume` and `/course next`.
 
-**Stopped after reading.** When the next node's exposition is already in the note but unchecked, the session re-opens with a pointer to that reading and a `ready` line, not with its quiz. `lesson.py lastsection <note>` prints that node's text (from the last `###` heading on) so the questions match what was written. Its first line, `REOPENED: n`, counts the session headers inside that text. When an earlier session already re-opened the node, its recap is in the note, and the pointer shrinks to one line.
+**Stopped after reading.** When the next node's exposition is already in the note but unchecked, the session re-opens with a pointer to that reading and a `ready` line, not with its quiz. The pointer goes in the review note, like a recall check: it is about the session, and the lesson note holds only the lesson. `lesson.py lastsection <note>` prints that node's text (from the last `###` heading on) so the questions match what was written. Its first line says whether the node ends with a `Key idea` callout. If it does, the pointer is one line: a link to the section. If not (a node written before that rule), the pointer recalls the node in two or three sentences.
 
 **Recall check.** It goes in a review note, not in the lesson note: one `<slug>-review.md` per course, or `<stem> — Review.md` beside any other lesson. `lesson.py review <note>` prints that path and the `###` headings of the lesson note (in a course, of the previous chapter's note too) as wikilinks, so each check can link to what it tests. The teacher links the review note with `--from-now`, asks its questions, and ends the reply with a `ready` line. It links the lesson note back only on the next turn: the Stop replay writes a reply's last prose to whatever note is linked when the reply ends. `lesson.py summary` also reads the review note and lists its missed questions under `EARLIER RECALL CHECKS`, so they are asked again first. `/lesson reset` moves a lesson's own review note to the trash, but not a course's, which serves every chapter.
 
@@ -203,7 +203,7 @@ Mermaid renders through the bundled `@mermaid-js/mermaid-cli`, driven by an inst
 
 ## Obsidian side
 
-`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
+`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples. `summary` (the key idea) is Obsidian's built-in style. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
 
 Equation and example references use core Obsidian features only:
 
@@ -211,6 +211,7 @@ Equation and example references use core Obsidian features only:
 |---|---|---|
 | Equation | `\tag{n}` inside the math, `^eq-n` on the line after | `[[#^eq-n\|(n)]]` |
 | Worked example | `> [!example] Example n — …`, `^ex-n` on the line after | `[[#^ex-n\|Example n]]` |
+| Key idea | `> [!summary] Key idea`, the last block of a node's exposition | not cited |
 
 Both counters run through the whole note. `lesson.py summary` reports the last value of each, so a resumed session continues them. Course notes use the book's equation numbers instead.
 

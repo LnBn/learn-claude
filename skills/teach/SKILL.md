@@ -164,6 +164,7 @@ For **every node**, in this order:
    - *Establish.* A foundational truth is stated plainly, at face value, no caveats (surface an atomic unit if one fits). A derived step is built up from what is already established, along the motivated discovery path — "how could I have discovered this?" — so nothing appears from nowhere.
    - *Connect.* The dependency edge made explicit: exactly how this node hangs off the ones already in place.
    - *Make it concrete.* At least one worked example, calculation, or minimal code snippet where the topic allows; the notation and the definitions the learner will need, written out.
+   - *Close with the key idea.* The last thing in the exposition is a `> [!summary] Key idea` callout: one to three sentences that state what the node established, in words that stand on their own. Someone skimming the note, or coming back to it days later, reads only these. Nothing new goes in it.
    Length is whatever the node needs — typically a few hundred words, more for a heavy node. Do not split it with questions; the Socratic move, if any, is a "try this before reading on" line *inside* the text, never a tool call. A visual goes here when the `visualize` skill applies.
 
    **End the reply here.** Close the exposition with exactly one line, `Say **ready** when you have read this.`, and stop — no `quiz` in the same reply. The learner reads the lesson in the mirrored note, and the note only receives your text once your reply has ended; a quiz called in the same reply pops up before the text they need is there. When they say ready (or anything that means it), the check follows.
@@ -208,11 +209,16 @@ A session that starts with `/lesson resume <file>`, or with `/course next` on a 
    - Link it: `python3 .claude/hooks/md_log.py link "<review note>" --session ${CLAUDE_SESSION_ID} --from-now`.
    - Open with the heading `### Before <the next node or unit>` and one line naming the sections the questions test, using the printed links: `Questions on [[pml1-ch01#1.2 Supervised learning|§1.2]] and …`.
    - Then 2 to 4 `quiz` questions over the confirmed nodes. Take first anything listed as shaky or missed, in the brief's quiz outcomes or under `EARLIER RECALL CHECKS`, then the nodes the next step depends on. Anything that fails is re-established (motivate, establish, connect, check) in the review note before you move on.
-   - End that reply with `Say **ready** to go on to <the next node or unit>.` and nothing after it. Do not link the lesson note back in the same reply: the last prose of a reply reaches the note only when the reply ends, so it would be lost from the review note.
-   - When they say ready, link the lesson note again (`md_log.py link "<note>" --session ${CLAUDE_SESSION_ID} --from-now`), then go to step 3.
+   - End that reply with `Say **ready** to go on to <the next node or unit>.` and nothing after it. If the next node is one the learner already read (step 3), end instead with its re-entry, which then needs no heading of its own. Do not link the lesson note back in the same reply: the last prose of a reply reaches the note only when the reply ends, so it would be lost from the review note.
+   - When they say ready, link the lesson note again (`md_log.py link "<note>" --session ${CLAUDE_SESSION_ID} --from-now`), then go to step 3. After a re-entry, that is the node's check.
 3. **Pick up at the checkpoint's Next.** Re-present the dependency map only if it changed.
    - *Next is a new node:* write its exposition, as always.
-   - *Next is a node whose exposition is already in the note but was never checked* (the learner stopped after reading it): **do not open with its quiz, whatever the checkpoint says.** They read that text in another session, perhaps days ago. Get the text with `python3 .claude/hooks/lesson.py lastsection "<note>"`, then reply with a short re-entry: two or three sentences recalling what the node established, the heading it sits under in the note, and the closing line `Say **ready** when you have re-read it.` If the first line of that output (`REOPENED`) is not 0, an earlier session already wrote that recap: the re-entry is then **one line**, the heading to re-read and, if something was added under it since (a remark after a missed check), its name, followed by the same closing line. The check and the apply follow when they say ready, written against the text that is in the note.
+   - *Next is a node whose exposition is already in the note but was never checked* (the learner stopped after reading it): **do not open with its quiz, whatever the checkpoint says.** They read that text in another session, perhaps days ago. Point them back to it. The pointer is about this session, not about the subject, so it goes in the review note, never in the lesson note:
+     - Get the text with `python3 .claude/hooks/lesson.py lastsection "<note>"`. Its first line says whether the node ends with a key idea.
+     - If no recall check ran, run `lesson.py review "<note>"` for the review note and the section links, link the review note with `--from-now`, and start with the heading `### Before <the node>`. After a recall check the review note is still linked; go on under its heading.
+     - The re-entry is one line: the link to the section, from the `review` output, and *its key idea is at the end*. Name anything added under it since, such as a remark after a missed check. If the node has no key idea (it was written before that rule), write two or three sentences recalling what it established instead.
+     - Then the closing line, as its own paragraph: `Say **ready** when you have re-read it.`
+     - When they say ready, link the lesson note again with `--from-now`. The check and the apply follow, written against the text that is in the note.
 
 **A resumed session never opens with a graded question unless the learner chose the recall check.**
 
@@ -280,7 +286,7 @@ If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
 > …
 ```
 
-Types: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples.
+Types: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples. A node's exposition ends with `summary`, titled `Key idea`, and it is used nowhere else.
 
 **Worked examples are numbered environments.** Every worked example or calculation goes in an `[!example]` callout titled `Example n — <what it computes>`, numbered from 1 through the whole note across sessions (the resume brief tells you the last number used), with a block id so it can be cited:
 

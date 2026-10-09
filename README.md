@@ -88,7 +88,7 @@ Every lesson has the same four phases. Their size changes with the topic; their 
 
    | Step | What happens |
    |---|---|
-   | Read | A complete written exposition: why this node now, the fact or derivation, how it hangs off earlier nodes, a worked example. The teacher stops. Read it in the note, then type `ready`. |
+   | Read | A complete written exposition: why this node now, the fact or derivation, how it hangs off earlier nodes, a worked example. It ends with a `Key idea` callout of one to three sentences. The teacher stops. Read it in the note, then type `ready`. |
    | Check | One quiz that a close reading answers. |
    | Apply | One quiz that needs reasoning, a calculation or running code. |
 
@@ -131,7 +131,7 @@ A lesson lives in its note, so you can stop and continue in a new session. Keep 
 - Checkpoints live in a hidden file beside the note (`lessons/.checkpoints/<name>.md`), so the note stays clean.
 - On resume the teacher reads the checkpoint, the map and your recent quiz results, and asks whether you want a short recall check before continuing.
 - A recall check goes in a review note, so the lesson note stays the lesson: `lessons/tcp — Review.md` beside the note, or one `<name>-review.md` for a whole course. Each check opens with links to the sections it tests. A question you miss there comes up first in the next recall check.
-- If you stopped right after reading a section, the next session points you back to that reading. Its check and apply questions follow when you type `ready`.
+- If you stopped right after reading a section, the next session points you back to that reading, with a link, in the review note. Its check and apply questions follow in the lesson note when you type `ready`.
 - Notes written by the original pi version resume the same way. A `… — Resume Here.md` companion note is picked up automatically.
 
 ## Following a textbook
@@ -261,6 +261,7 @@ By [[#^eq-3|(3)]], the posterior is proportional to likelihood times prior.
 - Numbers run through the whole note. A resumed session continues from the last one.
 - In a course note, equations carry the book's numbers instead: `\tag{2.51}` with the id `^eq-2-51`.
 - Worked examples are `> [!example] Example n — …` callouts with a `^ex-n` id, cited as `[[#^ex-n|Example n]]`.
+- Each section ends with a `> [!summary] Key idea` callout. Read only these to skim a note.
 - Calculations in an example are set out one step per line, so each line can be checked on paper.
 
 ### Exporting to PDF

@@ -16,7 +16,7 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      lesson) and the section headings they may cite, as wikilinks
     lesson.py lastsection <lesson.md>  print the note from its last "### " heading on: the node
                                      the learner stopped in, for a check on a text already written;
-                                     the first line counts the sessions that already re-opened it
+                                     the first line says whether it ends with a Key idea callout
     lesson.py reset <lesson.md>        start over: move the note, its sidecar checkpoints and (outside
                                      a course) its review note to <project>/.claude/md-log-state/trash/<timestamp>/
     lesson.py checkpoint <lesson.md>   read a checkpoint from stdin and append it to the
@@ -352,9 +352,9 @@ if __name__ == "__main__":
             print("no section heading in " + path)
             sys.exit(1)
         body = lines[heads[-1]:]
-        reopened = sum(1 for ln in body if ln.startswith("## Session"))
-        print(f"REOPENED: {reopened} earlier session(s) already re-opened this node"
-              + (" — its recap is in the note; point back in one line" if reopened else ""))
+        key = any(re.match(r"> \[!summary\][-+]? Key idea", ln) for ln in body)
+        print("KEY IDEA: yes — the re-entry is one line" if key else
+              "KEY IDEA: none — recall what the node established in two or three sentences")
         print("\n".join(body[:MAX_SECTION_LINES]))
         if len(body) > MAX_SECTION_LINES:
             print(f"… ({len(body) - MAX_SECTION_LINES} more lines)")
