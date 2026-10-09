@@ -130,6 +130,7 @@ A lesson lives in its note, so you can stop and continue in a new session. Keep 
 - If you simply say you are stopping, the teacher saves a checkpoint too.
 - Checkpoints live in a hidden file beside the note (`lessons/.checkpoints/<name>.md`), so the note stays clean.
 - On resume the teacher reads the checkpoint, the map and your recent quiz results, and asks whether you want a short recall check before continuing.
+- A recall check goes in a review note, so the lesson note stays the lesson: `lessons/tcp — Review.md` beside the note, or one `<name>-review.md` for a whole course. Each check opens with links to the sections it tests. A question you miss there comes up first in the next recall check.
 - If you stopped right after reading a section, the next session points you back to that reading. Its check and apply questions follow when you type `ready`.
 - Notes written by the original pi version resume the same way. A `… — Resume Here.md` companion note is picked up automatically.
 
@@ -204,6 +205,7 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/<name>.md` | The index: syllabus with progress, and a table of exercises. Generated; do not edit. |
 | `courses/<name>/<name>-ch02.md` | The lesson note of chapter 2. |
 | `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
+| `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
 | `courses/<name>/.checkpoints/` | Hidden: checkpoints, as for any lesson. |
 

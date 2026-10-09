@@ -34,6 +34,7 @@ A course directory:
     <slug>.md                 the visible index: syllabus, progress, links to the chapter notes (generated)
     <slug>-ch02.md            one lesson note per chapter (the md-log mirror), created when first studied
     <slug>-ch02-exercises.md  exercise help for that chapter
+    <slug>-review.md          the recall checks of resumed sessions (lesson.py review)
     .course/book.json         the page map (regenerate with `new --force`)
     .course/state.json        syllabus, unit status, exercise records, settings
     .checkpoints/             lesson checkpoints, as for any lesson note
@@ -460,6 +461,8 @@ def render_index(c):
            f"{done} of {len(syl)} sections studied · full solutions: {st.get('solutions', 'after-attempt')}"]
     if st.get("goal"):
         out += ["", f"Goal: {st['goal']}"]
+    if os.path.exists(os.path.join(c.dir, f"{c.slug}-review.md")):  # recall checks, see lesson.py review_path
+        out += ["", f"Recall checks: [[{c.slug}-review]]"]
     out += ["", "## Syllabus"]
     if not syl:
         out += ["", "Not selected yet."]

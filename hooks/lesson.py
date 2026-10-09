@@ -11,11 +11,14 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      recent quiz outcomes, and (if there is neither
                                      a note nor a checkpoint) the tail of the lesson
     lesson.py checkpoints <lesson.md>  list every checkpoint (date + Next line)
+    lesson.py review <lesson.md>       print the review note that recall checks go to ("<slug>-review.md"
+                                     in a course directory, "<stem> — Review.md" next to any other
+                                     lesson) and the section headings they may cite, as wikilinks
     lesson.py lastsection <lesson.md>  print the note from its last "### " heading on: the node
                                      the learner stopped in, for a check on a text already written;
                                      the first line counts the sessions that already re-opened it
-    lesson.py reset <lesson.md>        start over: move the note and its sidecar checkpoints
-                                     to <project>/.claude/md-log-state/trash/<timestamp>/
+    lesson.py reset <lesson.md>        start over: move the note, its sidecar checkpoints and (outside
+                                     a course) its review note to <project>/.claude/md-log-state/trash/<timestamp>/
     lesson.py checkpoint <lesson.md>   read a checkpoint from stdin and append it to the
                                      sidecar <dir>/.checkpoints/<name>.md (hidden from
                                      Obsidian; the lesson note stays clean)
@@ -24,6 +27,7 @@ The lesson file is the md-log mirror written by hooks/md_log.py and the quiz
 server — or by pi's md-log extension (its callout titles are understood too);
 nothing here is loaded into context except what this script prints.
 """
+import json
 import os
 import re
 import sys
@@ -45,6 +49,74 @@ NOTE_SUFFIXES = (" — Resume Here.md", " - Resume Here.md", " — resume here.m
 MAX_NOTE_LINES = 200
 MAX_TAIL_LINES = 60
 MAX_SECTION_LINES = 250
+
+
+def course_slug(lesson_path):
+    """The course slug when the note sits in a course directory (one with .course/book.json), else None."""
+    d = os.path.dirname(os.path.abspath(lesson_path))
+    if not os.path.exists(os.path.join(d, ".course", "book.json")):
+        return None
+    try:
+        with open(os.path.join(d, ".course", "state.json"), encoding="utf-8") as f:
+            return json.load(f).get("slug")
+    except Exception:
+        return None
+
+
+def review_path(lesson_path):
+    """Where recall checks go: one review note per course (book.py links it from the index), or one per lesson."""
+    slug = course_slug(lesson_path)
+    if slug:
+        return os.path.join(os.path.dirname(os.path.abspath(lesson_path)), f"{slug}-review.md")
+    return os.path.splitext(os.path.abspath(lesson_path))[0] + " — Review.md"
+
+
+def review_sources(lesson_path):
+    """The notes a recall check may test: the lesson note and, in a course, the chapter note before it."""
+    slug = course_slug(lesson_path)
+    if not slug:
+        return [lesson_path]
+    d = os.path.dirname(os.path.abspath(lesson_path))
+    chapter = re.compile(re.escape(slug) + r"-(ch\d+|app[A-Z]|[\w-]+)\.md$")
+    notes = sorted(n for n in os.listdir(d) if chapter.match(n)
+                   and not n.endswith(("-exercises.md", "-review.md")))
+    here = os.path.basename(lesson_path)
+    if here not in notes:
+        return [lesson_path]
+    i = notes.index(here)
+    return [os.path.join(d, n) for n in notes[max(0, i - 1):i + 1]]
+
+
+def heading_links(note):
+    """Each ### heading of a note (Plan and Overview left out) as a wikilink, labelled §<number> when it has one."""
+    if not os.path.exists(note):
+        return []
+    stem = os.path.splitext(os.path.basename(note))[0]
+    out = []
+    for ln in read(note):
+        if not ln.startswith("### "):
+            continue
+        head = re.sub(r"\s+", " ", re.sub(r"[#|^:\[\]]", " ", ln[4:])).strip()
+        if not head or head.lower() in ("plan", "overview"):
+            continue
+        num = re.match(r"([A-Z]?\d+(?:\.\d+)*)\s", head)
+        out.append(f"[[{stem}#{head}|§{num.group(1)}]]" if num else f"[[{stem}#{head}]]")
+    return out
+
+
+def review(lesson_path):
+    rp = review_path(lesson_path)
+    if os.path.exists(rp):
+        lines = read(rp)
+        n = sum(1 for ln in lines if ln.startswith("## Session"))
+        print(f"REVIEW NOTE: {rp}  (exists, {len(quiz_outcomes(lines))} questions over {n} session(s))")
+    else:
+        print(f"REVIEW NOTE: {rp}  (new)")
+    for src in review_sources(lesson_path):
+        links = heading_links(src)
+        print()
+        print(f"SECTIONS OF {os.path.basename(src)} (cite the ones a question tests, exactly as written):")
+        print("\n".join("  " + l for l in links) if links else "  (no section headings)")
 
 
 def sidecar_path(lesson_path):
@@ -236,6 +308,15 @@ def summary(path, notes=None):
             print("MISSED OR UNKNOWN (candidates for the re-probe):")
             for q in missed[-8:]:
                 print(f"  - {q[:110]}")
+    rp = review_path(path)
+    recall = quiz_outcomes(read(rp)) if os.path.exists(rp) else []
+    if recall:
+        missed = [q for q, o in recall if o in ("✗", "?")]
+        print()
+        print(f"EARLIER RECALL CHECKS ({os.path.basename(rp)}): {len(recall)} questions, {len(missed)} missed or unknown"
+              + (". Missed, most recent last (re-probe these first):" if missed else "."))
+        for q in missed[-8:]:
+            print(f"  - {q[:110]}")
 
 
 def list_checkpoints(path):
@@ -262,6 +343,8 @@ if __name__ == "__main__":
         summary(path, notes)
     elif cmd == "checkpoints":
         list_checkpoints(path)
+    elif cmd == "review":
+        review(path)
     elif cmd == "lastsection":
         lines = read(path) if os.path.exists(path) else []
         heads = [i for i, ln in enumerate(lines) if ln.startswith("### ")]
@@ -280,10 +363,11 @@ if __name__ == "__main__":
         here = os.path.dirname(os.path.abspath(__file__))
         trash = os.path.join(os.path.dirname(here), "md-log-state", "trash", time.strftime("%Y%m%d-%H%M%S"))
         moved = []
-        for src in (path, sidecar_path(path)):
+        own_review = [] if course_slug(path) else [review_path(path)]  # a course's review note serves every chapter
+        for src in [path, sidecar_path(path)] + own_review:
             if os.path.exists(src):
                 os.makedirs(trash, exist_ok=True)
-                dst = os.path.join(trash, ("checkpoints-" if src != path else "") + os.path.basename(src))
+                dst = os.path.join(trash, ("checkpoints-" if src == sidecar_path(path) else "") + os.path.basename(src))
                 shutil.move(src, dst)
                 moved.append(dst)
         if moved:

@@ -115,6 +115,8 @@ The teacher reads that brief, never the whole note. It asks once whether to run 
 
 **Stopped after reading.** When the next node's exposition is already in the note but unchecked, the session re-opens with a pointer to that reading and a `ready` line, not with its quiz. `lesson.py lastsection <note>` prints that node's text (from the last `###` heading on) so the questions match what was written. Its first line, `REOPENED: n`, counts the session headers inside that text. When an earlier session already re-opened the node, its recap is in the note, and the pointer shrinks to one line.
 
+**Recall check.** It goes in a review note, not in the lesson note: one `<slug>-review.md` per course, or `<stem> — Review.md` beside any other lesson. `lesson.py review <note>` prints that path and the `###` headings of the lesson note (in a course, of the previous chapter's note too) as wikilinks, so each check can link to what it tests. The teacher links the review note with `--from-now`, asks its questions, and ends the reply with a `ready` line. It links the lesson note back only on the next turn: the Stop replay writes a reply's last prose to whatever note is linked when the reply ends. `lesson.py summary` also reads the review note and lists its missed questions under `EARLIER RECALL CHECKS`, so they are asked again first. `/lesson reset` moves a lesson's own review note to the trash, but not a course's, which serves every chapter.
+
 **Quiz outcomes** are read from the note: each `[!question] Quiz` block is paired with the next result callout before the following quiz. pi's callout titles are understood, so pi-era notes resume.
 
 **Reset.** `/lesson reset` moves the note and its sidecar to `md-log-state/trash/<timestamp>/`.
@@ -184,7 +186,7 @@ The solutions policy and the `ASSESSED` flag are printed by `book.py exercise <i
 
 ### Moving between notes
 
-A course session can touch several notes: none during setup, a chapter's lesson note, its exercises note. `/course new` unlinks first, so setup is mirrored nowhere. The course and exercise skills link with `--from-now`, so each note receives only what belongs to it.
+A course session can touch several notes: none during setup, a chapter's lesson note, its exercises note, the course's review note. `/course new` unlinks first, so setup is mirrored nowhere. The course and exercise skills link with `--from-now`, so each note receives only what belongs to it.
 
 ## Visuals
 
