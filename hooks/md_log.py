@@ -459,6 +459,8 @@ def is_narration(text, shares_message_with_tool):
     t = text.strip()
     if len(t) > NARRATION_MAX:
         return False
+    if re.match(r"#{2,6} ", t) or "[[" in t:
+        return False  # a heading or a link is structure ("### Before §2.1" and its links), even right before a quiz
     if NARRATION_RE.match(t) or NARRATION_ANY_RE.search(t):
         return True
     # text that prefaces a tool call is narration if it announces an intent, or if it is very short
@@ -822,6 +824,9 @@ def handle_hook():
         if tp and os.path.exists(tp):
             found = wait_for_tool_use(tp, data.get("tool_use_id"), data.get("tool_name"), state.get("line", 0))
             n = replay_transcript(tp, state)
+            if data.get("tool_name") == QUIZ_TOOL and not state.get("mute"):
+                ensure_session_header(state)  # the server writes the quiz next; a session that opens with one
+                                              # (a recall check) must not have its header land below it
             diag(f"PreToolUse {data.get('tool_name')} id={'yes' if data.get('tool_use_id') else 'NO'} "
                  f"tool_use_in_transcript={found} blocks_written={n}")
         else:
