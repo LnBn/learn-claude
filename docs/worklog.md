@@ -2,6 +2,22 @@
 
 Running notes on the state of the project, for picking work back up. Newest first.
 
+## 2026-10-09 — review notes for recall checks
+
+**Built.** A recall check on resume goes in a review note, not in the lesson note.
+- The learner chose a recall check at the start of chapter 2, and its questions on chapter 1 landed in the chapter 2 note.
+- `lesson.py review <note>` prints the review note (`<slug>-review.md` per course, `<stem> — Review.md` per lesson) and the `###` headings of the lesson note and, in a course, the previous chapter note, as wikilinks.
+- The teacher links the review note `--from-now`, asks, ends the reply with `ready`, and links the lesson note back on the next turn.
+- `lesson.py summary` lists missed review questions under `EARLIER RECALL CHECKS`. The course index links the review note once it exists.
+- `/lesson reset` trashes a lesson's own review note, not a course's.
+
+**Tested** on a fake course and lesson in a scratch directory: `review`, `summary` and `reset` output.
+
+### To verify in a real session
+
+- The switch: the review heading, quizzes and the closing `ready` line land in the review note, and nothing after `ready` does.
+- Whether a check of chapter 1 at the start of chapter 2 finds its nodes: the brief comes from the chapter 2 note, whose checkpoint may not list chapter 1's nodes.
+
 ## 2026-10-06 — book figures, PDF export
 
 **Built.** The book's figures come into course notes and quizzes.
