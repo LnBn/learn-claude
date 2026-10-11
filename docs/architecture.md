@@ -84,6 +84,16 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 - Housekeeping turns. The reply to a command that manages the course or the log is not lesson content: `/course new`, `list`, `use`, `status`, `toc`, `select`, `assess`, `solutions`; `/lesson pause`, `status`, `reset`; `/md-log`, `/md-unlog`. The replay mutes everything from such a command to the learner's next prompt. `/course next`, `/course study`, `/lesson resume` and `/exercise` start teaching and are not muted. A command typed without its slash ("course list") is treated the same way and is not logged as a prompt. The list is `ADMIN_COMMANDS` in `md_log.py`.
 - Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept, and so is text that starts with a heading or holds a wikilink.
 
+**Asides.** A typed question and its answer become one `> [!aside]+ <question>` callout, placed next to the block the question is about. The teacher starts the reply with `%% aside: <target> %%` (teach skill, "Questions from the learner"). The prompt hook has already logged the question as a `> **You:**` quote by then, because the target is not known until the reply exists. The replay therefore keeps the turn's prompt (in the session state as `turn_prompt`, since the prompt and the reply can be read by different replays). It collects the marked reply until the turn ends, a quiz or `AskUserQuestion` call starts, or the transcript runs out. `place_aside` then removes the quote and writes the callout:
+
+| Target | Where the aside goes (`aside_spot`) |
+|---|---|
+| a block id: `ex-9`, `eq-2-51`, `fig-2-1` | After the block and the plain paragraphs below it, before the first block that starts a new part: a heading, a rule, any callout or quote, or a paragraph with a bold or italic lead. Earlier asides there are passed, so asides on one block stay in the order they were asked. |
+| `#` and the start of a heading | Before that section's `Key idea`, else before the next heading of the same or a higher level (and the rule above a session header). |
+| none, or not found | Where the question's quote was. |
+
+Inside an aside, the "short text beside a tool call" narration rule is off: the marker already declares the text an answer. Quiz blocks the server writes stay at the end of the note. `rebuild` produces the same layout, because pending blocks are written to the file before an aside is placed.
+
 **The session header** (`## Session — date`) is written with the first content block, never on hook entry, so an abandoned session leaves no header. A quiz counts as content: `PreToolUse` writes the header before the server writes the quiz, so a session that opens with one (a recall check) has its header on top.
 
 **Linking a note** (`md_log.py link <file> --session <id>`) has three behaviours:
@@ -203,7 +213,7 @@ Mermaid renders through the bundled `@mermaid-js/mermaid-cli`, driven by an inst
 
 ## Obsidian side
 
-`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, and `example` for worked examples. `summary` (the key idea) is Obsidian's built-in style. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
+`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, `aside` for a question and its answer, and `example` for worked examples. `summary` (the key idea) is Obsidian's built-in style. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
 
 Equation and example references use core Obsidian features only:
 
@@ -212,6 +222,7 @@ Equation and example references use core Obsidian features only:
 | Equation | `\tag{n}` inside the math, `^eq-n` on the line after | `[[#^eq-n\|(n)]]` |
 | Worked example | `> [!example] Example n — …`, `^ex-n` on the line after | `[[#^ex-n\|Example n]]` |
 | Key idea | `> [!summary] Key idea`, the last block of a node's exposition | not cited |
+| Aside | `> [!aside]+ <question>`, written by the mirror | not cited |
 
 Both counters run through the whole note. `lesson.py summary` reports the last value of each, so a resumed session continues them. Course notes use the book's equation numbers instead.
 
@@ -248,7 +259,8 @@ In order of how likely they are to bite.
 6. **The housekeeping list.** Which commands are muted is a fixed list. A new command, or a new sub-command of `/course` or `/lesson`, has to be added to `ADMIN_COMMANDS` if its reply is not lesson content.
 7. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing; the Read tool still sees the pages.
 8. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
-9. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
+9. **Where an aside stops.** `aside_spot` treats plain paragraphs after a block as discussion of it. A paragraph that introduces the next example without a bold or italic lead is passed over, and the aside lands one paragraph late. If the teacher leaves out the marker, the question and answer are written as before: a quote and bare prose at the end.
+10. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
 
 ## Testing
 

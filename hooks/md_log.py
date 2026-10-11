@@ -10,6 +10,9 @@ render natively — no rendering work here.
 
 Captures only reading-relevant content:
   - user prompts                           (> **You:** …)
+  - a typed question with its answer        (> [!aside]+ <question>) when the reply starts with the marker
+                                            %% aside: <block id or #heading> %%; placed beside that block,
+                                            see aside_spot
   - assistant text (lesson prose)          (bare, no label) — minus narration
                                             ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
@@ -142,6 +145,19 @@ def user_block(text):
 
 def assistant_block(text):
     return text  # the teacher's prose is written bare; the learner's "> **You:**" quotes mark the turns
+
+
+def aside_block(question, answer):
+    """A question the learner typed and the teacher's answer, as one foldable callout titled by the question.
+    Every line is quoted, so the answer's own callouts nest (> > [!example])."""
+    q = question.strip().split("\n")
+    lines = [f"> [!aside]+ {q[0].strip()}"]
+    rest = q[1:]
+    if any(ln.strip() for ln in rest):
+        lines += [">"] + [("> > " + ln) if ln.strip() else "> >" for ln in rest]
+    lines.append(">")
+    lines += [("> " + ln) if ln.strip() else ">" for ln in answer.strip("\n").split("\n")]
+    return "\n".join(lines)
 
 
 def question_block(q):
@@ -313,6 +329,133 @@ def insert_before_quiz(text, question):
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
+    except Exception:
+        return False
+    return True
+
+
+# ---- asides: a question about an earlier block, answered where that block is
+
+# the teacher's reply to a question starts with this marker; the target is a block id or "#" and a heading
+ASIDE_RE = re.compile(r"^[ \t]*%%[ \t]*aside(?:[ \t]*:[ \t]*([^%\n]*?))?[ \t]*%%[ \t]*(?:\n|$)", re.I | re.M)
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+
+
+def _paragraphs(lines):
+    """(start, end) line ranges of the note's blocks: runs of non-blank lines, with a top-level fenced code or
+    display-math block kept whole even if it holds a blank line."""
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        if not lines[i].strip():
+            i += 1
+            continue
+        start, fence = i, None
+        while i < n and (fence or lines[i].strip()):
+            s = lines[i].strip()
+            if fence:
+                if s.startswith(fence):
+                    fence = None
+            elif s.startswith("```") or s.startswith("~~~"):
+                fence = s[:3]
+            elif s == "$$":
+                fence = "$$"
+            i += 1
+        out.append((start, i))
+    return out
+
+
+def _starts_new_part(line):
+    """The first line of a block that is not commentary on the block above it: a heading, a rule, any callout
+    or quote, or a paragraph that opens with a bold or italic lead ("**Following the tree.**")."""
+    s = line.strip()
+    return bool(HEADING_RE.match(s) or re.fullmatch(r"-{3,}|\*{3,}", s) or s.startswith(">")
+                or re.match(r"\*\*\S|\*[^\s*]|_[^\s_]", s))
+
+
+def _is_aside(line):
+    return bool(re.match(r">\s*\[!aside\]", line.strip()))
+
+
+def aside_spot(lines, target):
+    """Line index at which an aside about `target` goes, or None if the note has no such block.
+    A block id (ex-9, eq-2-51, fig-2-1): after the block and the plain paragraphs that follow it, before the
+    next part. A heading ("#2.2.5" or "# 2.2.5 Defective ball"): before that section's key idea, else at the
+    end of the section. Earlier asides at that spot stay above the new one."""
+    paras = _paragraphs(lines)
+    target = (target or "").strip()
+    first = lambda k: lines[paras[k][0]]
+    if target.startswith("#"):
+        want = _norm(target.lstrip("#"))
+        hit = None
+        for k, (s, _) in enumerate(paras):
+            m = HEADING_RE.match(lines[s].strip())
+            if m and want and _norm(m.group(2)).startswith(want):
+                hit, level = k, len(m.group(1))  # keep the LAST match
+        if hit is None:
+            return None
+        k = hit + 1
+        while k < len(paras):
+            s = first(k).strip()
+            m = HEADING_RE.match(s)
+            if re.match(r"> \[!summary\][-+]? Key idea", s) or (m and len(m.group(1)) <= level):
+                break
+            k += 1
+        if k < len(paras) and HEADING_RE.match(first(k).strip()) and k - 1 > hit \
+                and re.fullmatch(r"-{3,}", first(k - 1).strip()):
+            k -= 1  # the rule above a session header goes with the header
+    else:
+        bid = re.escape(target.lstrip("^"))
+        hit = None
+        for k, (s, e) in enumerate(paras):
+            if any(re.search(rf"(^|\s)\^{bid}\s*$", re.sub(r"^(>\s?)+", "", ln)) for ln in lines[s:e]):
+                hit = k
+                break
+        if hit is None:
+            return None
+        k = hit + 1
+        while k < len(paras) and not _starts_new_part(first(k)):
+            k += 1
+        while k < len(paras) and _is_aside(first(k)):
+            k += 1
+    return paras[k][0] if k < len(paras) else len(lines)
+
+
+def place_aside(question, answer, target):
+    """Write the learner's question and the teacher's answer as one aside callout. With a target found in the
+    note it goes there; otherwise where the question was. The "> **You:**" quote the prompt hook logged live is
+    removed, since the aside carries the question. Returns True if written."""
+    path = log_file()
+    if not path or not answer.strip():
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().rstrip("\n").split("\n")
+    except Exception:
+        lines = [""]
+    # remove the live-logged prompt: the last "> **You:**" block that says the same thing
+    where = None
+    if question:
+        for s, e in reversed(_paragraphs(lines)):
+            if lines[s].startswith("> **You:**") and _norm("\n".join(lines[s:e])) == _norm(user_block(question)):
+                del lines[s:e]
+                while s < len(lines) and s > 0 and not lines[s].strip() and not lines[s - 1].strip():
+                    del lines[s]
+                where = s
+                break
+    pos = aside_spot(lines, target) if target else None
+    if pos is None:
+        pos = where if where is not None else len(lines)
+    block = figures.process(aside_block(question or "Question", answer), path,
+                            existing="\n".join(lines)).strip("\n").split("\n")
+    while pos > 0 and pos <= len(lines) and not lines[pos - 1].strip():
+        pos -= 1  # sit directly after the text above, with one blank line between
+    tail = lines[pos:]
+    while tail and not tail[0].strip():
+        tail.pop(0)
+    lines = lines[:pos] + ([""] if pos > 0 else []) + block + ([""] + tail if tail else [])
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).rstrip("\n") + "\n")
     except Exception:
         return False
     return True
@@ -636,19 +779,56 @@ def replay_transcript(path, state):
             paras.pop()
         return "\n\n".join(paras)
 
+    # the question that opened the turn in progress (it may have been read by an earlier replay), and the
+    # answer collected for it once the reply starts with the aside marker
+    turn_prompt = state.get("turn_prompt")
+    aside = None  # {"target": str or None, "parts": [...]} while the reply is an aside
+
     def flush_text(parts, msg_id=None):
-        nonlocal written
+        nonlocal written, aside
         text = "\n\n".join(p for p in parts if p.strip())
         # a checkpoint written into the reply (old skill, or a slip) belongs in the sidecar, not the note
         text = re.sub(r"(?:^|\n)> \[!summary\] Checkpoint[^\n]*(?:\n>[^\n]*)*", "", text).strip()
+        m = ASIDE_RE.search(text)
+        if m:
+            text = ASIDE_RE.sub("", text, count=1).strip()
+            if turn_prompt and aside is None:
+                aside = {"target": (m.group(1) or "").strip() or None, "parts": []}
         if not text.strip() or SKIP_ASSISTANT.match(text):
             return
-        shares = msg_id in tool_msg_ids
+        # an aside is an answer by declaration: a short paragraph in it is content even beside a tool call
+        shares = msg_id in tool_msg_ids and aside is None
         text = trim_narration_edges(text, shares)  # strip "Let me load…" edges first
         if not text.strip() or is_narration(text, shares):
             return
+        if aside is not None:
+            aside["parts"].append(text)
+            return
         blocks.append(assistant_block(text))
         written += 1
+
+    def close_aside():
+        """The aside's reply is complete (a new turn, a quiz, or the end of what is on disk): write it."""
+        nonlocal aside, written
+        if aside is None:
+            return
+        a, aside = aside, None
+        answer = "\n\n".join(a["parts"])
+        if not answer.strip():
+            return
+        for blk in blocks:  # what came before goes in first, so the question's own quote is in the file
+            append(blk)
+        blocks.clear()
+        if place_aside(turn_prompt, answer, a["target"]):
+            written += 1
+        else:
+            blocks.append(assistant_block(answer))
+            written += 1
+
+    def new_turn(text):
+        nonlocal turn_prompt
+        close_aside()
+        turn_prompt = text if is_user_prose(text) else None
 
     def place_before_quiz(question):
         """Blocks collected so far precede this quiz call in the transcript: put them above its block if
@@ -684,6 +864,8 @@ def replay_transcript(path, state):
             if isinstance(content, str):
                 turn_starts(content)
                 text = clean_user_text(content)
+                if text or command_of(content):
+                    new_turn(text)
                 if is_user_prose(text):
                     key = h(text)
                     if key in pending_prompts:
@@ -699,6 +881,8 @@ def replay_transcript(path, state):
                     if b.get("type") == "text":
                         turn_starts(b.get("text", ""))
                         text = clean_user_text(b.get("text", ""))
+                        if text or command_of(b.get("text", "")):
+                            new_turn(text)
                         if is_user_prose(text):
                             key = h(text)
                             if key in pending_prompts:
@@ -750,7 +934,13 @@ def replay_transcript(path, state):
                     continue
                 if b.get("type") == "text":
                     parts.append(b.get("text", ""))
-                elif b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
+                elif b.get("type") == "tool_use" and b.get("name") in ("AskUserQuestion", QUIZ_TOOL) and aside:
+                    # a question in the reply ends the aside; the quiz itself stays in the lesson's flow
+                    if not mute:
+                        flush_text(parts, msg.get("id"))
+                    parts = []
+                    close_aside()
+                if b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
                     ask_calls[b.get("id")] = b.get("input") or {}
                 elif b.get("type") == "tool_use" and b.get("name") == QUIZ_TOOL:
                     quiz_calls.add(b.get("id"))
@@ -759,8 +949,10 @@ def replay_transcript(path, state):
             if not mute:
                 flush_text(parts, msg.get("id"))
 
+    close_aside()
     for blk in blocks:
         append(blk)
+    state["turn_prompt"] = turn_prompt
     state["mute"] = mute
     state["line"] = len(lines)
     state["prompts"] = sorted(pending_prompts)

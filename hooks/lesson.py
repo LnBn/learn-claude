@@ -207,14 +207,16 @@ def quiz_outcomes(lines):
 def max_equation_number(lines):
     """Highest \\tag{n} / ^eq-n used, so a resumed session continues the numbering."""
     text = "\n".join(lines)
-    nums = [int(n) for n in re.findall(r"\\tag\{(\d+)\}", text)] + [int(n) for n in re.findall(r"^\^eq-(\d+)\s*$", text, re.M)]
+    nums = [int(n) for n in re.findall(r"\\tag\{(\d+)\}", text)] + \
+           [int(n) for n in re.findall(r"^(?:>\s?)*\^eq-(\d+)\s*$", text, re.M)]
     return max(nums) if nums else 0
 
 
 def max_example_number(lines):
     text = "\n".join(lines)
-    nums = [int(n) for n in re.findall(r"^> \[!example\] Example (\d+)", text, re.M)] + \
-           [int(n) for n in re.findall(r"^\^ex-(\d+)\s*$", text, re.M)]
+    # an example inside an aside is nested ("> > [!example]") and still holds its number
+    nums = [int(n) for n in re.findall(r"^(?:>\s?)+\[!example\] Example (\d+)", text, re.M)] + \
+           [int(n) for n in re.findall(r"^(?:>\s?)*\^ex-(\d+)\s*$", text, re.M)]
     return max(nums) if nums else 0
 
 
@@ -224,7 +226,8 @@ def session_count(lines):
 
 def user_prose(lines):
     """Rough count of learner prompts, for the brief (assistant prose has no banner)."""
-    return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU" or ln.startswith("> **You:**"))
+    return sum(1 for ln in lines if ln.strip() == "> [!quote] YOU" or ln.startswith("> **You:**")
+               or ln.startswith("> [!aside]"))
 
 
 def find_note(path):

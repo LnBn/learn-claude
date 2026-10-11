@@ -1,6 +1,6 @@
 /* learn-claude — lesson environments as Obsidian callouts.
    Install: copy to <vault>/.obsidian/snippets/ and enable under Settings → Appearance → CSS snippets.
-   Types: definition, theorem, lemma, proposition, corollary, proof, notation, remark, intuition.
+   Types: definition, theorem, lemma, proposition, corollary, proof, notation, remark, intuition, aside.
    (example is restyled; question, success, failure, warning, info, note are Obsidian built-ins and need nothing.) */
 
 .callout[data-callout="definition"] {
@@ -26,6 +26,12 @@
 .callout[data-callout="intuition"] {
   --callout-color: 255, 152, 0;            /* amber */
   --callout-icon: lucide-lightbulb;
+}
+
+/* a question the learner asked and its answer, placed beside what it asks about */
+.callout[data-callout="aside"] {
+  --callout-color: 0, 172, 193;            /* cyan */
+  --callout-icon: lucide-message-circle;
 }
 
 .callout[data-callout="example"] {

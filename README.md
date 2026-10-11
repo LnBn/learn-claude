@@ -215,7 +215,7 @@ A note holds the lesson and nothing else. A session writes to a note once you po
 
 Each session starts with a `## Session — <date>` heading. Under it:
 
-- your prompts, as `> **You:** …` quotes;
+- your prompts, as `> **You:** …` quotes (questions are asides, see below);
 - the teacher's prose, written bare;
 - quizzes, as callouts with your answer, the result and the explanation;
 - diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`, and figures cropped from a course's book (`![[pml1-fig-2-7.png|600]]`).
@@ -230,6 +230,12 @@ Each session starts with a `## Session — <date>` heading. Under it:
 `/md-unlog` stops mirroring altogether.
 
 If you ask a question in the quiz popup with `?`, the note shows the quiz, an "Asked before answering" note, the teacher's answer, then the grade.
+
+### Questions you type
+
+A question you type at the prompt is written with its answer as one `[!aside]` callout, titled by your question and foldable. It sits next to what it asks about. A question about Example 9 goes directly after Example 9 and the paragraphs that discuss it, before the next part of the section. A question about a whole section goes just before that section's key idea, and a general question goes where you asked it. A second question about the same example goes below the first.
+
+The teacher picks the place by starting its reply with a marker such as `%% aside: ex-9 %%`, which you see in the terminal and Obsidian hides. A quiz that follows the answer stays at the end of the note, with the rest of the lesson.
 
 ### Definitions, theorems and notation
 
