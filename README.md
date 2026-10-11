@@ -11,11 +11,12 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 - **A lesson note in Obsidian.** Every lesson is mirrored into a markdown file with rendered math, diagrams and quiz results. It reads like a textbook chapter, not a chat log.
 - **Lessons that span days.** Pause with a checkpoint and pick the lesson up again in a later session.
 - **Courses that follow a textbook.** Give it a PDF and pick the chapters. Lessons are condensed from the book's own pages, and you get hints in steps on the book's exercises.
+- **Exams on a chapter.** A written paper you sit in Obsidian and hand in as a whole. It comes back graded, with feedback beside every answer.
 - **Checked facts and checked pictures.** A research subagent verifies claims on the web. Diagram subagents render each picture and look at it before it reaches you.
 
 Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
@@ -206,8 +207,66 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/<name>-ch02.md` | The lesson note of chapter 2. |
 | `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
 | `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
+| `courses/<name>/exams/` | Exam papers, one per attempt: `<name>-ch02-exam-1.md`. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
+| `courses/<name>/.exams/` | Hidden: each exam's marking scheme, and your answers as submitted. |
 | `courses/<name>/.checkpoints/` | Hidden: checkpoints, as for any lesson. |
+
+## Exams
+
+An exam tests a whole chapter at once. You sit it on your own, in Obsidian, and get it back graded with feedback beside every answer.
+
+```
+/exam                # the chapter you finished last
+/exam 3              # chapter 3 of the current course
+/exam "Bayes.md"     # any lesson note
+```
+
+When you finish a chapter, the teacher mentions that `/exam` is there. It never starts one unasked.
+
+### Sitting an exam
+
+The teacher asks how long it should be: short (about 20 minutes), standard (about 45) or long (about 90). It then writes a paper in three parts:
+
+1. **Multiple choice.** Tick a box: `- [x] b) …`.
+2. **Short answers.** Write under the **Answer:** line.
+3. **Problems.** A derivation, a computation or an explanation, also under **Answer:**.
+
+Each question shows its marks. An answer can be as long as you like, with LaTeX, headings, or an embedded photo of handwritten work. The paper only tests what the chapter's lessons taught. If you take an exam on a chapter you have not finished, the paper says which sections it leaves out.
+
+Nothing is graded until you hand in the whole paper. Type `submit` (or `/exam submit`) in Claude Code when you are done.
+
+### The graded paper
+
+The feedback is written into the paper, under each answer. Your answers are not changed.
+
+```markdown
+> [!warning] Q7 — 3/4
+> Bayes' rule is stated correctly and the posterior and likelihood are named.
+> The marginal likelihood p(D) is called "the prior"; the prior is p(h).
+> Tested: [[pml1-ch02#2.3 Bayes' rule|§2.3]]
+>
+> > [!example]- Model answer
+> > …
+```
+
+Green means full marks, amber partial, red none. The model answer is folded, so you can try to fix your answer before you look. A summary at the top gives the score per part and the sections to revisit, with links into the chapter note.
+
+Ask about any question afterwards ("why did I lose a mark on Q7?"). The question and the answer are kept in the paper, beside Q7's feedback. If a mark was wrong, say so: the teacher checks it against the marking scheme and corrects it in the paper.
+
+### What an exam changes
+
+- **Recall checks.** The questions you lost marks on are asked first in the next recall check.
+- **Course progress.** A section where you scored under half its marks is marked `shaky` in the course index.
+- **The index.** The course index lists every exam with its score.
+
+Nothing is blocked: you can go on to the next chapter whatever the score.
+
+### Retakes
+
+Run `/exam 3` again for a new paper with new questions. Every attempt is kept, and the newest one counts for recall checks. A paper you started but do not want to finish can be dropped with `/exam abandon <paper>`. `/exam list` shows every paper with its score.
+
+An exam on a lesson note outside a course works the same way, with its papers in an `exams/` folder beside the note.
 
 ## The lesson note
 
@@ -305,6 +364,10 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/course assess <exercise>...` | Mark exercises as assessed coursework. |
 | `/course solutions <policy>` | When full solutions may be shown: `never`, `after-attempt` or `on-request`. |
 | `/exercise <id>` | Step-by-step help with an exercise from the course's book. |
+| `/exam [chapter \| note.md]` | Set an exam paper on a chapter (default: the one finished last) or a lesson note. |
+| `/exam submit` | Hand in the open paper to be graded. Typing `submit` does the same. |
+| `/exam abandon <paper>` | Drop a paper you will not finish; it stays on file. |
+| `/exam list` | Every exam paper, with its status and score. |
 
 Words you type at a prompt: `ready` when you have read a section, `probe` at a chapter overview to be tested first, or any question.
 
@@ -321,6 +384,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     lesson/              /lesson pause | resume | status | reset
     course/              /course new | next | study | status | toc | list | use | select | assess | solutions
     exercise/            hints in steps for a textbook's exercises
+    exam/                /exam: set a paper, grade it, discuss the feedback
     md-log/, md-unlog/   /md-log <file>, /md-unlog
   agents/
     researcher.md        web research and fact verification
@@ -335,6 +399,8 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     lesson.py            checkpoints and the resume brief
     book.py              maps a textbook PDF to page ranges; keeps a course's syllabus and progress
     figures.py           embeds the book figures a course note names, and links the mentions
+    exam.py              exam papers: paths, validation, marking, feedback, results
+  tests/                 unit tests for the scripts: python3 -m unittest discover -s tests
   scripts/
     install.sh           one-off setup
     render-mermaid.sh    Mermaid to PNG

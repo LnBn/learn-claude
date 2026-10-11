@@ -2,7 +2,7 @@
 
 How the pieces of learn-claude fit together, why they are built the way they are, and where the system is fragile. Read the [README](../README.md) first; this document is for changing the code.
 
-**Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
+**Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Exams](#exams) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
 
 ## Components
 
@@ -10,17 +10,18 @@ The teacher is the Claude Code session itself. Everything else is a prompt it lo
 
 | Component | Files | Job |
 |---|---|---|
-| Skills | `skills/*/SKILL.md` | Prompts loaded on demand. `teach` holds the method; `lesson`, `course`, `exercise`, `md-log`, `md-unlog` and `visualize` are procedures. |
+| Skills | `skills/*/SKILL.md` | Prompts loaded on demand. `teach` holds the method; `lesson`, `course`, `exercise`, `exam`, `md-log`, `md-unlog` and `visualize` are procedures. |
 | House rules | `CLAUDE.md` | Always in context: teach, do not narrate, open with text. |
 | Quiz tool | `mcp/quiz_server.py`, `quiz_popup.py`, `latex_text.py` | An MCP server with one tool. Shows a quiz, grades it, writes it to the note. |
 | Note mirror | `hooks/md_log.py` | Called by four hooks. Copies prompts and the teacher's prose into the note. |
 | Resume helper | `hooks/lesson.py` | Writes checkpoints; prints a short brief of a note for resuming. |
 | Course helper | `hooks/book.py` | Maps a textbook PDF to page ranges; keeps syllabus and progress. |
 | Figures | `hooks/figures.py` | Embeds a book figure the note names, once, and links every mention. |
+| Exam helper | `hooks/exam.py` | Paths, validation, marking and feedback of exam papers; their place in the course. |
 | Subagents | `agents/*.md` | `researcher` checks facts on the web. `mermaid-maker` and `svg-maker` draw diagrams. |
 | Renderers | `scripts/render-*.sh` | Turn Mermaid or SVG source into a PNG. |
 
-Skills come in two kinds. `teach`, `visualize` and `exercise` can be loaded by the model when their description fits. `lesson`, `course`, `md-log` and `md-unlog` are slash commands only the user can invoke. The scripts they run are pre-approved in `settings.json`.
+Skills come in two kinds. `teach`, `visualize`, `exercise` and `exam` can be loaded by the model when their description fits. `lesson`, `course`, `md-log` and `md-unlog` are slash commands only the user can invoke. The scripts they run are pre-approved in `settings.json`.
 
 ## One lesson section, step by step
 
@@ -81,7 +82,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 
 - Harness messages: `<system-reminder>`, `<task-notification>`, slash-command payloads, "[Request interrupted by user]".
 - Status lines from the scripts (they start with `🗒`), and checkpoint callouts.
-- Housekeeping turns. The reply to a command that manages the course or the log is not lesson content: `/course new`, `list`, `use`, `status`, `toc`, `select`, `assess`, `solutions`; `/lesson pause`, `status`, `reset`; `/md-log`, `/md-unlog`. The replay mutes everything from such a command to the learner's next prompt. `/course next`, `/course study`, `/lesson resume` and `/exercise` start teaching and are not muted. A command typed without its slash ("course list") is treated the same way and is not logged as a prompt. The list is `ADMIN_COMMANDS` in `md_log.py`.
+- Housekeeping turns. The reply to a command that manages the course or the log is not lesson content: `/course new`, `list`, `use`, `status`, `toc`, `select`, `assess`, `solutions`; `/lesson pause`, `status`, `reset`; `/md-log`, `/md-unlog`; every `/exam`. The replay mutes everything from such a command to the learner's next prompt. `/course next`, `/course study`, `/lesson resume` and `/exercise` start teaching and are not muted. A command typed without its slash ("course list", "exam 2") is treated the same way and is not logged as a prompt, and so is a prompt that is only `submit`. The list is `ADMIN_COMMANDS` in `md_log.py`.
 - Narration. Text of up to 300 characters is dropped when it starts like narration ("I'll…", "Let me load…"), says it is waiting or paused, or shares a message with a tool call while being very short or announcing an intent. Short narration paragraphs at the start or end of a longer block are trimmed. Longer text is always kept, and so is text that starts with a heading or holds a wikilink.
 
 **Asides.** A typed question and its answer become one `> [!aside]+ <question>` callout, placed next to the block the question is about. The teacher starts the reply with `%% aside: <target> %%` (teach skill, "Questions from the learner"). The prompt hook has already logged the question as a `> **You:**` quote by then, because the target is not known until the reply exists. The replay therefore keeps the turn's prompt (in the session state as `turn_prompt`, since the prompt and the reply can be read by different replays). It collects the marked reply until the turn ends, a quiz or `AskUserQuestion` call starts, or the transcript runs out. `place_aside` then removes the quote and writes the callout:
@@ -105,6 +106,8 @@ Inside an aside, the "short text beside a tool call" narration rule is off: the 
 | `--from-now` | end of the transcript | Nothing said earlier is backfilled. Used when a session moves between notes. |
 
 With `--from-now` the script finds the transcript by session id under `~/.claude/projects/*/`. It also remembers which notes already carry this session's header, so returning to a note adds no second header.
+
+Two flags go with `--from-now`. `--muted` mutes the rest of the turn in progress: a link made by a script runs before the reply that contains it reaches the transcript, so without it that reply would be logged into the new note. `--no-header` writes no session headers, for a note that is not a lesson. Both are used when a graded exam paper is linked (see [Exams](#exams)).
 
 **Two notes at once.** Two sessions can mirror two notes. The quiz server does not know which session calls it, so the `PreToolUse` hook, which does, writes the calling session's note into `quiz-target.json` under the tool-use id. The server looks its call up there. A quiz from a session with no note is written nowhere and is left unmarked, so a later `/md-log` backfill still logs it from the transcript. Without an entry (hooks not running) the server falls back to `md-log.json`, the note linked last.
 
@@ -200,6 +203,32 @@ The solutions policy and the `ASSESSED` flag are printed by `book.py exercise <i
 
 A course session can touch several notes: none during setup, a chapter's lesson note, its exercises note, the course's review note. `/course new` unlinks first, so setup is mirrored nowhere. The course and exercise skills link with `--from-now`, so each note receives only what belongs to it.
 
+## Exams
+
+An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole. It works on a course chapter or on any lesson note. The `exam` skill is the procedure; `hooks/exam.py` does everything that must be exact.
+
+**Files.** The paper goes in an `exams/` folder beside the note it tests. The marking scheme (JSON) and the snapshot of the submitted paper go in the hidden `.exams/` folder beside that. In a course: `exams/<slug>-ch02-exam-<n>.md`. Beside a lesson note: `exams/<stem> — Exam <n>.md`. The scheme also serves as the record: `exam.py list` and the resume brief read schemes, never papers.
+
+**Setting a paper.**
+
+1. The skill unlinks the session, so nothing of the exam reaches a lesson note.
+2. `exam.py new` prints the paths, the attempt, the budget per part, and the sections the exam may test. In a course it also prints the pages to read. A course exam tests only units marked `done` or `shaky`.
+3. The teacher writes the scheme first, then the paper. With the scheme written first, every question has a settled answer and a settled way of marking it before the paper exists.
+4. `exam.py check` validates the pair, then registers the paper as `open` in the course state. It checks that the questions match one to one, the marks agree and add up, the multiple-choice letters exist, and every cited section is one the exam may test. `figures.process` runs on the paper, since `figures.course_of` treats an `exams/` folder as part of its course.
+
+**Grading.**
+
+1. `exam.py submit` parses the paper and refuses one it cannot read, changing nothing. The paper is parsed by `### Q<n>` headings: an answer runs from its `**Answer:**` line to the next question or `## Part` heading, so headings inside an answer stay in it.
+2. It saves the snapshot and grades multiple choice: exact set, all or nothing. Then it prints a brief of the written answers.
+3. The teacher marks those and passes the marks to `exam.py grade` as JSON.
+4. The script inserts a callout after each question, then the summary under the title. It never edits answer text: the teacher never writes to a paper the learner has filled in.
+5. In a course it then marks `shaky` each unit that scored under half its marks. This only applies to a unit that is `done`, so `skipped` and `shaky` stay as they are.
+6. `--regrade q7` replaces one callout, between `> [!…] Q7 — ` and `^q7`, and rewrites the summary in place.
+
+**After grading.** The skill links the paper with `--from-now --muted --no-header`. The muting keeps the grading reply out of it. The learner's next question unmutes the mirror, and an `%% aside: q7 %%` reply is placed after `^q7` by the usual aside mechanism.
+
+**Feeding back.** `lesson.py summary` imports `exam.exam_misses`. It lists the questions that lost marks in the newest graded exam on the note and, in a course, on the chapter before it. The recall check asks those first. `book.py done` prints an `EXAM:` line when a chapter or the course is complete, and the teacher offers `/exam` in one sentence.
+
 ## Visuals
 
 The `visualize` skill has the teacher brief a maker subagent with one idea and few elements. The maker:
@@ -247,6 +276,9 @@ Everything under `.claude/` in this table is gitignored.
 | `<notes>/.checkpoints/<note>.md` | checkpoints of a lesson note | `lesson.py checkpoint` |
 | `courses/<name>/.course/book.json` | the page map | `book.py new` |
 | `courses/<name>/.course/state.json` | syllabus, progress, exercise records, settings | `book.py` |
+| `<notes>/exams/<…>-exam-<n>.md` | an exam paper; feedback and result once graded | the teacher (Write), then `exam.py` |
+| `<notes>/.exams/<…>-exam-<n>.json` | its marking scheme, marks, status and misses | the teacher (Write), then `exam.py` |
+| `<notes>/.exams/<…>-exam-<n>.submitted.md` | the paper as handed in | `exam.py submit` |
 | `<project>/viz/` | published diagrams | the render scripts |
 
 ## Fragile parts
@@ -263,11 +295,14 @@ In order of how likely they are to bite.
 8. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
 9. **Where an aside stops.** `aside_spot` treats plain paragraphs after a block as discussion of it. A paragraph that introduces the next example without a bold or italic lead is passed over, and the aside lands one paragraph late. If the teacher leaves out the marker, the question and answer are written as before: a quote and bare prose at the end.
 10. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
+11. **Exam papers the learner edited.** `exam.py` reads a paper by its `### Q<n> (… marks)` headings and `- [ ] a)` options. A heading the learner rewrote, or an option line they reformatted beyond `-`/`*` and the box, makes `submit` refuse the paper by question, and the learner repairs it. The feedback of a regrade is found between its callout title and its `^q<n>` line, so a learner who deletes that line blocks the regrade of that question.
+12. **A prompt that is only `submit`.** It is read as `/exam submit` and muted, in any session. A learner who means something else by it gets an exam command.
 
 ## Testing
 
-There is no test suite. Changes have been tested in three ways:
+Changes are tested in four ways:
 
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault whose `.claude/hooks` is a symlink to this repo's `hooks/`, so the scripts write their state there and never into the real `md-log-state/`. It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:
