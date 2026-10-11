@@ -35,9 +35,11 @@ Wiring (see settings.json):
                                whole history = backfill)
 
 Commands (called by the /md-log and /md-unlog skills):
-  md_log.py link <file> [--session ID] [--from-now]
+  md_log.py link <file> [--session ID] [--from-now [--muted] [--no-header]]
                                          link a file (resets the cursor -> backfill on next Stop; with
-                                         --from-now only what follows is mirrored, nothing is backfilled)
+                                         --from-now only what follows is mirrored, nothing is backfilled;
+                                         --muted also leaves out the rest of the current turn;
+                                         --no-header writes no session headers, for a note that is not a lesson)
   md_log.py unlink                       stop logging
   md_log.py status
   md_log.py rebuild <out.md> <transcript.jsonl>...
@@ -256,7 +258,7 @@ def ensure_session_header(state, when=None):
     """Separate sessions visibly in the file: a rule + dated H2 on a session's first write."""
     when = when if when is not None else time.localtime()
     today = time.strftime("%Y-%m-%d", when)
-    if state.get("header_date") == today:
+    if state.get("no_header") or state.get("header_date") == today:
         return
     label = "Session (continued)" if state.get("header_date") else "Session"
     header = f"## {label} — {time.strftime('%Y-%m-%d (%a) %H:%M', when)}"
@@ -526,17 +528,22 @@ ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sur
 
 
 # Housekeeping commands: their replies manage the course or the log and are not lesson content.
-# (/course next, /course study, /lesson resume and /exercise start or continue teaching.)
+# (/course next, /course study, /lesson resume and /exercise start or continue teaching. /exam sets or grades a
+# paper: the paper and its feedback are the record, so nothing of its replies goes into a note.)
 ADMIN_COMMANDS = {
     "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions"},
     "lesson": {"pause", "status", "reset"},
     "md-log": None,    # None: every use of the command
     "md-unlog": None,
+    "exam": None,
 }
 # a command typed without its slash ("course next"): still a command, not something the learner said
 TYPED_COMMAND_RE = re.compile(
     r"^\W*(?:(course)\s+(new|next|study|list|use|status|toc|select|assess|solutions)\b|"
     r"(lesson)\s+(pause|resume|status|reset)\b|(md-log|md-unlog)\b)", re.I)
+# "exam" alone or with one argument (submit, list, a chapter id, a note), and a prompt that is just "submit"
+TYPED_EXAM_RE = re.compile(r'^\W*exam(?:\s+(submit|list|[A-Z]|\d+|"[^"]+"|\S+\.md))?\W*$', re.I)
+TYPED_SUBMIT_RE = re.compile(r"^\W*submit\W*$", re.I)
 
 
 def command_of(text):
@@ -551,6 +558,11 @@ def command_of(text):
         m = TYPED_COMMAND_RE.match(text)
         if m:
             return (m.group(1) or m.group(3) or m.group(5)).lower(), (m.group(2) or m.group(4) or "").lower()
+        m = TYPED_EXAM_RE.match(text)
+        if m:
+            return "exam", (m.group(1) or "").strip('"').lower()
+        if TYPED_SUBMIT_RE.match(text):
+            return "exam", "submit"
     return None
 
 
@@ -1057,7 +1069,7 @@ def main(argv):
     cmd = argv[1]
     if cmd == "link":
         if len(argv) < 3:
-            print("usage: md_log.py link <file.md> [--session ID]", file=sys.stderr)
+            print("usage: md_log.py link <file.md> [--session ID] [--from-now [--muted] [--no-header]]", file=sys.stderr)
             return 2
         path = os.path.abspath(os.path.expanduser(argv[2]))
         session = None
@@ -1092,6 +1104,10 @@ def main(argv):
                     headers[st["file"]] = st["header_date"]
                 new = {"line": line, "prompts": st.get("prompts", []), "tool_ids": st.get("tool_ids", []),
                        "file": path, "headers": headers}
+                if "--muted" in argv:  # the rest of this turn is housekeeping (an exam's grading reply)
+                    new["mute"] = True
+                if "--no-header" in argv:  # not a lesson (an exam paper): no session headers in it
+                    new["no_header"] = True
                 if headers.get(path):
                     new["header_date"] = headers[path]
                 save_json(state_path(session), new)
