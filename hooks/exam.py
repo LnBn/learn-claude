@@ -10,6 +10,9 @@ reading the filled-in paper, multiple-choice grading, feedback callouts, totals,
                         where the paper and scheme go, the attempt, the budget, the sections it may test
                         (and in a course the pages to read); writes nothing
     exam.py check <paper>   validate the paper against its scheme; when valid, register it as open
+    exam.py submit [<paper>]
+                        hand in a paper (default: the only open one): snapshot it, grade the multiple choice,
+                        print the brief for marking the written answers
 """
 import argparse
 import glob
@@ -105,8 +108,9 @@ def parse_paper(text):
         answer = ""
         if at is not None:
             answer = "\n".join([ANSWER_RE.sub("", body[at]).strip()] + body[at + 1:]).strip("\n")
+        stop = next((j for j, ln in enumerate(body) if ANSWER_RE.match(ln) or OPTION_RE.match(ln)), len(body))
         qs[qid] = {"part": part, "marks": marks, "options": options, "ticked": ticked, "answer": answer,
-                   "has_answer": at is not None, "start": i, "end": end}
+                   "has_answer": at is not None, "text": "\n".join(body[:stop]).strip(), "start": i, "end": end}
     return qs, problems
 
 
@@ -304,6 +308,27 @@ def write(path, text):
     os.replace(tmp, path)
 
 
+def find_papers(root, status=None):
+    """[(scheme path, scheme)] of every exam under `root`, newest first; hidden folders other than `.exams`
+    (.claude, .git, .obsidian) are not searched."""
+    found = []
+    for sp in glob.glob(os.path.join(glob.escape(root), "**", ".exams", "*.json"), recursive=True):
+        s = load_scheme(sp)
+        if not isinstance(s, dict) or "paper" not in s:
+            continue
+        if status is None or s.get("status", "open") == status:
+            found.append((sp, s))
+    found.sort(key=lambda x: (x[1].get("set") or "", x[1].get("attempt") or 0), reverse=True)
+    return found
+
+
+def section_label(section):
+    """"pml1-ch02#2.3 Bayes' rule" -> "§2.3"; a heading without a number is its own label."""
+    head = (section or "").split("#", 1)[-1]
+    m = re.match(r"([A-Z]?\d+(?:\.\d+)*)\s", head)
+    return f"§{m.group(1)}" if m else head
+
+
 def record(scheme, **fields):
     """Update this paper's entry in its course's state, and so the index. A lesson note has no state."""
     cdir = figures.course_of(os.path.abspath(scheme["covers"]))
@@ -385,6 +410,99 @@ def cmd_check(a):
     print(f"🗒 exam ready: {book.rel(paper)}")
 
 
+def grade_mc(scheme, parsed):
+    """{qid: awarded} for the multiple-choice questions: full marks for exactly the correct set, else 0."""
+    return {e["id"]: (float(e["marks"]) if parsed[e["id"]]["ticked"] == set(e.get("correct") or []) else 0.0)
+            for e in scheme["questions"] if e["type"] == "mc" and e["id"] in parsed}
+
+
+IMAGE_RE = re.compile(r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\(([^)]+)\)")
+
+
+def pick_paper(arg, status="open"):
+    """The paper a command acts on: the one named, or the only paper with this status."""
+    if arg:
+        return os.path.abspath(arg)
+    found = find_papers(os.getcwd(), status)
+    if not found:
+        print(f"no {status} exam paper — name one, or see: exam.py list")
+        sys.exit(1)
+    if len(found) > 1:
+        print(f"{len(found)} {status} exam papers — name the one to use:")
+        for _, s in found:
+            print(f"  {s['paper']}")
+        sys.exit(1)
+    return os.path.abspath(found[0][1]["paper"])
+
+
+def cmd_submit(a):
+    paper = pick_paper(a.paper)
+    sp = scheme_path(paper)
+    scheme = load_scheme(sp)
+    if not os.path.exists(paper) or scheme is None:
+        book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
+    if scheme.get("status", "open") != "open":
+        print(f"already {scheme['status']}: {book.rel(paper)}")
+        sys.exit(1)
+    text = read(paper)
+    qs, problems = parse_paper(text)
+    for e in scheme["questions"]:
+        name = f"Q{e['id'][1:]}"
+        if e["id"] not in qs:
+            problems.append(f"{name}: its heading `### {name} ({fmt(e['marks'])} marks)` is not in the paper")
+        elif e["type"] == "mc" and not qs[e["id"]]["options"]:
+            problems.append(f"{name}: its options (`- [ ] a) …`) are not in the paper")
+    if problems:
+        print(f"cannot read {book.rel(paper)}; repair it and submit again:")
+        for p in problems:
+            print(f"  - {p}")
+        sys.exit(1)
+
+    write(snapshot_path(paper), text)
+    today = time.strftime("%Y-%m-%d")
+    mc = grade_mc(scheme, qs)
+    for e in scheme["questions"]:
+        q = qs[e["id"]]
+        e["text"] = q["text"]
+        if e["type"] == "mc":
+            e["awarded"] = mc[e["id"]]
+            e["chosen"] = sorted(q["ticked"])
+    scheme.update(status="submitted", submitted=today)
+    book.save_json(sp, scheme)
+    write(paper, set_frontmatter(text, status="submitted", submitted=today))
+    record(scheme, status="submitted")
+
+    print(f"PAPER: {book.rel(paper)}")
+    mcs = [e for e in scheme["questions"] if e["type"] == "mc"]
+    if mcs:
+        print(f"MULTIPLE CHOICE: {fmt(sum(mc.values()))}/{fmt(sum(float(e['marks']) for e in mcs))}")
+        for e in mcs:
+            chosen = ", ".join(e["chosen"]) or "none"
+            tail = "" if e["awarded"] else f"; correct {', '.join(e['correct'])}"
+            print(f"  Q{e['id'][1:]} {fmt(e['awarded'])}/{fmt(e['marks'])} ({chosen}{tail})")
+    blank, images = [], []
+    for e in scheme["questions"]:
+        if e["type"] == "mc":
+            continue
+        ans = qs[e["id"]]["answer"].strip()
+        if not ans:
+            blank.append(f"Q{e['id'][1:]}")
+        images += [m.group(1) or m.group(2) for m in IMAGE_RE.finditer(ans)]
+        print()
+        print(f"=== Q{e['id'][1:]} ({fmt(e['marks'])} marks, {e['type']}, {section_label(e.get('section'))}) ===")
+        print(f"QUESTION:\n{e['text']}")
+        print(f"MODEL ANSWER:\n{e.get('model_answer', '')}")
+        print("POINTS:")
+        for p in e.get("points") or []:
+            print(f"- [{fmt(p['marks'])}] {p['text']}")
+        print(f"ANSWER:\n{ans or '(blank)'}")
+    if images:
+        print()
+        print(f"IMAGES: {', '.join(images)}   (embedded in answers; find each in the vault by name and Read it)")
+    if blank:
+        print(f"BLANK: {', '.join(blank)}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="exam.py", description="Exam papers on a course chapter or a lesson note.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -395,6 +513,9 @@ def main():
     s = sub.add_parser("check")
     s.add_argument("paper")
     s.set_defaults(fn=cmd_check)
+    s = sub.add_parser("submit")
+    s.add_argument("paper", nargs="?")
+    s.set_defaults(fn=cmd_submit)
     a = p.parse_args()
     a.fn(a)
 

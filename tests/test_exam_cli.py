@@ -126,5 +126,92 @@ class Check(Base):
         self.assertNotIn("exams", self.state())
 
 
+TWO_TICKS = PAPER.replace("- [ ] b) $p(D \\mid h)$\n*  [X]  c)", "- [x] b) $p(D \\mid h)$\n*  [X]  c)")
+
+
+class Submit(Base):
+    def setUp(self):
+        super().setUp()
+        self.finish_chapters()
+
+    def submitted(self, paper=TWO_TICKS, n=1):
+        p = self.place_paper(paper, n=n)
+        self.assertEqual(self.exam("check", p).returncode, 0)
+        return p
+
+    def scheme(self, n=1):
+        return json.loads((self.course / ".exams" / f"pml1-ch02-exam-{n}.json").read_text(encoding="utf-8"))
+
+    def test_grades_mc_and_prints_brief(self):
+        p = self.submitted()
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Q1 2/2", r.stdout)
+        self.assertIn("Q2 0/2", r.stdout)
+        self.assertIn("MULTIPLE CHOICE: 2/4", r.stdout)
+        self.assertIn("=== Q3 (4 marks, short, §2.3) ===", r.stdout)
+        self.assertIn("ANSWER:", r.stdout)
+        self.assertIn("0.3", r.stdout)
+        self.assertIn("MODEL ANSWER:", r.stdout)
+        self.assertIn("- [2] applies Bayes' rule", r.stdout)
+        self.assertTrue((self.course / ".exams" / "pml1-ch02-exam-1.submitted.md").exists())
+        self.assertEqual((self.course / ".exams" / "pml1-ch02-exam-1.submitted.md").read_text(encoding="utf-8"),
+                         TWO_TICKS)
+        self.assertIn("status: submitted", (self.vault / p).read_text(encoding="utf-8"))
+        s = self.scheme()
+        self.assertEqual(s["status"], "submitted")
+        q = {x["id"]: x for x in s["questions"]}
+        self.assertEqual((q["q1"]["awarded"], q["q2"]["awarded"], q["q2"]["chosen"]), (2, 0, ["b", "c"]))
+        self.assertEqual(q["q3"]["text"], "A test has sensitivity 0.9; the prior is 0.1 and $p(+) = 0.3$. "
+                                          "What is $p(h \\mid +)$?")
+        self.assertEqual(q["q1"]["text"], "Which of these is Bayes' rule?")
+        self.assertEqual(self.state()["exams"][0]["status"], "submitted")
+
+    def test_twice_refused(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("already submitted", r.stdout + r.stderr)
+
+    def test_finds_the_only_open_paper(self):
+        self.submitted()
+        r = self.exam("submit")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("PAPER: courses/pml1/exams/pml1-ch02-exam-1.md", r.stdout)
+
+    def test_none_or_several(self):
+        r = self.exam("submit")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no open exam paper", r.stdout + r.stderr)
+        a = self.submitted(n=1)
+        s = scheme()
+        s.update(attempt=2, paper="courses/pml1/exams/pml1-ch02-exam-2.md")
+        b = self.place_paper(TWO_TICKS.replace("attempt: 1", "attempt: 2"), sch=s, n=2)
+        self.assertEqual(self.exam("check", b).returncode, 0)
+        r = self.exam("submit")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(a, r.stdout + r.stderr)
+        self.assertIn(b, r.stdout + r.stderr)
+
+    def test_broken_paper_changes_nothing(self):
+        p = self.submitted()
+        (self.vault / p).write_text(TWO_TICKS.replace("### Q3 (4 marks)\n", ""), encoding="utf-8")
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Q3", r.stdout + r.stderr)
+        self.assertIn("status: open", (self.vault / p).read_text(encoding="utf-8"))
+        self.assertFalse((self.course / ".exams" / "pml1-ch02-exam-1.submitted.md").exists())
+        self.assertEqual(self.scheme()["status"], "open")
+
+    def test_lists_images_and_blanks(self):
+        paper = TWO_TICKS.replace("Divide by $p(D)$.", "![[work.jpg]]").replace("**Answer:** 0.3", "**Answer:**")
+        p = self.submitted(paper)
+        r = self.exam("submit", p)
+        self.assertIn("IMAGES: work.jpg", r.stdout)
+        self.assertIn("BLANK: Q3", r.stdout)
+        self.assertIn("(blank)", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
