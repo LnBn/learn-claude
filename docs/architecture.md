@@ -165,7 +165,9 @@ Commands act on the **current course**, remembered in `md-log-state/course.json`
 3. The top is the nearest full-width text block above the caption (body text or another figure's caption), or the running head. Narrow blocks are labels inside the figure and are passed over.
 4. Render that band at 50 dpi in grey, trim the white margins, and render the result at 150 dpi as PNG.
 
-The rule assumes the caption sits below the figure, as in Murphy. `--box TOP BOTTOM` (points from the top of the page) and `--page` override the rule. A figure already cropped is reused.
+The rule assumes the caption sits below the figure, as in Murphy. `--box TOP BOTTOM` (points from the top of the page) and `--page` (the whole page) override the rule, and `--pdf-page N` names the page instead of looking it up. A figure already cropped is reused before anything is looked up, so a crop made by hand is what `figures.py` embeds.
+
+**Scanned books.** A scan has no text layer, so neither the anchors nor the caption can be found. `book.py next` then prints a `SCANNED` line, and the teach skill has the teacher crop each figure by hand (`--pdf-page N --box TOP BOTTOM`) before writing the text that names it.
 
 ### Figures in the note
 
@@ -257,7 +259,7 @@ In order of how likely they are to bite.
 4. **The narration filter.** It is a heuristic; every miss so far was a new phrasing. Tune `NARRATION_RE`, `NARRATION_ANY_RE` and `NARRATION_INTENT_RE` in `md_log.py`. The main defence is the no-narration rule in `CLAUDE.md` and the teach skill.
 5. **The first prompt of a fresh session.** A session mirrors nowhere until a skill links a note, so a first message typed as plain text ("I am stuck on 2.3") is not in the note, though the teacher's later replies are. Starting with the command (`/exercise 2.3`) avoids the gap.
 6. **The housekeeping list.** Which commands are muted is a fixed list. A new command, or a new sub-command of `/course` or `/lesson`, has to be added to `ADMIN_COMMANDS` if its reply is not lesson content.
-7. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing; the Read tool still sees the pages.
+7. **The book map.** It is good when the PDF was made with LaTeX and hyperref. An outline with wrong or missing destinations gives wrong ranges; `book.py toc --all` shows the map, and `new --toc` replaces it. A scanned book has no text layer, so the text-search fallback finds nothing and figures are cropped by hand (see [Courses](#courses)); the Read tool still sees the pages.
 8. **The elicitation fallback.** Claude Code's form truncates the question to one line. Use tmux.
 9. **Where an aside stops.** `aside_spot` treats plain paragraphs after a block as discussion of it. A paragraph that introduces the next example without a bold or italic lead is passed over, and the aside lands one paragraph late. If the teacher leaves out the marker, the question and answer are written as before: a quote and bare prose at the end.
 10. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.

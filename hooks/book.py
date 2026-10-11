@@ -585,6 +585,10 @@ def describe_unit(c, u, heading="UNIT"):
         lines.append("SUBSECTIONS: " + " · ".join(
             f"{s['id']} {s['title']}{' *' if s['starred'] else ''} (PDF {s['start']})" for s in subs)
             + ("   (* = optional in the book)" if any(s["starred"] for s in subs) else ""))
+    if is_scan(c.book["pdf"], start, u["end"]):
+        lines.append("SCANNED: these pages have no text layer, so the book's figures are not cropped for you. Before "
+                     "you write about a figure, find it on the page you Read and crop it: book.py figure <id> "
+                     "--pdf-page <n> --box TOP BOTTOM (points from the top), then Read the PNG to check it.")
     lines.append(f"CITE AS: §{u['id']}, {c.cite(start, u['end'])}")
     note = c.note(ch["id"])
     if os.path.exists(note) and os.path.getsize(note):
@@ -876,6 +880,19 @@ def page_blocks(pdf, page):
     return float(m.group(1)), float(m.group(2)), blocks
 
 
+def is_scan(pdf, first, last):
+    """True when the pages hold (almost) no extractable text: a scanned book."""
+    out = run(["pdftotext", "-f", str(first), "-l", str(last), pdf, "-"]) or ""
+    return len(re.sub(r"\s", "", out)) < 40 * (last - first + 1)
+
+
+def page_size(pdf, page):
+    """(width, height) in points, from pdfinfo; works on a page without text."""
+    out = run(["pdfinfo", "-f", str(page), "-l", str(page), pdf]) or ""
+    m = re.search(r"Page\s+\d+\s+size:\s+([\d.]+)\s+x\s+([\d.]+)", out)
+    return (float(m.group(1)), float(m.group(2))) if m else (None, None)
+
+
 def ink_box(pdf, page, top, bottom, width):
     """(x0, y0, x1, y1) in points of the non-white part of a horizontal band of the page, or None."""
     dpi = 50
@@ -901,21 +918,30 @@ def ink_box(pdf, page, top, bottom, width):
 
 def cmd_figure(a):
     c = find_course(a.course)
-    page, _ = locate(c, "fig", a.id)
-    if not page:
-        die(f"figure {a.id} not found in the book's anchors or text; look it up from: book.py toc {a.id.split('.')[0]}", 1)
     pdf = c.book["pdf"]
     name = f"{c.slug}-fig-{slugify(a.id)}.png"
     viz = os.path.join(os.getcwd(), "viz")
     path = os.path.join(viz, name)
+    if os.path.exists(path) and not (a.force or a.box or a.page or a.pdf_page):
+        print(f"FIGURE {a.id}: already cropped")
+        print(f"FILE: {rel(path)}")
+        print(f"EMBED: ![[{name}|600]]")
+        return
+    page = a.pdf_page or locate(c, "fig", a.id)[0]
+    if not page:
+        ch = c.by_id.get(a.id.split(".")[0])
+        first, last = (ch["start"], ch["end"]) if ch else (1, c.book["pages"])
+        hint = (" The PDF has no text layer here (a scan): find the page by reading it, then rerun with --pdf-page N"
+                " --box TOP BOTTOM." if is_scan(pdf, first, last) else "")
+        die(f"figure {a.id} not found in the book's anchors or text; look it up from: book.py toc "
+            f"{a.id.split('.')[0]}.{hint}", 1)
     width, height, blocks = page_blocks(pdf, page)
-    how = None
-    if os.path.exists(path) and not (a.force or a.box or a.page):
-        how = "already cropped"
-    elif a.page or not width:
-        top, bottom, how = 0, height or c.book.get("height") or 792, "whole page"
-    elif a.box:
+    if not width:
+        width, height = page_size(pdf, page)
+    if a.box:
         top, bottom, how = a.box[0], a.box[1], "box given"
+    elif a.page or not blocks:
+        top, bottom, how = 0, height or c.book.get("height") or 792, "whole page"
     else:
         rx = re.compile(r"^\s*(?:Figure|Fig\.)\s+" + re.escape(a.id) + r"\s*[:.]")
         cap = next((b for b in blocks if rx.match(b[4])), None)
@@ -929,23 +955,22 @@ def cmd_figure(a):
             head = [b[3] for b in blocks if b[3] < 0.1 * height]
             top = max(above) if above else max(head) if head else 0
             bottom, how = cap[3], "caption found"
-    if how != "already cropped":
-        box = ink_box(pdf, page, top + 1, min(bottom + 2, height or bottom + 2), width or 612)
-        x0, y0, x1, y1 = box if box else (0, top, width or 612, bottom)
-        pad, dpi = 6, 150
-        x0, y0, x1, y1 = max(0, x0 - pad), max(0, y0 - pad), x1 + pad, y1 + pad
-        s = dpi / 72
-        os.makedirs(viz, exist_ok=True)
-        if run(["pdftoppm", "-f", str(page), "-l", str(page), "-r", str(dpi), "-png", "-singlefile",
-                "-x", str(int(x0 * s)), "-y", str(int(y0 * s)), "-W", str(int((x1 - x0) * s)),
-                "-H", str(int((y1 - y0) * s)), pdf, path[:-4]]) is None:
-            die("pdftoppm could not render the page (is poppler installed?)")
-        how += f"; cropped to {y0:.0f}–{y1:.0f} pt from the top of a {height or 0:.0f} pt page"
+    box = ink_box(pdf, page, top + 1, min(bottom + 2, height or bottom + 2), width or 612)
+    x0, y0, x1, y1 = box if box else (0, top, width or 612, bottom)
+    pad, dpi = 6, 150
+    x0, y0, x1, y1 = max(0, x0 - pad), max(0, y0 - pad), x1 + pad, y1 + pad
+    s = dpi / 72
+    os.makedirs(viz, exist_ok=True)
+    if run(["pdftoppm", "-f", str(page), "-l", str(page), "-r", str(dpi), "-png", "-singlefile",
+            "-x", str(int(x0 * s)), "-y", str(int(y0 * s)), "-W", str(int((x1 - x0) * s)),
+            "-H", str(int((y1 - y0) * s)), pdf, path[:-4]]) is None:
+        die("pdftoppm could not render the page (is poppler installed?)")
+    how += f"; cropped to {y0:.0f}–{y1:.0f} pt from the top of a {height or 0:.0f} pt page"
     print(f"FIGURE {a.id}: PDF page {page} ({c.cite(page, page)}); {how}")
     print(f"FILE: {rel(path)}")
     print(f"EMBED: ![[{name}|600]]")
     print(f"CHECK: Read the file before using it. If the crop is wrong, rerun with --box TOP BOTTOM "
-          f"(points from the top of the page) or --page.")
+          f"(points from the top of the page), --page (the whole page) or --pdf-page N (another page).")
 
 
 def exercise_record(c, id_):
@@ -1147,6 +1172,7 @@ def main():
     g = s.add_mutually_exclusive_group()
     g.add_argument("--box", nargs=2, type=float, metavar=("TOP", "BOTTOM"))
     g.add_argument("--page", action="store_true")
+    s.add_argument("--pdf-page", type=int, metavar="N", help="the PDF page the figure is on (a scanned book)")
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_figure)
 
