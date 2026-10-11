@@ -486,6 +486,15 @@ def render_index(c):
         for eid in sorted(ex, key=natural):
             r = ex[eid]
             out.append(f"| {eid} | {r.get('status', 'open')} | {r.get('hints', 0)} | {'yes' if r.get('assessed') else ''} |")
+    exams = st.get("exams") or []
+    if exams:
+        out += ["", "## Exams", "", "| Chapter | Attempt | Set | Status | Score | Paper |", "|---|---|---|---|---|---|"]
+        for e in sorted(exams, key=lambda e: (natural(str(e["chapter"])), e["attempt"])):
+            score = ""
+            if e.get("score") is not None and e.get("marks"):
+                score = f"{e['score']:g}/{e['marks']:g} ({round(100 * e['score'] / e['marks'])}%)"
+            paper = os.path.splitext(os.path.basename(e["paper"]))[0]
+            out.append(f"| {e['chapter']} | {e['attempt']} | {e.get('set') or ''} | {e['status']} | {score} | [[{paper}]] |")
     return "\n".join(out) + "\n"
 
 

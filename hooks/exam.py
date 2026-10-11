@@ -5,8 +5,23 @@ exam — set, submit and grade an exam paper on a course chapter or a lesson not
 The teacher writes the paper (markdown, in an `exams/` folder beside the note it tests) and its marking scheme
 (JSON, in the hidden `.exams/` folder beside that). This script does what must be exact: paths, validation,
 reading the filled-in paper, multiple-choice grading, feedback callouts, totals, and the course's state.
+
+    exam.py new [<chapter> | <note.md>] --length short|standard|long
+                        where the paper and scheme go, the attempt, the budget, the sections it may test
+                        (and in a course the pages to read); writes nothing
+    exam.py check <paper>   validate the paper against its scheme; when valid, register it as open
 """
+import argparse
+import glob
+import json
+import os
 import re
+import sys
+import time
+
+import book
+import figures
+import lesson
 
 BUDGET = {
     "short": {"minutes": 20, "A": (4, 2), "B": (2, 4), "C": (1, 8), "marks": 24},
@@ -153,3 +168,236 @@ def check(paper_text, scheme, sections):
         problems.append(f"marks: questions add up to {fmt(total)}, the scheme says {scheme.get('marks')}, "
                         f"the paper's frontmatter {fm.get('marks')}")
     return problems
+
+
+# ---------------------------------------------------------------- what an exam covers
+
+def latest_complete_chapter(c):
+    """The chapter finished last: every syllabus unit of it is done, shaky or skipped, and one at least is studied."""
+    chosen = {u["id"] for u in c.syllabus()}
+    best = None
+    for ch in c.chapters(appendices=True):
+        us = [u for u in c.units_of(ch) if u["id"] in chosen]
+        if not us or any(c.status(u["id"]) == "todo" for u in us):
+            continue
+        if not any(c.status(u["id"]) in ("done", "shaky") for u in us):
+            continue
+        at = max((c.state["status"].get(u["id"]) or {}).get("at", "") for u in us)
+        key = (at, book.natural(ch["id"]))
+        if best is None or key > best[0]:
+            best = (key, ch["id"])
+    return best[1] if best else None
+
+
+def _chapter(c, ch_id):
+    ch = c.by_id.get(ch_id)
+    if not ch or ch["kind"] not in ("chapter", "appendix"):
+        book.die(f"not a chapter of {c.slug}: {ch_id}")
+    chosen = {u["id"] for u in c.syllabus()}
+    us = [u for u in c.units_of(ch) if u["id"] in chosen]
+    tested = [u["id"] for u in us if c.status(u["id"]) in ("done", "shaky")]
+    if not tested:
+        book.die(f"nothing of chapter {ch_id} has been studied yet, so there is nothing to examine")
+    return {"note": os.path.abspath(c.note(ch_id)), "course": c, "chapter": ch_id, "units": tested,
+            "left_out": [u["id"] for u in us if u["id"] not in tested],
+            "title": f"Exam — Chapter {ch_id}: {ch['title']}"}
+
+
+def resolve(target):
+    """What an exam on `target` covers: a chapter id, a note, or (None) the chapter finished last."""
+    if target and target.endswith(".md"):
+        note = os.path.abspath(os.path.expanduser(target))
+        cdir = figures.course_of(note)
+        if cdir:
+            c = book.Course(cdir)
+            ch = next((x["id"] for x in c.chapters(appendices=True)
+                       if os.path.abspath(c.note(x["id"])) == note), None)
+            if ch:
+                return _chapter(c, ch)
+        if not os.path.exists(note):
+            book.die(f"no such note: {target}")
+        stem = os.path.splitext(os.path.basename(note))[0]
+        return {"note": note, "course": None, "chapter": None, "units": [], "left_out": [],
+                "title": f"Exam — {stem}"}
+    c = book.find_course(None)
+    ch = target or latest_complete_chapter(c)
+    if not ch:
+        book.die("no chapter is finished yet — name the one to examine: /exam <chapter>")
+    return _chapter(c, ch)
+
+
+def section_key(link):
+    """"[[stem#heading|§2.3]]" -> "stem#heading", the form a scheme's `section` takes."""
+    return link[2:].rstrip("]").split("|")[0]
+
+
+def sections_of(r):
+    """[(wikilink, unit id or None)] for the sections an exam on `r` may test."""
+    out = []
+    for link in lesson.heading_links(r["note"]):
+        if not r["course"]:
+            out.append((link, None))
+            continue
+        m = re.search(r"\|§([A-Z]?\d+(?:\.\d+)*)\]\]$", link)
+        num = m.group(1) if m else ""
+        unit = next((u for u in r["units"] if num == u or num.startswith(u + ".")), None)
+        if unit:
+            out.append((link, unit))
+    return out
+
+
+# ---------------------------------------------------------------- paths and files
+
+def _name(note, attempt):
+    stem = os.path.splitext(os.path.basename(note))[0]
+    return f"{stem}-exam-{attempt}" if figures.course_of(note) else f"{stem} — Exam {attempt}"
+
+
+def paths(note, attempt):
+    """(paper, scheme, snapshot) of an attempt at an exam on `note`."""
+    d = os.path.dirname(os.path.abspath(note))
+    name = _name(note, attempt)
+    return (os.path.join(d, "exams", name + ".md"), os.path.join(d, ".exams", name + ".json"),
+            os.path.join(d, ".exams", name + ".submitted.md"))
+
+
+def scheme_path(paper):
+    paper = os.path.abspath(paper)
+    name = os.path.splitext(os.path.basename(paper))[0]
+    return os.path.join(os.path.dirname(os.path.dirname(paper)), ".exams", name + ".json")
+
+
+def snapshot_path(paper):
+    return scheme_path(paper)[:-len(".json")] + ".submitted.md"
+
+
+def attempts(note):
+    """{attempt: scheme path} of every exam on `note` that has a paper or a scheme."""
+    pat = re.compile(re.escape(_name(note, 0))[:-1] + r"(\d+)\.(md|json)$")
+    d = glob.escape(os.path.dirname(os.path.abspath(note)))
+    found = {}
+    for f in glob.glob(os.path.join(d, "exams", "*")) + glob.glob(os.path.join(d, ".exams", "*")):
+        m = pat.fullmatch(os.path.basename(f))
+        if m:
+            found[int(m.group(1))] = paths(note, int(m.group(1)))[1]
+    return found
+
+
+def next_attempt(note):
+    return max(attempts(note), default=0) + 1
+
+
+def load_scheme(path):
+    return book.load_json(path, None)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def record(scheme, **fields):
+    """Update this paper's entry in its course's state, and so the index. A lesson note has no state."""
+    cdir = figures.course_of(os.path.abspath(scheme["covers"]))
+    if not cdir or not scheme.get("chapter"):
+        return None
+    c = book.Course(cdir)
+    paper = os.path.relpath(os.path.abspath(scheme["paper"]), cdir)
+    entries = c.state.setdefault("exams", [])
+    e = next((x for x in entries if x.get("paper") == paper), None)
+    if e is None:
+        e = {"chapter": scheme["chapter"], "attempt": scheme["attempt"], "paper": paper,
+             "set": scheme.get("set"), "status": "open", "score": None, "marks": scheme["marks"]}
+        entries.append(e)
+    e.update(fields)
+    c.save()
+    return c
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_new(a):
+    r = resolve(a.target)
+    links = sections_of(r)
+    if not links:
+        book.die(f"{book.rel(r['note'])} has no ### sections, so there is nothing to examine")
+    n = next_attempt(r["note"])
+    paper, scheme, _ = paths(r["note"], n)
+    b = BUDGET[a.length]
+    print(f"PAPER: {book.rel(paper)}")
+    print(f"SCHEME: {book.rel(scheme)}")
+    print(f"ATTEMPT: {n}")
+    print(f"TITLE: {r['title']}")
+    print(f"COVERS: {book.rel(r['note'])}")
+    if r["chapter"]:
+        print(f"CHAPTER: {r['chapter']}   COURSE: {r['course'].slug}")
+    for k, sp in sorted(attempts(r["note"]).items()):
+        if (load_scheme(sp) or {}).get("status") == "open":
+            print(f"OPEN: {book.rel(paths(r['note'], k)[0])}")
+    print(f"BUDGET ({a.length}, about {b['minutes']} minutes):")
+    for part in "ABC":
+        print(f"  Part {part}: {b[part][0]} × {fmt(b[part][1])} marks")
+    print(f"  Total: {b['marks']} marks")
+    print("SECTIONS (a question's `section` is the link's target, \"<note>#<heading>\""
+          + ("; its `unit` is the unit named" if r["course"] else "") + "):")
+    for link, unit in links:
+        print(f"  {link}" + (f"   unit {unit}" if unit else ""))
+    if r["course"]:
+        c = r["course"]
+        print(f"READ: {c.book['pdf']}")
+        for uid in r["units"]:
+            u = c.by_id[uid]
+            print(f"  {uid}: pages {c.pages(u['start'], u['end'])[0]}")
+        if r["left_out"]:
+            print(f"LEAVES OUT: {', '.join(r['left_out'])}")
+
+
+def cmd_check(a):
+    paper = os.path.abspath(a.paper)
+    sp = scheme_path(paper)
+    scheme = load_scheme(sp)
+    if not os.path.exists(paper) or scheme is None:
+        book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
+    r = resolve(book.rel(os.path.abspath(scheme.get("covers", ""))))
+    text = read(paper)
+    problems = check(text, scheme, {section_key(link) for link, _ in sections_of(r)})
+    if problems:
+        print(f"{len(problems)} problem(s) in {book.rel(paper)}:")
+        for p in problems:
+            print(f"  - {p}")
+        sys.exit(1)
+    new = figures.process(text, paper, existing="")
+    if new != text:
+        write(paper, new)
+    fm, _ = read_frontmatter(text)
+    scheme.setdefault("status", "open")
+    scheme.setdefault("set", fm.get("set") or time.strftime("%Y-%m-%d"))
+    book.save_json(sp, scheme)
+    record(scheme)
+    print(f"🗒 exam ready: {book.rel(paper)}")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="exam.py", description="Exam papers on a course chapter or a lesson note.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("new")
+    s.add_argument("target", nargs="?")
+    s.add_argument("--length", choices=sorted(BUDGET), required=True)
+    s.set_defaults(fn=cmd_new)
+    s = sub.add_parser("check")
+    s.add_argument("paper")
+    s.set_defaults(fn=cmd_check)
+    a = p.parse_args()
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()
