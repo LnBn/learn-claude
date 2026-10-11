@@ -17,6 +17,8 @@ reading the filled-in paper, multiple-choice grading, feedback callouts, totals,
                         read the written answers' marks as JSON on stdin ({"q7": {"awarded": 3, "feedback": "…"},
                         "revisit": {"<note>#<heading>": "<clause>"}}), write the feedback and the result into the
                         paper, mark weak units shaky; --regrade rewrites one question's feedback and the totals
+    exam.py abandon <paper> an open paper will not be submitted (it stays on file)
+    exam.py list            every paper under the working directory, with its status and score
 """
 import argparse
 import glob
@@ -720,6 +722,55 @@ def cmd_grade(a):
         print(f"SHAKY: {', '.join(shaky)}")
 
 
+def cmd_abandon(a):
+    paper = os.path.abspath(a.paper)
+    sp = scheme_path(paper)
+    scheme = load_scheme(sp)
+    if not os.path.exists(paper) or scheme is None:
+        book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
+    if scheme.get("status", "open") != "open":
+        _refuse(f"{book.rel(paper)} is {scheme.get('status')}; only an open paper can be abandoned")
+    scheme["status"] = "abandoned"
+    book.save_json(sp, scheme)
+    write(paper, set_frontmatter(read(paper), status="abandoned"))
+    record(scheme, status="abandoned")
+    print(f"🗒 exam abandoned: {book.rel(paper)}")
+
+
+def cmd_list(a):
+    found = find_papers(os.getcwd())
+    if not found:
+        print("no exam papers yet")
+    for _, s in found:
+        score = f"{fmt(s['score'])}/{fmt(s['marks'])}" if s.get("score") is not None else "-"
+        print(f"{s.get('status', 'open'):<10} {score:<9} {s['paper']}")
+
+
+def exam_misses(note):
+    """Lines for the resume brief: the questions that lost marks in the newest graded exam on this note (and, in a
+    course, on the chapter before it). Empty when there is nothing to re-probe."""
+    out = []
+    for src in lesson.review_sources(note):
+        src = os.path.abspath(src)
+        graded = [s for s in (load_scheme(sp) for _, sp in sorted(attempts(src).items(), reverse=True))
+                  if s and s.get("status") == "graded" and os.path.abspath(s.get("covers", "")) == src]
+        if not graded:
+            continue
+        s = graded[0]
+        misses = [q for q in s["questions"] if q["id"] in (s.get("misses") or [])]
+        if not misses:
+            continue
+        name = os.path.splitext(os.path.basename(s["paper"]))[0]
+        out.append(f"EXAM MISSES ({name}, {fmt(s['score'])}/{fmt(s['marks'])}): re-probe these first")
+        for q in misses:
+            head = (q.get("section") or "").split("#", 1)[-1]
+            label = f"§{head}" if re.match(r"[A-Z]?\d", head) else head
+            text = re.sub(r"\s+", " ", q.get("text") or "")
+            out.append(f"  - Q{q['id'][1:]} {fmt(q['awarded'])}/{fmt(q['marks'])} {label} — "
+                       f"{text[:90]}{'…' if len(text) > 90 else ''}")
+    return out
+
+
 def main():
     p = argparse.ArgumentParser(prog="exam.py", description="Exam papers on a course chapter or a lesson note.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -737,6 +788,10 @@ def main():
     s.add_argument("paper")
     s.add_argument("--regrade", metavar="Q", type=str.lower)
     s.set_defaults(fn=cmd_grade)
+    s = sub.add_parser("abandon")
+    s.add_argument("paper")
+    s.set_defaults(fn=cmd_abandon)
+    sub.add_parser("list").set_defaults(fn=cmd_list)
     a = p.parse_args()
     a.fn(a)
 

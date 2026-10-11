@@ -850,11 +850,14 @@ def cmd_done(a):
     c.save()
     print(f"🗒 {u['id']} {u['title']}: {a.status} — " + progress_line(c))
     nxt = c.next_unit()
+    exam = f"EXAM: /exam {u['chapter'] or u['id']} sets an exam on this chapter."
     if not nxt:
         print("COURSE COMPLETE: no unit left to do.")
+        print(exam)
     elif (nxt["chapter"] or nxt["id"]) != (u["chapter"] or u["id"]):
         print(f"CHAPTER {u['chapter'] or u['id']} COMPLETE. The next unit, {nxt['id']} {nxt['title']}, opens chapter "
               f"{nxt['chapter'] or nxt['id']} and has its own note: save a checkpoint; `/course next` starts it.")
+        print(exam)
     else:
         print(describe_unit(c, nxt, "NEXT"))
 

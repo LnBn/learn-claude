@@ -320,6 +320,14 @@ def summary(path, notes=None):
               + (". Missed, most recent last (re-probe these first):" if missed else "."))
         for q in missed[-8:]:
             print(f"  - {q[:110]}")
+    try:
+        import exam  # imports this module; only needed here
+        misses = exam.exam_misses(path)
+    except Exception:
+        misses = []
+    if misses:
+        print()
+        print("\n".join(misses))
 
 
 def list_checkpoints(path):

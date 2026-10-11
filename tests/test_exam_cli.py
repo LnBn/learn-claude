@@ -352,5 +352,63 @@ class Grade(Placed):
         self.assertNotIn("Score 11.5/16.", text)
 
 
+class Bookkeeping(Placed):
+    def grade(self, paper, grades):
+        self.assertEqual(self.exam("submit", paper).returncode, 0)
+        r = self.exam("grade", paper, stdin=json.dumps(grades))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def second_attempt(self):
+        s = scheme()
+        s.update(attempt=2, paper="courses/pml1/exams/pml1-ch02-exam-2.md", set="2026-10-12")
+        p = self.place_paper(PAPER.replace("attempt: 1", "attempt: 2").replace("set: 2026-10-11", "set: 2026-10-12"),
+                             sch=s, n=2)
+        self.assertEqual(self.exam("check", p).returncode, 0)
+        return p
+
+    def test_abandon_then_new_attempt(self):
+        p = self.submitted()
+        r = self.exam("abandon", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("🗒 exam abandoned", r.stdout)
+        self.assertEqual(self.scheme()["status"], "abandoned")
+        self.assertIn("status: abandoned", (self.vault / p).read_text(encoding="utf-8"))
+        self.assertEqual(self.state()["exams"][0]["status"], "abandoned")
+        self.assertIn("ATTEMPT: 2", self.exam("new", "2", "--length", "short").stdout)
+        self.assertEqual(self.exam("abandon", p).returncode, 1)
+
+    def test_list(self):
+        self.assertIn("no exam papers yet", self.exam("list").stdout)
+        a = self.submitted()
+        self.grade(a, GRADES)
+        b = self.second_attempt()
+        out = self.exam("list").stdout.splitlines()
+        self.assertEqual(len(out), 2)
+        self.assertIn("graded", next(x for x in out if a in x))
+        self.assertIn("11.5/16", next(x for x in out if a in x))
+        self.assertIn("open", next(x for x in out if b in x))
+
+    def test_summary_prints_exam_misses(self):
+        a = self.submitted()
+        self.grade(a, GRADES)
+        out = run(self.vault, "lesson.py", "summary", "courses/pml1/pml1-ch02.md").stdout
+        self.assertIn("EXAM MISSES (pml1-ch02-exam-1, 11.5/16)", out)
+        self.assertIn("Q3 1.5/4 §2.3 Bayes' rule — A test has sensitivity 0.9", out)
+        self.assertIn("Q2 0/2", out)
+        b = self.second_attempt()
+        self.grade(b, {"q3": {"awarded": 4, "feedback": "Right."}, "q4": {"awarded": 8, "feedback": "Right."}})
+        out = run(self.vault, "lesson.py", "summary", "courses/pml1/pml1-ch02.md").stdout
+        self.assertNotIn("EXAM MISSES", out)
+
+    def test_chapter_complete_offers_exam(self):
+        set_status(self.course, **{"1.2": ("todo", "")})
+        r = run(self.vault, "book.py", "done", "1.2")
+        self.assertIn("EXAM: /exam 1 sets an exam on this chapter.", r.stdout)
+        set_status(self.course, **{"2.3": ("todo", "")})
+        r = run(self.vault, "book.py", "done", "2.3")
+        self.assertIn("COURSE COMPLETE", r.stdout)
+        self.assertIn("EXAM: /exam 2 sets an exam on this chapter.", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
