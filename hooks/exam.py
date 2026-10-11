@@ -13,8 +13,9 @@ reading the filled-in paper, multiple-choice grading, feedback callouts, totals,
     exam.py submit [<paper>]
                         hand in a paper (default: the only open one): snapshot it, grade the multiple choice,
                         print the brief for marking the written answers
-    exam.py grade <paper> [--regrade q7]
-                        read the written answers' marks as JSON on stdin ({"q7": {"awarded": 3, "feedback": "…"},
+    exam.py grade <paper> [--regrade q7] [--marks <file>]
+                        read the written answers' marks as JSON from the file `submit` named on its MARKS line, or
+                        from stdin ({"q7": {"awarded": 3, "feedback": "…"},
                         "revisit": {"<note>#<heading>": "<clause>"}}), write the feedback and the result into the
                         paper, mark weak units shaky; --regrade rewrites one question's feedback and the totals
     exam.py abandon <paper> an open paper will not be submitted (it stays on file)
@@ -281,6 +282,11 @@ def snapshot_path(paper):
     return scheme_path(paper)[:-len(".json")] + ".submitted.md"
 
 
+def marks_path(paper):
+    """Where the teacher writes the marks of the written answers for `grade --marks`; kept as a record."""
+    return scheme_path(paper)[:-len(".json")] + ".marks.json"
+
+
 def attempts(note):
     """{attempt: scheme path} of every exam on `note` that has a paper or a scheme."""
     pat = re.compile(re.escape(_name(note, 0))[:-1] + r"(\d+)\.(md|json)$")
@@ -507,6 +513,8 @@ def cmd_submit(a):
         print(f"IMAGES: {', '.join(images)}   (embedded in answers; find each in the vault by name and Read it)")
     if blank:
         print(f"BLANK: {', '.join(blank)}")
+    print()
+    print(f"MARKS: {book.rel(marks_path(paper))}   (write the marks here, then: exam.py grade <paper> --marks <this file>)")
 
 
 CALLOUT_START = r"^> \[!(?:success|warning|failure)\] Q{n} — "
@@ -529,6 +537,9 @@ def mc_feedback(q):
     for x in chosen:
         if x not in q["correct"]:
             lines.append(f"**You chose {x}):** {(q.get('why_wrong') or {}).get(x, '')}".rstrip())
+    missed = [x for x in q["correct"] if x not in chosen]
+    if chosen and missed and len(q["correct"]) > 1:
+        lines.append(f"**You did not tick:** {', '.join(x + ')' for x in missed)}")
     return "\n".join(lines)
 
 
@@ -638,10 +649,11 @@ def cmd_grade(a):
         _refuse(f"{book.rel(paper)} is {scheme.get('status', 'open')}; "
                 + ("only a graded paper can be regraded" if a.regrade else "submit it first: exam.py submit"))
     try:
-        grades = json.loads(sys.stdin.read())
+        grades = json.loads(read(a.marks) if a.marks else sys.stdin.read())
         assert isinstance(grades, dict)
     except Exception:
-        _refuse("expected the marks as a JSON object on stdin: {\"q7\": {\"awarded\": 3, \"feedback\": \"…\"}}")
+        _refuse("expected the marks as a JSON object, in the --marks file or on stdin: "
+                "{\"q7\": {\"awarded\": 3, \"feedback\": \"…\"}}")
     by_id = {q["id"]: q for q in scheme["questions"]}
     entries = {k: v for k, v in grades.items() if k != "revisit"}
     problems = []
@@ -787,6 +799,7 @@ def main():
     s = sub.add_parser("grade")
     s.add_argument("paper")
     s.add_argument("--regrade", metavar="Q", type=str.lower)
+    s.add_argument("--marks", metavar="FILE", help="the marks as JSON (default: read from stdin)")
     s.set_defaults(fn=cmd_grade)
     s = sub.add_parser("abandon")
     s.add_argument("paper")

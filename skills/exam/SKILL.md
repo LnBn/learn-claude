@@ -126,15 +126,17 @@ An exam is a paper the learner sits on their own, in Obsidian, and hands in as a
    - When you are unsure whether a claim in an answer is true, check it before you mark it: run code for a number, or ask the `researcher`.
    - An answer listed under `IMAGES` is handwritten: find the file in the vault and Read it. If you cannot read it, stop and ask the learner to upload a clearer photo or type the answer.
    - Feedback is for the learner: what was right, what was missing or wrong and why, in two to four sentences. Do not repeat the model answer; the paper shows it folded under the feedback.
-3. **Write the marks into the paper:**
-   ```
-   python3 .claude/hooks/exam.py grade "<paper>" <<'EOF'
+3. **Write the marks** with the Write tool to the file on the brief's `MARKS` line. It stays beside the scheme as the record of the marking.
+   ```json
    {"q7": {"awarded": 3, "feedback": "…"},
     "q10": {"awarded": 5.5, "feedback": "…"},
     "revisit": {"<note stem>#<heading>": "<what to revisit there, in a clause>"}}
-   EOF
    ```
-   Give every written question, and no multiple-choice one: `submit` marked those. Marks may be halves. Give a `revisit` clause for each section where marks were lost.
+   Give every written question, and no multiple-choice one: `submit` marked those. Marks may be halves. Give a `revisit` clause for each section where marks were lost. Then write them into the paper:
+   ```
+   python3 .claude/hooks/exam.py grade "<paper>" --marks "<MARKS file>"
+   ```
+   If it refuses, correct the marks file and run it again.
 4. **Reply briefly:** the score, the two or three sections most worth revisiting as links (from the paper's summary), and that a question about any answer is welcome. The details are in the paper.
 5. **Link the paper**, as the last call of the reply, so that questions about the exam are kept beside the feedback:
    ```
@@ -144,11 +146,9 @@ An exam is a paper the learner sits on their own, in Obsidian, and hands in as a
 ## After grading
 
 - **A question about an answer** is answered as an aside on that question: start the reply with `%% aside: q7 %%` (the teach skill, "Questions from the learner"). The mirror puts the question and the answer after Q7's feedback.
-- **A disputed mark:** check the answer against the scheme's points again. If the mark was wrong, correct it:
+- **A disputed mark:** check the answer against the scheme's points again. If the mark was wrong, write `{"q7": {"awarded": 4, "feedback": "…"}}` to the marks file (only that question), and run:
   ```
-  python3 .claude/hooks/exam.py grade "<paper>" --regrade q7 <<'EOF'
-  {"q7": {"awarded": 4, "feedback": "…"}}
-  EOF
+  python3 .claude/hooks/exam.py grade "<paper>" --regrade q7 --marks "<marks file>"
   ```
   If it stands, say why in terms of the points.
 - **A gap the exam showed** is taught as in any lesson. In a course, a unit that scored under half its marks is now `shaky`. Its misses are asked first in the next recall check.

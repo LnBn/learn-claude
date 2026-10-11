@@ -260,6 +260,31 @@ class Grade(Placed):
         self.assertLess(text.index("**Answer:** 0.3"), text.index("> [!warning] Q3"))
         self.assertLess(text.index("> [!warning] Q3"), text.index("## Part C"))
 
+    def test_marks_from_a_file(self):
+        p = self.submitted()
+        r = self.exam("submit", p)
+        self.assertIn("MARKS: courses/pml1/.exams/pml1-ch02-exam-1.marks.json", r.stdout)
+        marks = self.course / ".exams" / "pml1-ch02-exam-1.marks.json"
+        marks.write_text(json.dumps(GRADES), encoding="utf-8")
+        r = self.exam("grade", p, "--marks", str(marks.relative_to(self.vault)))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Result — 11.5/16", (self.vault / p).read_text(encoding="utf-8"))
+        marks.write_text(json.dumps({"q3": {"awarded": 4, "feedback": "Right."}}), encoding="utf-8")
+        r = self.exam("grade", p, "--regrade", "q3", "--marks", str(marks))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Result — 14/16", (self.vault / p).read_text(encoding="utf-8"))
+
+    def test_select_all_names_the_missed_option(self):
+        sch = scheme()
+        sch["questions"][1].update(correct=["b", "c"], why_wrong={"a": "is the prior", "d": "is the posterior"})
+        p = self.place_paper(PAPER.replace("Which term of Bayes' rule is the evidence?",
+                                           "Select all terms of Bayes' rule that involve the data."), sch=sch)
+        self.assertEqual(self.exam("check", p).returncode, 0)
+        self.exam("submit", p)
+        self.exam("grade", p, stdin=json.dumps(GRADES))
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertIn("**You did not tick:** b)", text)
+
     def test_one_blank_line_after_each_callout(self):
         p, _ = self.graded()
         text = (self.vault / p).read_text(encoding="utf-8")

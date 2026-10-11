@@ -220,7 +220,7 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 1. `exam.py submit` parses the paper and refuses one it cannot read, changing nothing. The paper is parsed by `### Q<n>` headings: an answer runs from its `**Answer:**` line to the next question or `## Part` heading, so headings inside an answer stay in it.
 2. It saves the snapshot and grades multiple choice: exact set, all or nothing. Then it prints a brief of the written answers.
-3. The teacher marks those and passes the marks to `exam.py grade` as JSON.
+3. The teacher marks those and writes the marks as JSON to the `.marks.json` file the brief names. `exam.py grade --marks` reads it. A file, not a heredoc: feedback full of LaTeX inside a heredoc is a command the permission matcher may reject, and the file stays as a record of the marking.
 4. The script inserts a callout after each question, then the summary under the title. It never edits answer text: the teacher never writes to a paper the learner has filled in.
 5. In a course it then marks `shaky` each unit that scored under half its marks. This only applies to a unit that is `done`, so `skipped` and `shaky` stay as they are.
 6. `--regrade q7` replaces one callout, between `> [!…] Q7 — ` and `^q7`, and rewrites the summary in place.
@@ -279,6 +279,7 @@ Everything under `.claude/` in this table is gitignored.
 | `<notes>/exams/<…>-exam-<n>.md` | an exam paper; feedback and result once graded | the teacher (Write), then `exam.py` |
 | `<notes>/.exams/<…>-exam-<n>.json` | its marking scheme, marks, status and misses | the teacher (Write), then `exam.py` |
 | `<notes>/.exams/<…>-exam-<n>.submitted.md` | the paper as handed in | `exam.py submit` |
+| `<notes>/.exams/<…>-exam-<n>.marks.json` | the teacher's marks and feedback for the written answers | the teacher (Write), read by `exam.py grade --marks` |
 | `<project>/viz/` | published diagrams | the render scripts |
 
 ## Fragile parts
