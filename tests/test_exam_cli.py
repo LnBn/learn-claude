@@ -129,7 +129,8 @@ class Check(Base):
 TWO_TICKS = PAPER.replace("- [ ] b) $p(D \\mid h)$\n*  [X]  c)", "- [x] b) $p(D \\mid h)$\n*  [X]  c)")
 
 
-class Submit(Base):
+class Placed(Base):
+    """Chapters 1 and 2 finished; helpers for a paper that has passed `check`."""
     def setUp(self):
         super().setUp()
         self.finish_chapters()
@@ -142,6 +143,8 @@ class Submit(Base):
     def scheme(self, n=1):
         return json.loads((self.course / ".exams" / f"pml1-ch02-exam-{n}.json").read_text(encoding="utf-8"))
 
+
+class Submit(Placed):
     def test_grades_mc_and_prints_brief(self):
         p = self.submitted()
         r = self.exam("submit", p)
@@ -211,6 +214,142 @@ class Submit(Base):
         self.assertIn("IMAGES: work.jpg", r.stdout)
         self.assertIn("BLANK: Q3", r.stdout)
         self.assertIn("(blank)", r.stdout)
+
+
+GRADES = {"q3": {"awarded": 1.5, "feedback": "Bayes' rule is applied,\nbut the arithmetic slips."},
+          "q4": {"awarded": 8, "feedback": "Complete."},
+          "revisit": {"pml1-ch02#2.3 Bayes' rule": "the arithmetic of the posterior"}}
+
+
+class Grade(Placed):
+    def graded(self, grades=GRADES):
+        p = self.submitted()
+        self.assertEqual(self.exam("submit", p).returncode, 0)
+        self.before = (self.vault / p).read_text(encoding="utf-8")
+        r = self.exam("grade", p, stdin=json.dumps(grades))
+        return p, r
+
+    def test_inserts_feedback_without_touching_answers(self):
+        p, r = self.graded()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        text = (self.vault / p).read_text(encoding="utf-8")
+        snap = (self.course / ".exams" / "pml1-ch02-exam-1.submitted.md").read_text(encoding="utf-8")
+        from tests._vault import REPO  # noqa: F401
+        import exam
+        for q in exam.parse_paper(snap)[0].values():
+            self.assertIn(q["answer"], text)
+        self.assertIn("> [!warning] Q3 — 1.5/4", text)
+        self.assertIn("> but the arithmetic slips.", text)
+        self.assertIn("> [!success] Q4 — 8/8", text)
+        self.assertIn("> [!success] Q1 — 2/2", text)
+        self.assertIn("> [!failure] Q2 — 0/2", text)
+        self.assertIn("**You chose b):** is the likelihood", text)
+        self.assertIn("> > [!example]- Model answer", text)
+        self.assertIn("Tested: [[pml1-ch02#2.3 Bayes' rule|§2.3]]", text)
+        self.assertIn("\n^q3\n", text)
+        summary = text.index("> [!summary] Result — 11.5/16 (72%)")
+        self.assertGreater(summary, text.index("# Exam"))
+        self.assertLess(summary, text.index("## Part A"))
+        self.assertIn("Part A 2/4 · Part B 1.5/4 · Part C 8/8", text)
+        self.assertIn("[[pml1-ch02#2.3 Bayes' rule|§2.3]] (Q2, Q3): the arithmetic of the posterior", text)
+        self.assertIn("status: graded", text)
+        self.assertIn("🗒 exam graded: 11.5/16 (72%)", r.stdout)
+        s = self.scheme()
+        self.assertEqual((s["status"], s["score"], s["misses"]), ("graded", 11.5, ["q2", "q3"]))
+        # the callout sits after the answer, before the next part
+        self.assertLess(text.index("**Answer:** 0.3"), text.index("> [!warning] Q3"))
+        self.assertLess(text.index("> [!warning] Q3"), text.index("## Part C"))
+
+    def test_one_blank_line_after_each_callout(self):
+        p, _ = self.graded()
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertIn("\n^q1\n\n### Q2", text)
+        self.assertIn("\n^q2\n\n## Part B", text)
+        self.assertTrue(text.endswith("\n^q4\n"))
+
+    def test_half_marks_format(self):
+        p, r = self.graded()
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertNotIn(".50", text)
+        self.assertRegex(text, r"Result — \d+(\.5)?/16")
+
+    def test_refusals_change_nothing(self):
+        p = self.submitted()
+        before_open = (self.vault / p).read_text(encoding="utf-8")
+        self.assertEqual(self.exam("grade", p, stdin=json.dumps(GRADES)).returncode, 1)  # still open
+        self.assertEqual((self.vault / p).read_text(encoding="utf-8"), before_open)
+        self.exam("submit", p)
+        before = (self.vault / p).read_text(encoding="utf-8")
+        for bad in [{"q3": GRADES["q3"]},                                       # q4 missing
+                    {**GRADES, "q3": {"awarded": 5, "feedback": "x"}},          # above the marks
+                    {**GRADES, "q3": {"awarded": -1, "feedback": "x"}},
+                    {**GRADES, "q1": {"awarded": 2, "feedback": "x"}}]:         # mc is the script's
+            r = self.exam("grade", p, stdin=json.dumps(bad))
+            self.assertEqual(r.returncode, 1, bad)
+            self.assertEqual((self.vault / p).read_text(encoding="utf-8"), before)
+        r = self.exam("grade", p, stdin="not json")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.scheme()["status"], "submitted")
+
+    def test_shaky_only_from_done(self):
+        set_status(self.course, **{"2.2": ("skipped", "2026-10-05")})
+        s = scheme()
+        s["questions"][3]["unit"] = "2.2"
+        p = self.place_paper(TWO_TICKS, sch=s)
+        # 2.2 is skipped, so the scheme cannot cite it; mark it done for check, then skipped again
+        set_status(self.course, **{"2.2": ("done", "2026-10-05")})
+        self.assertEqual(self.exam("check", p).returncode, 0)
+        set_status(self.course, **{"2.2": ("skipped", "2026-10-05")})
+        self.exam("submit", p)
+        r = self.exam("grade", p, stdin=json.dumps({"q3": {"awarded": 0, "feedback": "No."},
+                                                    "q4": {"awarded": 0, "feedback": "No."}}))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = self.state()
+        self.assertEqual(st["status"]["2.3"]["s"], "shaky")
+        self.assertEqual(st["status"]["2.2"]["s"], "skipped")
+        self.assertIn("SHAKY: 2.3", r.stdout)
+        index = (self.course / "pml1.md").read_text(encoding="utf-8")
+        self.assertIn("| graded | 2/16 (12%) |", index)
+
+    def test_regrade(self):
+        p, _ = self.graded()
+        r = self.exam("grade", p, "--regrade", "q3", stdin=json.dumps({"q3": {"awarded": 4, "feedback": "Right after all."}}))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertIn("> [!success] Q3 — 4/4", text)
+        self.assertIn("Regraded", text)
+        self.assertIn("1.5 → 4", text)
+        self.assertNotIn("[!warning] Q3", text)
+        self.assertEqual(text.count("> [!summary] Result"), 1)
+        self.assertIn("Result — 14/16 (88%)", text)
+        self.assertEqual(text.count("^q3"), 1)
+        self.assertEqual(self.scheme()["misses"], ["q2"])
+
+    def test_regrade_needs_graded_paper(self):
+        p = self.submitted()
+        r = self.exam("grade", p, "--regrade", "q3", stdin=json.dumps({"q3": {"awarded": 4, "feedback": "x"}}))
+        self.assertEqual(r.returncode, 1)
+
+    def test_followup_aside_still_placed_after_grading(self):
+        from tests._vault import append, assistant, hook, tool_result, transcript, user
+        p, _ = self.graded()
+        paper = self.vault / p
+        s = "sess-2"
+        tp = transcript(self.vault, s)
+        append(tp, user("<command-name>/exam</command-name><command-args>submit</command-args>"),
+               assistant("m1", tool="Bash"), tool_result("tu-m1"))
+        run(self.vault, "md_log.py", "link", str(paper), "--session", s, "--from-now", "--muted", "--no-header")
+        append(tp, assistant("m3", text="Score 11.5/16."))
+        hook(self.vault, {"hook_event_name": "Stop", "session_id": s, "transcript_path": str(tp)})
+        q = "why only 1.5 on Q3?"
+        hook(self.vault, {"hook_event_name": "UserPromptSubmit", "session_id": s, "transcript_path": str(tp), "prompt": q})
+        append(tp, user(q), assistant("m4", text="%% aside: q3 %%\nThe division was wrong."))
+        hook(self.vault, {"hook_event_name": "Stop", "session_id": s, "transcript_path": str(tp)})
+        text = paper.read_text(encoding="utf-8")
+        at = text.index("> [!aside]+ why only 1.5 on Q3?")
+        self.assertGreater(at, text.index("\n^q3\n"))
+        self.assertLess(at, text.index("## Part C"))
+        self.assertNotIn("Score 11.5/16.", text)
 
 
 if __name__ == "__main__":

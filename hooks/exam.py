@@ -13,6 +13,10 @@ reading the filled-in paper, multiple-choice grading, feedback callouts, totals,
     exam.py submit [<paper>]
                         hand in a paper (default: the only open one): snapshot it, grade the multiple choice,
                         print the brief for marking the written answers
+    exam.py grade <paper> [--regrade q7]
+                        read the written answers' marks as JSON on stdin ({"q7": {"awarded": 3, "feedback": "…"},
+                        "revisit": {"<note>#<heading>": "<clause>"}}), write the feedback and the result into the
+                        paper, mark weak units shaky; --regrade rewrites one question's feedback and the totals
 """
 import argparse
 import glob
@@ -503,6 +507,219 @@ def cmd_submit(a):
         print(f"BLANK: {', '.join(blank)}")
 
 
+CALLOUT_START = r"^> \[!(?:success|warning|failure)\] Q{n} — "
+SUMMARY_RE = re.compile(r"^> \[!summary\] Result — ")
+
+
+def quote(text):
+    return ["> " + ln if ln.strip() else ">" for ln in text.strip("\n").split("\n")]
+
+
+def link_of(section):
+    return f"[[{section}|{section_label(section)}]]"
+
+
+def mc_feedback(q):
+    lines = [f"**Correct:** {', '.join(x + ')' for x in q['correct'])} {q.get('explanation', '')}".rstrip()]
+    chosen = q.get("chosen") or []
+    if not chosen:
+        lines.append("No answer.")
+    for x in chosen:
+        if x not in q["correct"]:
+            lines.append(f"**You chose {x}):** {(q.get('why_wrong') or {}).get(x, '')}".rstrip())
+    return "\n".join(lines)
+
+
+def callout(q, awarded, feedback, link, regraded=None):
+    """The feedback block under a graded question, ending with its `^q<n>` block id."""
+    marks = float(q["marks"])
+    kind = "success" if awarded >= marks else "failure" if awarded <= 0 else "warning"
+    out = [f"> [!{kind}] Q{q['id'][1:]} — {fmt(awarded)}/{fmt(marks)}"] + quote(feedback)
+    if regraded:
+        out.append(f"> *Regraded {regraded}.*")
+    out.append(f"> Tested: {link}")
+    if q["type"] != "mc" and q.get("model_answer"):
+        out += [">", "> > [!example]- Model answer"] + ["> " + ln for ln in quote(q["model_answer"])]
+    out.append(f"^{q['id']}")
+    return "\n".join(out)
+
+
+def summary_block(scheme, revisit):
+    qs = scheme["questions"]
+    score = sum(float(q.get("awarded", 0)) for q in qs)
+    marks = float(scheme["marks"])
+    out = [f"> [!summary] Result — {fmt(score)}/{fmt(marks)} ({round(100 * score / marks)}%)"]
+    parts = []
+    for part in sorted({q["part"] for q in qs}):
+        ps = [q for q in qs if q["part"] == part]
+        parts.append(f"Part {part} {fmt(sum(float(q.get('awarded', 0)) for q in ps))}/"
+                     f"{fmt(sum(float(q['marks']) for q in ps))}")
+    out.append("> " + " · ".join(parts))
+    lost = {}
+    for q in qs:
+        if float(q.get("awarded", 0)) < float(q["marks"]):
+            lost.setdefault(q.get("section"), []).append(f"Q{q['id'][1:]}")
+    if lost:
+        out.append("> **Revisit:**")
+        for sec, names in lost.items():
+            clause = (revisit or {}).get(sec)
+            out.append(f"> - {link_of(sec)} ({', '.join(names)})" + (f": {clause}" if clause else ""))
+    else:
+        out.append("> Full marks.")
+    return "\n".join(out)
+
+
+def shaky_units(scheme):
+    """Units whose questions scored under half their marks."""
+    got, of = {}, {}
+    for q in scheme["questions"]:
+        u = q.get("unit")
+        if u:
+            got[u] = got.get(u, 0.0) + float(q.get("awarded", 0))
+            of[u] = of.get(u, 0.0) + float(q["marks"])
+    return [u for u in of if got[u] < 0.5 * of[u]]
+
+
+def _insert_feedback(text, scheme):
+    lines = text.split("\n")
+    qs, _ = parse_paper(text)
+    for q in sorted(scheme["questions"], key=lambda q: qs[q["id"]]["start"], reverse=True):
+        p = qs[q["id"]]
+        at = p["end"]
+        while at > p["start"] + 1 and not lines[at - 1].strip():
+            at -= 1
+        block = callout(q, float(q["awarded"]), q["feedback"], link_of(q.get("section")))
+        lines[at:at] = [""] + block.split("\n") + ([""] if at < len(lines) and lines[at].strip() else [])
+    return "\n".join(lines)
+
+
+def _replace_feedback(text, q, block):
+    lines = text.split("\n")
+    start_re = re.compile(CALLOUT_START.format(n=q["id"][1:]))
+    s = next((i for i, ln in enumerate(lines) if start_re.match(ln)), None)
+    e = next((i for i in range(s or 0, len(lines)) if lines[i].strip() == f"^{q['id']}"), None) if s is not None else None
+    if s is None or e is None:
+        book.die(f"Q{q['id'][1:]}: its feedback block is not in the paper")
+    lines[s:e + 1] = block.split("\n")
+    return "\n".join(lines)
+
+
+def _put_summary(text, block):
+    lines = text.split("\n")
+    s = next((i for i, ln in enumerate(lines) if SUMMARY_RE.match(ln)), None)
+    if s is not None:
+        e = s
+        while e + 1 < len(lines) and lines[e + 1].startswith(">"):
+            e += 1
+        lines[s:e + 1] = block.split("\n")
+    else:
+        fm = re.match(r"---\n.*?\n---\n", text, re.S)
+        skip = fm.group(0).count("\n") if fm else 0
+        t = next((i for i in range(skip, len(lines)) if lines[i].startswith("# ")), skip - 1)
+        lines[t + 1:t + 1] = [""] + block.split("\n")
+    return "\n".join(lines)
+
+
+def _refuse(msg):
+    print(msg)
+    sys.exit(1)
+
+
+def cmd_grade(a):
+    paper = os.path.abspath(a.paper)
+    sp = scheme_path(paper)
+    scheme = load_scheme(sp)
+    if not os.path.exists(paper) or scheme is None:
+        book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
+    want = "graded" if a.regrade else "submitted"
+    if scheme.get("status", "open") != want:
+        _refuse(f"{book.rel(paper)} is {scheme.get('status', 'open')}; "
+                + ("only a graded paper can be regraded" if a.regrade else "submit it first: exam.py submit"))
+    try:
+        grades = json.loads(sys.stdin.read())
+        assert isinstance(grades, dict)
+    except Exception:
+        _refuse("expected the marks as a JSON object on stdin: {\"q7\": {\"awarded\": 3, \"feedback\": \"…\"}}")
+    by_id = {q["id"]: q for q in scheme["questions"]}
+    entries = {k: v for k, v in grades.items() if k != "revisit"}
+    problems = []
+    if a.regrade:
+        if a.regrade not in by_id:
+            problems.append(f"no question {a.regrade}")
+        if set(entries) != {a.regrade}:
+            problems.append(f"give exactly one entry, for {a.regrade}")
+    else:
+        for q in scheme["questions"]:
+            if q["type"] != "mc" and q["id"] not in entries:
+                problems.append(f"Q{q['id'][1:]}: no mark given")
+        for k in entries:
+            if k not in by_id:
+                problems.append(f"no question {k}")
+            elif by_id[k]["type"] == "mc":
+                problems.append(f"Q{k[1:]}: multiple choice is graded by submit, not here")
+    for k, v in entries.items():
+        if k not in by_id or not isinstance(v, dict):
+            continue
+        try:
+            aw = float(v.get("awarded"))
+        except (TypeError, ValueError):
+            problems.append(f"Q{k[1:]}: awarded must be a number")
+            continue
+        if not 0 <= aw <= float(by_id[k]["marks"]):
+            problems.append(f"Q{k[1:]}: awarded {fmt(aw)} is outside 0…{fmt(by_id[k]['marks'])}")
+        if by_id[k]["type"] != "mc" and not str(v.get("feedback") or "").strip():
+            problems.append(f"Q{k[1:]}: no feedback")
+    if problems:
+        print("nothing graded:")
+        for p in problems:
+            print(f"  - {p}")
+        sys.exit(1)
+
+    today = time.strftime("%Y-%m-%d")
+    text = read(paper)
+    if a.regrade:
+        q = by_id[a.regrade]
+        old, v = float(q["awarded"]), entries[a.regrade]
+        q["awarded"] = float(v["awarded"])
+        q["feedback"] = str(v.get("feedback") or "").strip() or q.get("feedback") or mc_feedback(q)
+        q["regraded"] = f"{today}: {fmt(old)} → {fmt(q['awarded'])}"
+        text = _replace_feedback(text, q, callout(q, q["awarded"], q["feedback"], link_of(q.get("section")),
+                                                  q["regraded"]))
+    else:
+        for q in scheme["questions"]:
+            if q["type"] == "mc":
+                q["feedback"] = mc_feedback(q)
+            else:
+                q["awarded"] = float(entries[q["id"]]["awarded"])
+                q["feedback"] = str(entries[q["id"]]["feedback"]).strip()
+        text = _insert_feedback(text, scheme)
+    if "revisit" in grades:
+        scheme["revisit"] = grades["revisit"]
+    score = sum(float(q["awarded"]) for q in scheme["questions"])
+    scheme.update(status="graded", score=score, misses=[q["id"] for q in scheme["questions"]
+                                                        if float(q["awarded"]) < float(q["marks"])])
+    scheme.setdefault("graded", today)
+    text = _put_summary(text, summary_block(scheme, scheme.get("revisit")))
+    text = set_frontmatter(text, status="graded", score=fmt(score), graded=scheme["graded"])
+    write(paper, text)
+    book.save_json(sp, scheme)
+
+    shaky = []
+    c = record(scheme, status="graded", score=score)
+    if c:
+        for u in shaky_units(scheme):
+            if c.status(u) == "done":
+                c.state["status"][u] = {"s": "shaky", "at": today}
+                shaky.append(u)
+        if shaky:
+            c.save()
+    pct = round(100 * score / float(scheme["marks"]))
+    print(f"🗒 exam graded: {fmt(score)}/{fmt(scheme['marks'])} ({pct}%)")
+    print(summary_block(scheme, scheme.get("revisit")).split("\n")[1][2:])
+    if shaky:
+        print(f"SHAKY: {', '.join(shaky)}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="exam.py", description="Exam papers on a course chapter or a lesson note.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -516,6 +733,10 @@ def main():
     s = sub.add_parser("submit")
     s.add_argument("paper", nargs="?")
     s.set_defaults(fn=cmd_submit)
+    s = sub.add_parser("grade")
+    s.add_argument("paper")
+    s.add_argument("--regrade", metavar="Q", type=str.lower)
+    s.set_defaults(fn=cmd_grade)
     a = p.parse_args()
     a.fn(a)
 
