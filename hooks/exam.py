@@ -12,12 +12,14 @@ reading the filled-in paper, multiple-choice grading, feedback callouts, totals,
     exam.py check <paper>   validate the paper against its scheme; when valid, register it as open
     exam.py submit [<paper>]
                         hand in a paper (default: the only open one): snapshot it, grade the multiple choice,
-                        print the brief for marking the written answers
+                        print the brief for marking the written answers; for a paper already submitted, print
+                        its brief again
     exam.py grade <paper> [--regrade q7] [--marks <file>]
                         read the written answers' marks as JSON from the file `submit` named on its MARKS line, or
                         from stdin ({"q7": {"awarded": 3, "feedback": "…"},
                         "revisit": {"<note>#<heading>": "<clause>"}}), write the feedback and the result into the
                         paper, mark weak units shaky; --regrade rewrites one question's feedback and the totals
+    exam.py reopen <paper>  a submitted paper becomes open again, to be changed and submitted again
     exam.py abandon <paper> an open paper will not be submitted (it stays on file)
     exam.py list            every paper under the working directory, with its status and score
 """
@@ -40,7 +42,7 @@ BUDGET = {
 }
 TYPES = ("mc", "short", "long")
 QUESTION_RE = re.compile(r"^### Q(\d+)\s*\((\d+(?:\.\d+)?) marks?\)")
-PART_RE = re.compile(r"^## Part ([A-Z])\b")
+PART_RE = re.compile(r"^## Part ([A-Z])\s+[—–-]\s")  # "## Part B — Short answer"; not "## Part A of the proof"
 OPTION_RE = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+([a-z])\)")
 ANSWER_RE = re.compile(r"^\*\*Answer:\*\*")
 
@@ -48,6 +50,11 @@ ANSWER_RE = re.compile(r"^\*\*Answer:\*\*")
 def fmt(x):
     """A mark as written in the paper: 3, 1.5, 2.25."""
     return f"{float(x):g}"
+
+
+def pct(score, marks):
+    """A whole percentage, a half rounded up: 33/40 is 83%."""
+    return int(100 * float(score) / float(marks) + 0.5)
 
 
 def read_frontmatter(text):
@@ -121,9 +128,10 @@ def parse_paper(text):
     return qs, problems
 
 
-def check(paper_text, scheme, sections):
+def check(paper_text, scheme, sections, units=None):
     """Problems with a paper and its scheme, each naming its question as Q<n>; empty when they agree.
-    `sections`: the "<note stem>#<heading>" strings the exam may cite."""
+    `sections`: the "<note stem>#<heading>" strings the exam may cite. `units` (a course): section -> its unit,
+    which each question's `unit` must name."""
     qs, problems = parse_paper(paper_text)
     fm, _ = read_frontmatter(paper_text)
     entries = scheme.get("questions") or []
@@ -171,6 +179,9 @@ def check(paper_text, scheme, sections):
                 problems.append(f"{name}: no model answer")
         if e.get("section") not in sections:
             problems.append(f"{name}: section {e.get('section')!r} is not a section this exam may test")
+        elif units is not None and e.get("unit") != units.get(e["section"]):
+            problems.append(f"{name}: unit must be {units.get(e['section'])!r}, the unit of its section "
+                            f"(it is {e.get('unit')!r})")
     try:
         paper_marks = float(fm.get("marks", "nan"))
     except ValueError:
@@ -282,6 +293,17 @@ def snapshot_path(paper):
     return scheme_path(paper)[:-len(".json")] + ".submitted.md"
 
 
+def scheme_note(paper):
+    """The note a paper examines, from the paper's name and place: <dir>/exams/<stem>-exam-<n>.md or
+    <dir>/exams/<stem> — Exam <n>.md -> <dir>/<stem>.md."""
+    paper = os.path.abspath(paper)
+    name = os.path.splitext(os.path.basename(paper))[0]
+    m = re.fullmatch(r"(.+)-exam-\d+", name) or re.fullmatch(r"(.+) — Exam \d+", name)
+    if not m:
+        book.die(f"not an exam paper's name: {os.path.basename(paper)}")
+    return os.path.join(os.path.dirname(os.path.dirname(paper)), m.group(1) + ".md")
+
+
 def marks_path(paper):
     """Where the teacher writes the marks of the written answers for `grade --marks`; kept as a record."""
     return scheme_path(paper)[:-len(".json")] + ".marks.json"
@@ -300,7 +322,8 @@ def attempts(note):
 
 
 def next_attempt(note):
-    return max(attempts(note), default=0) + 1
+    """One past the last attempt that was set (passed `check`); a draft's number is used again."""
+    return max((k for k, sp in attempts(note).items() if status_of(load_scheme(sp)) != "draft"), default=0) + 1
 
 
 def load_scheme(path):
@@ -320,15 +343,20 @@ def write(path, text):
     os.replace(tmp, path)
 
 
+def status_of(scheme):
+    """open, submitted, graded or abandoned; a scheme `check` never passed has no status yet: a draft."""
+    return (scheme or {}).get("status") or "draft"
+
+
 def find_papers(root, status=None):
     """[(scheme path, scheme)] of every exam under `root`, newest first; hidden folders other than `.exams`
     (.claude, .git, .obsidian) are not searched."""
     found = []
     for sp in glob.glob(os.path.join(glob.escape(root), "**", ".exams", "*.json"), recursive=True):
         s = load_scheme(sp)
-        if not isinstance(s, dict) or "paper" not in s:
+        if not isinstance(s, dict) or "paper" not in s or "questions" not in s:
             continue
-        if status is None or s.get("status", "open") == status:
+        if status is None or status_of(s) == status:
             found.append((sp, s))
     found.sort(key=lambda x: (x[1].get("set") or "", x[1].get("attempt") or 0), reverse=True)
     return found
@@ -377,8 +405,10 @@ def cmd_new(a):
     if r["chapter"]:
         print(f"CHAPTER: {r['chapter']}   COURSE: {r['course'].slug}")
     for k, sp in sorted(attempts(r["note"]).items()):
-        if (load_scheme(sp) or {}).get("status") == "open":
+        if status_of(load_scheme(sp)) == "open":
             print(f"OPEN: {book.rel(paths(r['note'], k)[0])}")
+    if os.path.exists(scheme) or os.path.exists(paper):
+        print("DRAFT: a paper or scheme from a setting that never passed check is at these paths; overwrite it")
     print(f"BUDGET ({a.length}, about {b['minutes']} minutes):")
     for part in "ABC":
         print(f"  Part {part}: {b[part][0]} × {fmt(b[part][1])} marks")
@@ -403,9 +433,24 @@ def cmd_check(a):
     scheme = load_scheme(sp)
     if not os.path.exists(paper) or scheme is None:
         book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
-    r = resolve(book.rel(os.path.abspath(scheme.get("covers", ""))))
+    if status_of(scheme) not in ("draft", "open"):
+        _refuse(f"{book.rel(paper)} is {status_of(scheme)}; only a paper not yet handed in can be checked")
+    r = resolve(book.rel(scheme_note(paper)))
     text = read(paper)
-    problems = check(text, scheme, {section_key(link) for link, _ in sections_of(r)})
+    secs = sections_of(r)
+    problems = check(text, scheme, {section_key(link) for link, _ in secs},
+                     {section_key(link): unit for link, unit in secs} if r["course"] else None)
+    attempt = scheme.get("attempt")
+    if not isinstance(attempt, int) or os.path.abspath(paths(r["note"], attempt)[0]) != paper:
+        problems.append(f"attempt {attempt!r} does not match the paper's name ({os.path.basename(paper)}); "
+                        f"see the ATTEMPT line of exam.py new")
+    if os.path.abspath(scheme.get("paper") or "") != paper:
+        problems.append(f"paper must be {book.rel(paper)!r} (it is {scheme.get('paper')!r})")
+    if os.path.abspath(scheme.get("covers") or "") != os.path.abspath(scheme_note(paper)):
+        problems.append(f"covers must be {book.rel(scheme_note(paper))!r}, the note this paper sits beside "
+                        f"(it is {scheme.get('covers')!r})")
+    if scheme.get("chapter") != r["chapter"]:
+        problems.append(f"chapter must be {r['chapter']!r} (it is {scheme.get('chapter')!r})")
     if problems:
         print(f"{len(problems)} problem(s) in {book.rel(paper)}:")
         for p in problems:
@@ -431,16 +476,21 @@ def grade_mc(scheme, parsed):
 IMAGE_RE = re.compile(r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\(([^)]+)\)")
 
 
-def pick_paper(arg, status="open"):
-    """The paper a command acts on: the one named, or the only paper with this status."""
+def pick_paper(arg, statuses=("open",)):
+    """The paper a command acts on: the one named, or else the only paper with the first of these statuses
+    that any paper has."""
     if arg:
         return os.path.abspath(arg)
-    found = find_papers(os.getcwd(), status)
+    found = []
+    for st in statuses:
+        found = find_papers(os.getcwd(), st)
+        if found:
+            break
     if not found:
-        print(f"no {status} exam paper — name one, or see: exam.py list")
+        print(f"no {' or '.join(statuses)} exam paper — name one, or see: exam.py list")
         sys.exit(1)
     if len(found) > 1:
-        print(f"{len(found)} {status} exam papers — name the one to use:")
+        print(f"{len(found)} {status_of(found[0][1])} exam papers — name the one to use:")
         for _, s in found:
             print(f"  {s['paper']}")
         sys.exit(1)
@@ -448,14 +498,17 @@ def pick_paper(arg, status="open"):
 
 
 def cmd_submit(a):
-    paper = pick_paper(a.paper)
+    paper = pick_paper(a.paper, ("open", "submitted"))
     sp = scheme_path(paper)
     scheme = load_scheme(sp)
     if not os.path.exists(paper) or scheme is None:
         book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
-    if scheme.get("status", "open") != "open":
-        print(f"already {scheme['status']}: {book.rel(paper)}")
-        sys.exit(1)
+    if status_of(scheme) == "submitted" and os.path.exists(snapshot_path(paper)):
+        print(f"already submitted on {scheme.get('submitted')}; the brief again, from the paper as submitted:")
+        print_brief(paper, scheme, parse_paper(read(snapshot_path(paper)))[0])
+        return
+    if status_of(scheme) != "open":
+        _refuse(f"already {status_of(scheme)}: {book.rel(paper)}")
     text = read(paper)
     qs, problems = parse_paper(text)
     for e in scheme["questions"]:
@@ -464,6 +517,8 @@ def cmd_submit(a):
             problems.append(f"{name}: its heading `### {name} ({fmt(e['marks'])} marks)` is not in the paper")
         elif e["type"] == "mc" and not qs[e["id"]]["options"]:
             problems.append(f"{name}: its options (`- [ ] a) …`) are not in the paper")
+        elif e["type"] != "mc" and not qs[e["id"]]["has_answer"]:
+            problems.append(f"{name}: its `**Answer:**` line is not in the paper (it must read exactly that)")
     if problems:
         print(f"cannot read {book.rel(paper)}; repair it and submit again:")
         for p in problems:
@@ -483,11 +538,32 @@ def cmd_submit(a):
     book.save_json(sp, scheme)
     write(paper, set_frontmatter(text, status="submitted", submitted=today))
     record(scheme, status="submitted")
+    print_brief(paper, scheme, qs)
 
+
+def cmd_reopen(a):
+    paper = os.path.abspath(a.paper)
+    sp = scheme_path(paper)
+    scheme = load_scheme(sp)
+    if not os.path.exists(paper) or scheme is None:
+        book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
+    if status_of(scheme) != "submitted":
+        _refuse(f"{book.rel(paper)} is {status_of(scheme)}; only a submitted paper can be reopened")
+    scheme["status"] = "open"
+    scheme.pop("submitted", None)
+    book.save_json(sp, scheme)
+    write(paper, set_frontmatter(read(paper), status="open"))
+    record(scheme, status="open")
+    print(f"🗒 exam reopened: {book.rel(paper)} — the learner can change it and submit again")
+
+
+def print_brief(paper, scheme, qs):
+    """What the teacher marks from: the multiple-choice results, then each written question with its model
+    answer, its marking points and the learner's answer as submitted."""
     print(f"PAPER: {book.rel(paper)}")
     mcs = [e for e in scheme["questions"] if e["type"] == "mc"]
     if mcs:
-        print(f"MULTIPLE CHOICE: {fmt(sum(mc.values()))}/{fmt(sum(float(e['marks']) for e in mcs))}")
+        print(f"MULTIPLE CHOICE: {fmt(sum(e['awarded'] for e in mcs))}/{fmt(sum(float(e['marks']) for e in mcs))}")
         for e in mcs:
             chosen = ", ".join(e["chosen"]) or "none"
             tail = "" if e["awarded"] else f"; correct {', '.join(e['correct'])}"
@@ -561,7 +637,7 @@ def summary_block(scheme, revisit):
     qs = scheme["questions"]
     score = sum(float(q.get("awarded", 0)) for q in qs)
     marks = float(scheme["marks"])
-    out = [f"> [!summary] Result — {fmt(score)}/{fmt(marks)} ({round(100 * score / marks)}%)"]
+    out = [f"> [!summary] Result — {fmt(score)}/{fmt(marks)} ({pct(score, marks)}%)"]
     parts = []
     for part in sorted({q["part"] for q in qs}):
         ps = [q for q in qs if q["part"] == part]
@@ -645,8 +721,8 @@ def cmd_grade(a):
     if not os.path.exists(paper) or scheme is None:
         book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
     want = "graded" if a.regrade else "submitted"
-    if scheme.get("status", "open") != want:
-        _refuse(f"{book.rel(paper)} is {scheme.get('status', 'open')}; "
+    if status_of(scheme) != want:
+        _refuse(f"{book.rel(paper)} is {status_of(scheme)}; "
                 + ("only a graded paper can be regraded" if a.regrade else "submit it first: exam.py submit"))
     try:
         grades = json.loads(read(a.marks) if a.marks else sys.stdin.read())
@@ -671,8 +747,14 @@ def cmd_grade(a):
                 problems.append(f"no question {k}")
             elif by_id[k]["type"] == "mc":
                 problems.append(f"Q{k[1:]}: multiple choice is graded by submit, not here")
+    revisit = grades.get("revisit", {})
+    if not isinstance(revisit, dict) or not all(isinstance(x, str) for x in revisit.values()):
+        problems.append("revisit must map \"<note>#<heading>\" to a clause: {\"<note>#<heading>\": \"…\"}")
     for k, v in entries.items():
-        if k not in by_id or not isinstance(v, dict):
+        if k not in by_id:
+            continue
+        if not isinstance(v, dict):
+            problems.append(f"Q{k[1:]}: give {{\"awarded\": <marks>, \"feedback\": \"…\"}}, not {json.dumps(v)}")
             continue
         try:
             aw = float(v.get("awarded"))
@@ -691,6 +773,19 @@ def cmd_grade(a):
 
     today = time.strftime("%Y-%m-%d")
     text = read(paper)
+    edited = []
+    if not a.regrade and os.path.exists(snapshot_path(paper)):
+        # grade what was handed in: a question changed since (or gone) is restored from the snapshot
+        submitted = read(snapshot_path(paper))
+        now, _ = parse_paper(text)
+        then, _ = parse_paper(submitted)
+        edited = [f"Q{k[1:]}" for k in then
+                  if k not in now or (now[k]["answer"], now[k]["ticked"]) != (then[k]["answer"], then[k]["ticked"])]
+        if edited:
+            aside = scheme_path(paper)[:-len(".json")] + ".edited.md"
+            write(aside, text)
+            text = set_frontmatter(submitted, **{k: v for k, v in read_frontmatter(text)[0].items()
+                                                 if k in ("status", "submitted")})
     if a.regrade:
         q = by_id[a.regrade]
         old, v = float(q["awarded"]), entries[a.regrade]
@@ -727,11 +822,13 @@ def cmd_grade(a):
                 shaky.append(u)
         if shaky:
             c.save()
-    pct = round(100 * score / float(scheme["marks"]))
-    print(f"🗒 exam graded: {fmt(score)}/{fmt(scheme['marks'])} ({pct}%)")
+    print(f"🗒 exam graded: {fmt(score)}/{fmt(scheme['marks'])} ({pct(score, scheme['marks'])}%)")
     print(summary_block(scheme, scheme.get("revisit")).split("\n")[1][2:])
     if shaky:
         print(f"SHAKY: {', '.join(shaky)}")
+    if edited:
+        print(f"EDITED AFTER SUBMIT: {', '.join(edited)} — graded as submitted; the edited copy is "
+              f"{book.rel(scheme_path(paper)[:-len('.json')] + '.edited.md')}")
 
 
 def cmd_abandon(a):
@@ -740,8 +837,8 @@ def cmd_abandon(a):
     scheme = load_scheme(sp)
     if not os.path.exists(paper) or scheme is None:
         book.die(f"need both the paper and its scheme: {book.rel(paper)}, {book.rel(sp)}")
-    if scheme.get("status", "open") != "open":
-        _refuse(f"{book.rel(paper)} is {scheme.get('status')}; only an open paper can be abandoned")
+    if status_of(scheme) != "open":
+        _refuse(f"{book.rel(paper)} is {status_of(scheme)}; only an open paper can be abandoned")
     scheme["status"] = "abandoned"
     book.save_json(sp, scheme)
     write(paper, set_frontmatter(read(paper), status="abandoned"))
@@ -755,7 +852,7 @@ def cmd_list(a):
         print("no exam papers yet")
     for _, s in found:
         score = f"{fmt(s['score'])}/{fmt(s['marks'])}" if s.get("score") is not None else "-"
-        print(f"{s.get('status', 'open'):<10} {score:<9} {s['paper']}")
+        print(f"{status_of(s):<10} {score:<9} {s['paper']}")
 
 
 def exam_misses(note):
@@ -796,6 +893,9 @@ def main():
     s = sub.add_parser("submit")
     s.add_argument("paper", nargs="?")
     s.set_defaults(fn=cmd_submit)
+    s = sub.add_parser("reopen")
+    s.add_argument("paper")
+    s.set_defaults(fn=cmd_reopen)
     s = sub.add_parser("grade")
     s.add_argument("paper")
     s.add_argument("--regrade", metavar="Q", type=str.lower)

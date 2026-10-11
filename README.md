@@ -234,7 +234,7 @@ The teacher asks how long it should be: short (about 20 minutes), standard (abou
 
 Each question shows its marks. An answer can be as long as you like, with LaTeX, headings, or an embedded photo of handwritten work. The paper only tests what the chapter's lessons taught. If you take an exam on a chapter you have not finished, the paper says which sections it leaves out.
 
-Nothing is graded until you hand in the whole paper. Type `submit` (or `/exam submit`) in Claude Code when you are done.
+Nothing is graded until you hand in the whole paper. Type `submit` (or `/exam submit`) in Claude Code when you are done. The paper is graded as you handed it in. To change an answer after that, take the paper back with `/exam reopen <paper>` before it is graded, and submit it again.
 
 ### The graded paper
 
@@ -366,6 +366,7 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/exercise <id>` | Step-by-step help with an exercise from the course's book. |
 | `/exam [chapter \| note.md]` | Set an exam paper on a chapter (default: the one finished last) or a lesson note. |
 | `/exam submit` | Hand in the open paper to be graded. Typing `submit` does the same. |
+| `/exam reopen <paper>` | Take back a paper you submitted but that is not graded yet, to change it and submit again. |
 | `/exam abandon <paper>` | Drop a paper you will not finish; it stays on file. |
 | `/exam list` | Every exam paper, with its status and score. |
 

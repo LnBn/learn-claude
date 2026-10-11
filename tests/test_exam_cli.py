@@ -37,6 +37,19 @@ class Base(unittest.TestCase):
         return str(p.relative_to(self.vault))
 
 
+class Isolation(Base):
+    def test_two_vaults_do_not_share_the_current_course(self):
+        other = make_vault(self)
+        oc = make_course(other)
+        write_note(oc / "pml1-ch02.md", CH2)
+        set_status(oc, **{"2.1": ("done", "2026-10-05"), "2.2": ("done", "2026-10-05"), "2.3": ("done", "2026-10-05")})
+        self.assertEqual(run(other, "exam.py", "new", "--length", "short").returncode, 0)  # other's course is current
+        self.finish_chapters()
+        r = self.exam("new", "--length", "short")
+        self.assertIn("PAPER: courses/pml1/exams/pml1-ch02-exam-1.md", r.stdout)
+        self.assertNotIn(str(other), r.stdout)
+
+
 class New(Base):
     def test_defaults_to_latest_complete_chapter(self):
         self.finish_chapters()
@@ -115,6 +128,32 @@ class Check(Base):
         self.assertEqual(self.exam("check", p).returncode, 0)  # checking again does not register twice
         self.assertEqual(len(self.state()["exams"]), 1)
 
+    def test_identity_and_units_checked(self):
+        self.finish_chapters()
+        for mutate, needle in [(lambda s: s["questions"][0].pop("unit"), "Q1"),
+                               (lambda s: s["questions"][3].update(unit="2.3"), "Q4"),
+                               (lambda s: s.update(attempt=2), "attempt"),
+                               (lambda s: s.update(paper="courses/pml1/exams/other.md"), "paper"),
+                               (lambda s: s.update(covers="courses/pml1/pml1-ch01.md"), "covers"),
+                               (lambda s: s.update(chapter="1"), "chapter")]:
+            s = scheme()
+            mutate(s)
+            p = self.place_paper(sch=s)
+            r = self.exam("check", p)
+            self.assertEqual(r.returncode, 1, needle)
+            self.assertIn(needle, r.stdout)
+
+    def test_refused_unless_open(self):
+        self.finish_chapters()
+        p = self.place_paper()
+        self.assertEqual(self.exam("check", p).returncode, 0)
+        self.assertEqual(self.exam("submit", p).returncode, 0)
+        before = (self.vault / p).read_text(encoding="utf-8")
+        r = self.exam("check", p)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("submitted", r.stdout + r.stderr)
+        self.assertEqual((self.vault / p).read_text(encoding="utf-8"), before)
+
     def test_reports_problems(self):
         self.finish_chapters()
         s = scheme()
@@ -170,12 +209,63 @@ class Submit(Placed):
         self.assertEqual(q["q1"]["text"], "Which of these is Bayes' rule?")
         self.assertEqual(self.state()["exams"][0]["status"], "submitted")
 
-    def test_twice_refused(self):
+    def test_twice_reprints_the_brief(self):
         p = self.submitted()
         self.exam("submit", p)
+        before = self.scheme()
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("already submitted", r.stdout)
+        self.assertIn("=== Q3", r.stdout)
+        self.assertIn("MARKS:", r.stdout)
+        self.assertEqual(self.scheme(), before)
+        r = self.exam("submit")  # with no argument, a submitted paper is found too
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("=== Q3", r.stdout)
+
+    def test_graded_refused(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        self.exam("grade", p, stdin=json.dumps({"q3": {"awarded": 1, "feedback": "x"},
+                                                "q4": {"awarded": 1, "feedback": "x"}}))
         r = self.exam("submit", p)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("already submitted", r.stdout + r.stderr)
+        self.assertIn("already graded", r.stdout + r.stderr)
+
+    def test_reopen_then_submit_again(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        r = self.exam("reopen", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.scheme()["status"], "open")
+        self.assertIn("status: open", (self.vault / p).read_text(encoding="utf-8"))
+        (self.vault / p).write_text((self.vault / p).read_text(encoding="utf-8").replace("**Answer:** 0.3", "**Answer:** 0.27"),
+                                    encoding="utf-8")
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("0.27", (self.course / ".exams" / "pml1-ch02-exam-1.submitted.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.exam("reopen", p).returncode, 0)
+        self.assertEqual(self.exam("reopen", p).returncode, 1)  # only a submitted paper can be reopened
+
+    def test_altered_answer_line_refused(self):
+        p = self.submitted()
+        (self.vault / p).write_text(TWO_TICKS.replace("**Answer:** 0.3", "**Answer**: 0.3"), encoding="utf-8")
+        r = self.exam("submit", p)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Q3", r.stdout)
+        self.assertIn("**Answer:**", r.stdout)
+        self.assertEqual(self.scheme()["status"], "open")
+
+    def test_draft_scheme_does_not_block(self):
+        a = self.submitted()
+        draft = scheme()
+        draft.update(attempt=2, paper="courses/pml1/exams/pml1-ch02-exam-2.md")
+        (self.course / ".exams" / "pml1-ch02-exam-2.json").write_text(json.dumps(draft), encoding="utf-8")
+        r = self.exam("submit")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"PAPER: {a}", r.stdout)
+        self.assertIn("draft", self.exam("list").stdout)
+        self.assertIn("ATTEMPT: 2", self.exam("new", "2", "--length", "short").stdout)
 
     def test_finds_the_only_open_paper(self):
         self.submitted()
@@ -186,7 +276,7 @@ class Submit(Placed):
     def test_none_or_several(self):
         r = self.exam("submit")
         self.assertEqual(r.returncode, 1)
-        self.assertIn("no open exam paper", r.stdout + r.stderr)
+        self.assertIn("no open or submitted exam paper", r.stdout + r.stderr)
         a = self.submitted(n=1)
         s = scheme()
         s.update(attempt=2, paper="courses/pml1/exams/pml1-ch02-exam-2.md")
@@ -285,6 +375,41 @@ class Grade(Placed):
         text = (self.vault / p).read_text(encoding="utf-8")
         self.assertIn("**You did not tick:** b)", text)
 
+    def test_answer_edited_after_submit_is_graded_as_submitted(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        live = (self.vault / p).read_text(encoding="utf-8")
+        (self.vault / p).write_text(live.replace("**Answer:** 0.3", "**Answer:** 0.3 -- no wait, 0.27"), encoding="utf-8")
+        r = self.exam("grade", p, stdin=json.dumps(GRADES))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("EDITED AFTER SUBMIT: Q3", r.stdout)
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertNotIn("0.27", text)
+        self.assertIn("**Answer:** 0.3\n", text)
+        self.assertIn("status: graded", text)
+        edited = self.course / ".exams" / "pml1-ch02-exam-1.edited.md"
+        self.assertIn("0.27", edited.read_text(encoding="utf-8"))
+
+    def test_heading_deleted_after_submit_is_graded_as_submitted(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        live = (self.vault / p).read_text(encoding="utf-8")
+        (self.vault / p).write_text(live.replace("### Q3 (4 marks)\n", ""), encoding="utf-8")
+        r = self.exam("grade", p, stdin=json.dumps(GRADES))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertIn("### Q3 (4 marks)", (self.vault / p).read_text(encoding="utf-8"))
+
+    def test_malformed_marks_refused_cleanly(self):
+        p = self.submitted()
+        self.exam("submit", p)
+        before = (self.vault / p).read_text(encoding="utf-8")
+        for bad in [{"q3": 2, "q4": GRADES["q4"]}, {**GRADES, "revisit": "x"}, [1, 2]]:
+            r = self.exam("grade", p, stdin=json.dumps(bad))
+            self.assertEqual(r.returncode, 1, bad)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertEqual((self.vault / p).read_text(encoding="utf-8"), before)
+
     def test_one_blank_line_after_each_callout(self):
         p, _ = self.graded()
         text = (self.vault / p).read_text(encoding="utf-8")
@@ -334,7 +459,7 @@ class Grade(Placed):
         self.assertEqual(st["status"]["2.2"]["s"], "skipped")
         self.assertIn("SHAKY: 2.3", r.stdout)
         index = (self.course / "pml1.md").read_text(encoding="utf-8")
-        self.assertIn("| graded | 2/16 (12%) |", index)
+        self.assertIn("| graded | 2/16 (13%) |", index)
 
     def test_regrade(self):
         p, _ = self.graded()
@@ -375,6 +500,38 @@ class Grade(Placed):
         self.assertGreater(at, text.index("\n^q3\n"))
         self.assertLess(at, text.index("## Part C"))
         self.assertNotIn("Score 11.5/16.", text)
+
+
+class LessonNote(Base):
+    def test_whole_flow_with_space_and_dash_in_names(self):
+        write_note(self.vault / "notes" / "Bayes rule.md", ["Priors", "Posteriors"])
+        r = self.exam("new", "notes/Bayes rule.md", "--length", "short")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = "notes/exams/Bayes rule — Exam 1.md"
+        s = scheme()
+        s.update(paper=p, covers="notes/Bayes rule.md", course=None, chapter=None)
+        for q in s["questions"]:
+            q.pop("unit")
+            q["section"] = "Bayes rule#Priors"
+        (self.vault / "notes" / "exams").mkdir()
+        (self.vault / "notes" / ".exams").mkdir()
+        (self.vault / p).write_text(PAPER.replace("exam: pml1-ch02", "exam: Bayes rule"), encoding="utf-8")
+        (self.vault / "notes" / ".exams" / "Bayes rule — Exam 1.json").write_text(json.dumps(s), encoding="utf-8")
+        r = self.exam("check", p)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.exam("submit")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("MARKS: notes/.exams/Bayes rule — Exam 1.marks.json", r.stdout)
+        (self.vault / "notes" / ".exams" / "Bayes rule — Exam 1.marks.json").write_text(json.dumps(
+            {"q3": {"awarded": 4, "feedback": "Right."}, "q4": {"awarded": 2, "feedback": "Half."}}), encoding="utf-8")
+        r = self.exam("grade", p, "--marks", "notes/.exams/Bayes rule — Exam 1.marks.json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        text = (self.vault / p).read_text(encoding="utf-8")
+        self.assertIn("Tested: [[Bayes rule#Priors|Priors]]", text)
+        self.assertIn("graded", self.exam("list").stdout)
+        out = run(self.vault, "lesson.py", "summary", "notes/Bayes rule.md").stdout
+        self.assertIn("EXAM MISSES (Bayes rule — Exam 1, 10/16)", out)
+        self.assertIn("ATTEMPT: 2", self.exam("new", "notes/Bayes rule.md", "--length", "short").stdout)
 
 
 class Bookkeeping(Placed):

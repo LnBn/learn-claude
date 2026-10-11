@@ -214,18 +214,30 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 1. The skill unlinks the session, so nothing of the exam reaches a lesson note.
 2. `exam.py new` prints the paths, the attempt, the budget per part, and the sections the exam may test. In a course it also prints the pages to read. A course exam tests only units marked `done` or `shaky`.
 3. The teacher writes the scheme first, then the paper. With the scheme written first, every question has a settled answer and a settled way of marking it before the paper exists.
-4. `exam.py check` validates the pair, then registers the paper as `open` in the course state. It checks that the questions match one to one, the marks agree and add up, the multiple-choice letters exist, and every cited section is one the exam may test. `figures.process` runs on the paper, since `figures.course_of` treats an `exams/` folder as part of its course.
+4. `exam.py check` validates the pair, then registers the paper as `open` in the course state.
+   - It checks that the questions match one to one, the marks agree and add up, and the multiple-choice letters exist.
+   - Every cited section must be one the exam may test. In a course, each question's `unit` must be its section's unit, because that is what marks a unit `shaky` later.
+   - The scheme's `paper`, `covers`, `attempt` and `chapter` must match the paper's own name and place.
+   - It refuses a paper that has been handed in.
+   - `figures.process` runs on the paper, since `figures.course_of` treats an `exams/` folder as part of its course.
+
+   A scheme `check` never passed has no `status`: it is a draft. Drafts are not open papers. `list` shows them as `draft`, and `new` gives out a draft's attempt number again, with a `DRAFT:` line, so the teacher overwrites it.
 
 **Grading.**
 
-1. `exam.py submit` parses the paper and refuses one it cannot read, changing nothing. The paper is parsed by `### Q<n>` headings: an answer runs from its `**Answer:**` line to the next question or `## Part` heading, so headings inside an answer stay in it.
+1. `exam.py submit` parses the paper and refuses one it cannot read, changing nothing.
+   - The paper is parsed by `### Q<n>` headings. An answer runs from its `**Answer:**` line to the next question or the next `## Part X — ` heading, so other headings inside an answer stay in it.
+   - A written question without its `**Answer:**` line is refused, not graded blank.
 2. It saves the snapshot and grades multiple choice: exact set, all or nothing. Then it prints a brief of the written answers.
+   - `submit` on a paper already submitted prints the brief again from the snapshot, for a session that stopped before grading.
+   - `reopen` turns a submitted paper back into an open one, for an answer the teacher cannot read.
 3. The teacher marks those and writes the marks as JSON to the `.marks.json` file the brief names. `exam.py grade --marks` reads it. A file, not a heredoc: feedback full of LaTeX inside a heredoc is a command the permission matcher may reject, and the file stays as a record of the marking.
 4. The script inserts a callout after each question, then the summary under the title. It never edits answer text: the teacher never writes to a paper the learner has filled in.
+   - It grades the paper as handed in. If any question differs from the snapshot, or is missing, it builds the graded paper from the snapshot, keeps the edited paper as `.edited.md`, and says which questions changed.
 5. In a course it then marks `shaky` each unit that scored under half its marks. This only applies to a unit that is `done`, so `skipped` and `shaky` stay as they are.
 6. `--regrade q7` replaces one callout, between `> [!…] Q7 — ` and `^q7`, and rewrites the summary in place.
 
-**After grading.** The skill links the paper with `--from-now --muted --no-header`. The muting keeps the grading reply out of it. The learner's next question unmutes the mirror, and an `%% aside: q7 %%` reply is placed after `^q7` by the usual aside mechanism.
+**After grading.** Grading starts by unlinking, like setting, so a plain-words "mark my exam" in a linked lesson writes nothing more to that note. At the end, the skill links the paper with `--from-now --muted --no-header`. The muting keeps the grading reply out of it. The learner's next question unmutes the mirror, and an `%% aside: q7 %%` reply is placed after `^q7` by the usual aside mechanism. When the talk leaves the exam, `/course next` or `/lesson resume` links its own note; otherwise the skill unlinks.
 
 **Feeding back.** `lesson.py summary` imports `exam.exam_misses`. It lists the questions that lost marks in the newest graded exam on the note and, in a course, on the chapter before it. The recall check asks those first. `book.py done` prints an `EXAM:` line when a chapter or the course is complete, and the teacher offers `/exam` in one sentence.
 
@@ -280,6 +292,7 @@ Everything under `.claude/` in this table is gitignored.
 | `<notes>/.exams/<…>-exam-<n>.json` | its marking scheme, marks, status and misses | the teacher (Write), then `exam.py` |
 | `<notes>/.exams/<…>-exam-<n>.submitted.md` | the paper as handed in | `exam.py submit` |
 | `<notes>/.exams/<…>-exam-<n>.marks.json` | the teacher's marks and feedback for the written answers | the teacher (Write), read by `exam.py grade --marks` |
+| `<notes>/.exams/<…>-exam-<n>.edited.md` | a paper changed after it was submitted, set aside at grading | `exam.py grade` |
 | `<project>/viz/` | published diagrams | the render scripts |
 
 ## Fragile parts
@@ -303,7 +316,7 @@ In order of how likely they are to bite.
 
 Changes are tested in four ways:
 
-- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault whose `.claude/hooks` is a symlink to this repo's `hooks/`, so the scripts write their state there and never into the real `md-log-state/`. It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, the exam-related mirror rules, and the aside placed after a graded question.
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:

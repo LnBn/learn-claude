@@ -1,5 +1,6 @@
-"""A throwaway vault for tests: <tmp>/.claude/hooks is a symlink to this repo's hooks, so every script resolves
-its state directory to <tmp>/.claude/md-log-state and never touches the real one."""
+"""A throwaway vault for tests: <tmp>/.claude/hooks is a copy of this repo's hooks, so every script resolves its
+state directory to <tmp>/.claude/md-log-state and never touches the real one. (A symlink would not do: Python
+resolves the script's directory, so the modules a script imports would find the repo's state directory.)"""
 import json
 import os
 import shutil
@@ -16,7 +17,7 @@ sys.path.insert(0, str(REPO / "hooks"))
 def make_vault(test: unittest.TestCase | None = None) -> Path:
     vault = Path(tempfile.mkdtemp(prefix="learn-vault-"))
     (vault / ".claude").mkdir()
-    (vault / ".claude" / "hooks").symlink_to(REPO / "hooks")
+    shutil.copytree(REPO / "hooks", vault / ".claude" / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
     (vault / ".claude" / "md-log-state").mkdir()
     if test is not None:
         test.addCleanup(shutil.rmtree, vault, True)

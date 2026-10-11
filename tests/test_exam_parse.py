@@ -38,6 +38,27 @@ class ParsePaper(unittest.TestCase):
         self.assertEqual(q["q3"]["answer"].strip(), "0.3")
 
 
+    def test_part_heading_inside_answer_stays_in_it(self):
+        paper = PAPER.replace("## Working", "## Part A of the proof")
+        q, _ = exam.parse_paper(paper)
+        self.assertIn("## Part A of the proof", q["q4"]["answer"])
+        self.assertIn("Divide by $p(D)$.", q["q4"]["answer"])
+        self.assertEqual(q["q4"]["part"], "C")
+
+
+class Percent(unittest.TestCase):
+    def test_half_rounds_up(self):
+        self.assertEqual([exam.pct(33, 40), exam.pct(11.5, 16), exam.pct(1, 3), exam.pct(0, 24)], [83, 72, 33, 0])
+
+    def test_summary_uses_it(self):
+        s = scheme()
+        s["marks"] = 40
+        for q, aw in zip(s["questions"], [2, 2, 4, 25]):
+            q["awarded"] = aw
+        s["questions"][3]["marks"] = 32
+        self.assertIn("Result — 33/40 (83%)", exam.summary_block(s, {}))
+
+
 class Frontmatter(unittest.TestCase):
     def test_read(self):
         fm, body = exam.read_frontmatter(PAPER)

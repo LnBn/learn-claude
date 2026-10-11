@@ -492,7 +492,7 @@ def render_index(c):
         for e in sorted(exams, key=lambda e: (natural(str(e["chapter"])), e["attempt"])):
             score = ""
             if e.get("score") is not None and e.get("marks"):
-                score = f"{e['score']:g}/{e['marks']:g} ({round(100 * e['score'] / e['marks'])}%)"
+                score = f"{e['score']:g}/{e['marks']:g} ({int(100 * e['score'] / e['marks'] + 0.5)}%)"
             paper = os.path.splitext(os.path.basename(e["paper"]))[0]
             out.append(f"| {e['chapter']} | {e['attempt']} | {e.get('set') or ''} | {e['status']} | {score} | [[{paper}]] |")
     return "\n".join(out) + "\n"
