@@ -121,7 +121,7 @@ With `--from-now` the script finds the transcript by session id under `~/.claude
 - a quiz tally and the last twelve quiz outcomes;
 - the highest equation and example numbers used.
 
-The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node. The procedure is the section "Resuming a lesson" of the teach skill, shared by `/lesson resume` and `/course next`.
+The teacher reads that brief, never the whole note. It asks once whether to run a recall check, then continues from the checkpoint's next node. The same steps run when either command is used part-way through a session that was already teaching the note; the command is never read as `ready`. The procedure is the section "Resuming a lesson" of the teach skill, shared by `/lesson resume` and `/course next`.
 
 **Stopped after reading.** When the next node's exposition is already in the note but unchecked, the session re-opens with a pointer to that reading and a `ready` line, not with its quiz. The pointer goes in the review note, like a recall check: it is about the session, and the lesson note holds only the lesson. `lesson.py lastsection <note>` prints that node's text (from the last `###` heading on) so the questions match what was written. Its first line says whether the node ends with a `Key idea` callout. If it does, the pointer is one line: a link to the section. If not (a node written before that rule), the pointer recalls the node in two or three sentences.
 

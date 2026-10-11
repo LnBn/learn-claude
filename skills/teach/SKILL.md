@@ -205,7 +205,7 @@ A lesson often spans several sessions. The lesson's markdown log is the state, n
 
 ### Resuming a lesson
 
-A session that starts with `/lesson resume <file>`, or with `/course next` on a chapter whose note exists, continues an earlier lesson. The skill that started it has linked the note and given you the resume brief; that brief is all you read of the note, apart from the one case in step 3.
+`/lesson resume <file>`, or `/course next` on a chapter whose note exists, continues an earlier lesson. These steps run every time one of them is run: at the start of a session, and also part-way through a session that was already teaching the note. The skill that started it has linked the note and given you the resume brief; that brief is all you read of the note, apart from the one case in step 3.
 
 1. **Ask once how to start.** One `AskUserQuestion` call and **nothing else in the reply** (no prose before or after; the note must not show this exchange, and the hook drops questions with this header):
    - `header`: exactly `Resume`
@@ -221,7 +221,7 @@ A session that starts with `/lesson resume <file>`, or with `/course next` on a 
    - When they say ready, link the lesson note again (`md_log.py link "<note>" --session ${CLAUDE_SESSION_ID} --from-now`), then go to step 3. After a re-entry, that is the node's check.
 3. **Pick up at the checkpoint's Next.** Re-present the dependency map only if it changed.
    - *Next is a new node:* write its exposition, as always.
-   - *Next is a node whose exposition is already in the note but was never checked* (the learner stopped after reading it): **do not open with its quiz, whatever the checkpoint says.** They read that text in another session, perhaps days ago. Point them back to it. The pointer is about this session, not about the subject, so it goes in the review note, never in the lesson note:
+   - *Next is a node whose exposition is already in the note but was never checked* (the learner stopped after reading it): **do not open with its quiz, whatever the checkpoint says.** They read that text before the command, perhaps days ago. Point them back to it. The pointer is about this session, not about the subject, so it goes in the review note, never in the lesson note:
      - Get the text with `python3 .claude/hooks/lesson.py lastsection "<note>"`. Its first line says whether the node ends with a key idea.
      - If no recall check ran, run `lesson.py review "<note>"` for the review note and the section links, link the review note with `--from-now`, and start with the heading `### Before <the node>`. After a recall check the review note is still linked; go on under its heading.
      - The re-entry is one line: the link to the section, from the `review` output, and *its key idea is at the end*. Name anything added under it since, such as a remark after a missed check. If the node has no key idea (it was written before that rule), write two or three sentences recalling what it established instead.
