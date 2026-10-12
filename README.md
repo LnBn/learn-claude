@@ -171,6 +171,9 @@ If the PDF is outside the folder Claude Code runs in, Claude Code asks once for 
 - **The book's figures come into the note.** The first time the lesson names a figure ("Figure 1.4a"), it is cropped from the page into `viz/` and embedded once, below that paragraph or above the quiz that names it. Every mention of it, then and later, is a link that jumps to the figure. In a quiz that names a figure, `f` opens it in your image viewer.
 
   For a note written before this, run `python3 .claude/hooks/figures.py <note>` once (it keeps a `.bak` copy).
+- **Section references are links.** When the lesson refers to a section by number ("as in §1.1"), the reference links to that section's heading, in this chapter's note or an earlier one. A part of a section links to the section that holds it (§1.2.1.5 to `### 1.2.1`). A section not taught yet stays plain text.
+
+  For a note written before this, run `python3 .claude/hooks/sections.py <note>` once (it keeps a `.bak` copy).
 
 When a chapter is finished the teacher says so, and `/course next` opens the next chapter in a new note.
 
@@ -400,6 +403,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     lesson.py            checkpoints and the resume brief
     book.py              maps a textbook PDF to page ranges; keeps a course's syllabus and progress
     figures.py           embeds the book figures a course note names, and links the mentions
+    sections.py          links "§1.2" references to the heading of that section
     exam.py              exam papers: paths, validation, marking, feedback, results
   tests/                 unit tests for the scripts: python3 -m unittest discover -s tests
   scripts/

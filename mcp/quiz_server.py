@@ -38,6 +38,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 VAULT_DIR = os.path.dirname(CLAUDE_DIR)  # relative figure paths resolve here
 sys.path.insert(0, os.path.join(CLAUDE_DIR, "hooks"))
 import figures  # noqa: E402  (book figures named in a course quiz: cropped, embedded once, linked)
+import sections  # noqa: E402  ("§1.2" in a quiz: a link to that section's heading)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
 QUIZ_LOGGED = os.path.join(STATE_DIR, "quiz-logged.json")
@@ -175,7 +176,7 @@ def append_log(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
-        text = figures.process(text, path, existing=current)
+        text = sections.process(figures.process(text, path, existing=current), path, existing=current)
         prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
             f.write(prefix + text.strip("\n") + "\n")

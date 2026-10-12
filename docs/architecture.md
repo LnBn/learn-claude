@@ -17,6 +17,7 @@ The teacher is the Claude Code session itself. Everything else is a prompt it lo
 | Resume helper | `hooks/lesson.py` | Writes checkpoints; prints a short brief of a note for resuming. |
 | Course helper | `hooks/book.py` | Maps a textbook PDF to page ranges; keeps syllabus and progress. |
 | Figures | `hooks/figures.py` | Embeds a book figure the note names, once, and links every mention. |
+| Section links | `hooks/sections.py` | Links each "§1.2" in a block to the heading of that section. |
 | Exam helper | `hooks/exam.py` | Paths, validation, marking and feedback of exam papers; their place in the course. |
 | Subagents | `agents/*.md` | `researcher` checks facts on the web. `mermaid-maker` and `svg-maker` draw diagrams. |
 | Renderers | `scripts/render-*.sh` | Turn Mermaid or SVG source into a PNG. |
@@ -182,6 +183,12 @@ The teacher only names figures. `hooks/figures.py` puts them in the note. Every 
 
 `insert_before_quiz` compares question text with links reduced to their labels, so the rewriting does not break the matching. `figures.py <note>` applies the same pass to a whole note written earlier.
 
+### Section references
+
+`hooks/sections.py` runs right after `figures.process`, at the same four places, on every note (in a course or not). It turns "§1.1" into `[[#1.1 What is machine learning?|§1.1]]` when this note has a `### 1.1` heading, or into `[[pml1-ch01#1.1 What is machine learning?|§1.1]]` when another note of the course has it. Those notes are `<slug>-*.md`, without the exercise and review notes and without the index `<slug>.md`, whose `### 2 Probability` headings are chapters of the syllabus, not lessons.
+
+A reference resolves to its own heading, else the nearest heading that contains it (§1.2.1.5 to `### 1.2.1`), else the first heading inside it (§1.2 to `### 1.2.1` when the unit was taught in parts). Nothing found means plain text, so a forward reference stays plain even after its section is taught; `sections.py <note>` links it then. Headings, code, math, links and the `*Book: §2.3, …*` source line are skipped. The anchor is the heading with `#|^:[]` replaced by spaces, as `lesson.py review` builds it. `_norm` in `md_log.py` reduces every labelled link to its label, so quiz matching is unaffected.
+
 ### Teaching a unit
 
 `/course next` runs `book.py next`, links the chapter note with `--from-now`, and hands over to the teach skill's section "Teaching from a book".
@@ -316,7 +323,7 @@ In order of how likely they are to bite.
 
 Changes are tested in four ways:
 
-- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, the exam-related mirror rules, and the aside placed after a graded question.
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:

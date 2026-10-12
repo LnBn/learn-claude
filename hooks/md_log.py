@@ -68,6 +68,7 @@ import sys
 import time
 
 import figures
+import sections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HERE)  # .../.claude
@@ -295,7 +296,7 @@ _STATE_FOR_HEADER = None  # set by handle_hook; append() writes the session head
 
 
 def _norm(q):
-    q = re.sub(r"\[\[#\^[^|\]]*\|([^\]]*)\]\]", r"\1", q or "")  # "[[#^fig-1-4|Figure 1.4]]" reads "Figure 1.4"
+    q = re.sub(r"\[\[[^|\]]*?\\?\|([^\]]*)\]\]", r"\1", q or "")  # "[[#^fig-1-4|Figure 1.4]]" reads "Figure 1.4"
     return re.sub(r"\s+", " ", q).strip().lower()
 
 
@@ -326,7 +327,9 @@ def insert_before_quiz(text, question):
                 target = i  # keep the LAST match
     if target is None:
         return False
-    block = figures.process(text, path, existing="\n".join(lines)).strip("\n").split("\n")
+    existing = "\n".join(lines)
+    block = sections.process(figures.process(text, path, existing=existing), path,
+                             existing=existing).strip("\n").split("\n")
     lines[target:target] = block + [""]
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -447,8 +450,9 @@ def place_aside(question, answer, target):
     pos = aside_spot(lines, target) if target else None
     if pos is None:
         pos = where if where is not None else len(lines)
-    block = figures.process(aside_block(question or "Question", answer), path,
-                            existing="\n".join(lines)).strip("\n").split("\n")
+    existing = "\n".join(lines)
+    block = sections.process(figures.process(aside_block(question or "Question", answer), path, existing=existing),
+                             path, existing=existing).strip("\n").split("\n")
     while pos > 0 and pos <= len(lines) and not lines[pos - 1].strip():
         pos -= 1  # sit directly after the text above, with one blank line between
     tail = lines[pos:]
@@ -489,7 +493,7 @@ def append(text):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 current = f.read()
-        text = figures.process(text, path, existing=current)
+        text = sections.process(figures.process(text, path, existing=current), path, existing=current)
         # exactly one blank line between blocks: the file always ends with "\n", add one more
         prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
