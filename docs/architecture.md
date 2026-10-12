@@ -35,7 +35,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 5. The learner answers. The popup shows the grade. The server writes the result to the note and returns it to the teacher.
 6. The teacher calls `quiz` again for the apply question, then continues from the outcome.
 
-**Why the reply ends at step 1.** In interactive mode Claude Code writes an assistant message to the transcript only after the tool calls in it have returned. Text written in the same reply as a quiz call is therefore not on disk when the quiz appears, and the popup covers the terminal. If the teacher wrote the exposition and called the quiz in one reply, the learner would get the quiz first. Ending the reply is the reliable fix. The lesson opener and a course chapter's overview are replies of their own for the same reason.
+**Why the reply ends at step 1.** In interactive mode Claude Code writes an assistant message to the transcript only after the tool calls in it have returned. Text written in the same reply as a quiz call is therefore not on disk when the quiz appears, and the popup covers the terminal. If the teacher wrote the exposition and called the quiz in one reply, the learner would get the quiz first. Ending the reply is the reliable fix. The lesson opener, a course chapter's overview and a re-teach after a missed question are replies of their own for the same reason.
 
 ## The quiz tool
 

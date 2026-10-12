@@ -179,6 +179,8 @@ For **every node**, in this order:
    - "I don't know" → a genuine gap: re-teach, do not re-ask the same question.
    - Both passed → the node is solid. One line to close the section, then the next heading.
 
+   **A re-teach ends the reply too**, for the reason in step 2: the restated part, the addendum, the new worked example. Close it with `Say **ready** when you have read this.` and stop. The new question comes after they say ready, with no lead-in text. A one-line pointer to a sentence already in the note is not a re-teach and can go in the reply with the next quiz.
+
 Repeat per node; never front-load all the foundations and stop checking. Any new unconditional truth needed mid-session gets its own section like any other node.
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
