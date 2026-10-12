@@ -26,6 +26,7 @@ a second time when replaying the transcript.
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,7 @@ QUIZ_TARGET = os.path.join(STATE_DIR, "quiz-target.json")  # tool-use id -> note
 LAST_ASKED = os.path.join(STATE_DIR, "quiz-last-asked.json")  # set when the learner asks before answering
 SERVER_LOG = os.path.join(STATE_DIR, "quiz-server.log")
 DONT_KNOW = "I don't know"
+EXAMPLE_RE = re.compile(r"\bExample (\d+)\b(?!\.\d)")  # the note's own examples; "Example 2.3" is the book's
 
 TOOL = {
     "name": "quiz",
@@ -314,6 +316,35 @@ def course_figure(text):
     return figures.crop(course, ids[0]) if ids and course else None
 
 
+def example_sources(note):
+    """The notes whose examples a quiz written to `note` may cite: the note itself, plus the lesson a review or
+    exercise note belongs to (in a course, every note of the course for its review note)."""
+    d, name = os.path.split(note)
+    if name.endswith(" — Review.md"):
+        return [note, os.path.join(d, name[:-len(" — Review.md")] + ".md")]
+    if name.endswith("-exercises.md"):
+        return [note, os.path.join(d, name[:-len("-exercises.md")] + ".md")]
+    if name.endswith("-review.md") and figures.course_of(note):
+        return [os.path.join(d, n) for n in sorted(os.listdir(d)) if n.endswith(".md")]
+    return [note]
+
+
+def missing_examples(text, note):
+    """Numbers of the examples `text` names ("Example 20") that are not in the note yet."""
+    nums = list(dict.fromkeys(EXAMPLE_RE.findall(text)))
+    if not nums or not note or not os.path.exists(note):
+        return []
+    have = []
+    for path in example_sources(note):
+        try:
+            with open(path, encoding="utf-8") as f:
+                have.append(f.read())
+        except Exception:
+            pass
+    have = "\n".join(have)
+    return [n for n in nums if not re.search(rf"\^ex-{n}\b|\[!example\][+-]? Example {n}\b", have)]
+
+
 def run_quiz(args, tool_use_id, progress_token=None):
     set_target(tool_use_id)
     question = str(args.get("question", "")).strip()
@@ -346,6 +377,13 @@ def run_quiz(args, tool_use_id, progress_token=None):
         figure = os.path.join(VAULT_DIR, os.path.expanduser(figure))
         if not os.path.isfile(figure):
             return err(f"figure {args.get('figure')!r} not found (paths are relative to {VAULT_DIR})")
+
+    seen = " ".join([question, details, explanation] + [o["label"] for o in options])
+    missing = missing_examples(seen, log_file())
+    if missing:
+        names = ", ".join(f"Example {n}" for n in missing)
+        return err(f"{names} {'is' if len(missing) == 1 else 'are'} not in the note, so the learner cannot read it. Write it in a reply of its own, "
+                   "end that reply with the ready line, and ask this question after they say ready.")
 
     # A re-ask after "ask the teacher first": same option set as the pending question -> keep the
     # displayed order the learner already saw and do not log the question block again.

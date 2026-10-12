@@ -43,7 +43,7 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 
 **A call, in order:**
 
-1. The model sends the question, the options (each with a `value`), `correctAnswer` by value and an `explanation`. Bad input is returned as an error: an unknown value, or a hand-added "not sure" option.
+1. The model sends the question, the options (each with a `value`), `correctAnswer` by value and an `explanation`. Bad input is returned as an error: an unknown value, a hand-added "not sure" option, or a note example the note does not have yet. "Example 20" anywhere in the quiz needs `^ex-20` or an `[!example] Example 20` callout in the note (for a review or exercise note, in the lesson it belongs to). The example is missing when the teacher never wrote it, or wrote it in the same reply, whose text reaches the note only after the quiz. Dotted numbers ("Example 2.3") are the book's and are not checked.
 2. The server shuffles the options, appends "I don't know", and writes the question block to the note.
 3. It records the tool-use id in `quiz-logged.json`. From now on this quiz's blocks are the server's to write, and the mirror will not log it a second time.
 4. It shows the quiz.
@@ -323,7 +323,7 @@ In order of how likely they are to bite.
 
 Changes are tested in four ways:
 
-- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the exam-related mirror rules, and the aside placed after a graded question.
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the quiz server's example check, the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:
