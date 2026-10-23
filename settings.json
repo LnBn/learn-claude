@@ -58,6 +58,7 @@
       "Bash(python3 .claude/hooks/book.py *)",
       "Bash(python3 .claude/hooks/exam.py *)",
       "Bash(python3 .claude/hooks/coding.py *)",
+      "Write(/tmp/learn-code-*)",
       "Bash(mkdir -p /tmp/learn-book*)",
       "Write(/tmp/learn-book/**)",
       "Bash(bash .claude/scripts/render-mermaid.sh *)",

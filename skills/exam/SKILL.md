@@ -2,7 +2,7 @@
 name: exam
 description: Set, grade and discuss an exam on a course chapter or a lesson note — a written paper the learner sits in Obsidian, graded as a whole with feedback. Use with `/exam [chapter | note.md]`, `/exam submit`, or when the learner asks for an exam or a test on a chapter ("test me on chapter 2", "give me an exam"), says `submit` about an exam paper, or asks to have their exam marked.
 argument-hint: [chapter | note.md] | submit [paper] | reopen <paper> | abandon <paper> | list
-allowed-tools: Bash(python3 .claude/hooks/exam.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/book.py *), Write
+allowed-tools: Bash(python3 .claude/hooks/exam.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/book.py *), Bash(python3 .claude/hooks/coding.py status), Write
 ---
 
 Arguments: `$ARGUMENTS`
@@ -117,6 +117,8 @@ An exam is a paper the learner sits on their own, in Obsidian, and hands in as a
 8. **Reply with one line**, and nothing else: `Your paper is ready: [[<paper stem>]]. Sit it in Obsidian, then type **submit**.`
 
 ## Grading
+
+A plain `submit` may be meant for a code task instead. If `python3 .claude/hooks/coding.py status` lists an unfinished task, ask which with one `AskUserQuestion` (header `Submit`), options **The exam paper** and **The code task**. The code task goes to the `code` skill.
 
 1. **Hand it in.** Stop mirroring first, so nothing of the grading reaches a lesson note:
    ```

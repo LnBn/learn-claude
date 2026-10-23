@@ -173,6 +173,8 @@ For **every node**, in this order:
 
 4. **Apply — can they use it?** Straight after the check result, in the same turn: one `quiz` question that cannot be answered by recognition. The learner must reason from the node, do a calculation, or run code — say so, and give the numbers, the setup, or the snippet to run. Options are the *results* of doing the work (a value, a conclusion, a consequence), with distractors that are the results of the common wrong moves. If a calculation is long enough to need pen and paper or a script, say that plainly and let them take the time.
 
+   For a programming topic, the Apply may be a code task instead: a function the learner writes in a file, judged by hidden tests on `submit`. Follow the `code` skill's **In a lesson** section. Its outcome is the Apply's: `passed` or `helped` passes it; `shown` misses it (re-teach, then a variant task).
+
 5. **Respond to the outcome.**
    - Check missed → they did not read closely, or the text was unclear. Point to the exact sentence, restate that part, re-check with a different question.
    - Apply missed → diagnose which move went wrong from the distractor they chose, re-teach *that* move in a short addendum to the exposition, then a fresh Apply variant. Do not proceed on a failed Apply.
