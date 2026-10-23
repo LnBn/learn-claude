@@ -117,6 +117,41 @@ Quizzes open in a popup over the terminal.
 - After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
 - Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²)). The note keeps the real LaTeX.
 
+### Quizzes in the note
+
+Each quiz is written to the note as one box, folded, at the place it was asked. Its line shows the result and the question, so the note reads as text with a row of short quiz lines in it. Click the line to open the question, the options, your answer and the explanation.
+
+```markdown
+> [!failure|quiz]- ✗ Which pirates are the cheapest votes for the proposer to buy?
+>
+> 1. The pirates who get 0 coins in the $(k-1)$-pirate game
+> 2. The pirates who get 1 coin in the $(k-1)$-pirate game
+>
+> Selected: 2. The pirates who get 1 coin in the $(k-1)$-pirate game
+> Correct answer: 1. The pirates who get 0 coins in the $(k-1)$-pirate game
+>
+> If the proposer's plan fails, …
+```
+
+| Line starts with | Meaning |
+|---|---|
+| ✓ (green) | correct |
+| ✗ (red) | wrong |
+| ? (blue) | "I don't know" |
+| ⊘ Skipped (orange) | you closed the popup without answering |
+| Asked first | you asked the teacher with `?`; the teacher's answer and the graded quiz follow it |
+
+A question longer than about 100 characters is cut in the line and given in full inside the box. `|quiz` marks the box as a quiz: Obsidian does not show it, and the callout snippet uses it to draw quiz boxes a little smaller than the lesson's own.
+
+Notes written before quizzes were folded hold two open boxes per quiz. Fold them with:
+
+```bash
+python3 .claude/hooks/quiz_block.py convert lessons/openskill.md courses/pml1/pml1-ch01.md   # shows the changes
+python3 .claude/hooks/quiz_block.py convert --write lessons/tcp.md courses/pml1/pml1-ch01.md
+```
+
+`--write` first copies each note to `.claude/md-log-state/quiz-fold-backup/`. A note that already has folded quizzes is skipped unless you add `--force`, and running the command twice changes nothing.
+
 ## Stopping and resuming
 
 A lesson lives in its note, so you can stop and continue in a new session. Keep one note per topic.
@@ -279,7 +314,7 @@ Each session starts with a `## Session — <date>` heading. Under it:
 
 - your prompts, as `> **You:** …` quotes (questions are asides, see below);
 - the teacher's prose, written bare;
-- quizzes, as callouts with your answer, the result and the explanation;
+- quizzes, as folded boxes titled by the result and the question (see [Quizzes in the note](#quizzes-in-the-note));
 - diagrams, as `![[viz-….png|500]]` embeds of images in `viz/`, and figures cropped from a course's book (`![[pml1-fig-2-7.png|600]]`).
 
 **Kept out of the note:**
@@ -291,7 +326,7 @@ Each session starts with a `## Session — <date>` heading. Under it:
 
 `/md-unlog` stops mirroring altogether.
 
-If you ask a question in the quiz popup with `?`, the note shows the quiz, an "Asked before answering" note, the teacher's answer, then the grade.
+If you ask a question in the quiz popup with `?`, the note shows an "Asked first" box with the quiz and your question, the teacher's answer, then the graded quiz.
 
 ### Questions you type
 
@@ -344,7 +379,7 @@ Obsidian's own *Export to PDF* keeps the formatting, but links inside the note (
    Then turn the plugin off and on.
 3. Export from the note's ⋯ menu → *Better Export PDF*.
 
-The callout snippet carries the print rules: a heading stays on the page of the text it introduces, and a callout, an equation or a figure is not split across pages unless it is longer than one.
+The callout snippet carries the print rules: a heading stays on the page of the text it introduces, a callout, an equation or a figure is not split across pages unless it is longer than one, and quizzes print open.
 
 ## Commands
 
@@ -400,6 +435,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     latex_text.py        LaTeX to Unicode, for the popup
   hooks/
     md_log.py            mirrors the session into the note
+    quiz_block.py        the folded quiz box in a note: writes it, reads it back, converts older notes
     lesson.py            checkpoints and the resume brief
     book.py              maps a textbook PDF to page ranges; keeps a course's syllabus and progress
     figures.py           embeds the book figures a course note names, and links the mentions

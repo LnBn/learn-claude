@@ -14,6 +14,7 @@ The teacher is the Claude Code session itself. Everything else is a prompt it lo
 | House rules | `CLAUDE.md` | Always in context: teach, do not narrate, open with text. |
 | Quiz tool | `mcp/quiz_server.py`, `quiz_popup.py`, `latex_text.py` | An MCP server with one tool. Shows a quiz, grades it, writes it to the note. |
 | Note mirror | `hooks/md_log.py` | Called by four hooks. Copies prompts and the teacher's prose into the note. |
+| Quiz block | `hooks/quiz_block.py` | The folded quiz callout: `render`, `parse`, and `convert` for notes written before it. |
 | Resume helper | `hooks/lesson.py` | Writes checkpoints; prints a short brief of a note for resuming. |
 | Course helper | `hooks/book.py` | Maps a textbook PDF to page ranges; keeps syllabus and progress. |
 | Figures | `hooks/figures.py` | Embeds a book figure the note names, once, and links every mention. |
@@ -31,8 +32,8 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 1. The teacher writes the exposition and **ends its reply**.
 2. The `Stop` hook runs `md_log.py`, which reads the new text from the session transcript and appends it to the note.
 3. The learner reads the note in Obsidian and types `ready`. The `UserPromptSubmit` hook sees a pacing word and logs nothing.
-4. The teacher calls the `quiz` tool. The server writes the question to the note, opens the popup and waits.
-5. The learner answers. The popup shows the grade. The server writes the result to the note and returns it to the teacher.
+4. The teacher calls the `quiz` tool. The server opens the popup and waits.
+5. The learner answers. The popup shows the grade. The server writes the quiz, folded, to the note and returns the result to the teacher.
 6. The teacher calls `quiz` again for the apply question, then continues from the outcome.
 
 **Why the reply ends at step 1.** In interactive mode Claude Code writes an assistant message to the transcript only after the tool calls in it have returned. Text written in the same reply as a quiz call is therefore not on disk when the quiz appears, and the popup covers the terminal. If the teacher wrote the exposition and called the quiz in one reply, the learner would get the quiz first. Ending the reply is the reliable fix. The lesson opener, a course chapter's overview and a re-teach after a missed question are replies of their own for the same reason.
@@ -44,16 +45,18 @@ This sequence explains most of the design. It is the "read, ready, check, apply"
 **A call, in order:**
 
 1. The model sends the question, the options (each with a `value`), `correctAnswer` by value and an `explanation`. Bad input is returned as an error: an unknown value, a hand-added "not sure" option, or a note example the note does not have yet. "Example 20" anywhere in the quiz needs `^ex-20` or an `[!example] Example 20` callout in the note (for a review or exercise note, in the lesson it belongs to). The example is missing when the teacher never wrote it, or wrote it in the same reply, whose text reaches the note only after the quiz. Dotted numbers ("Example 2.3") are the book's and are not checked.
-2. The server shuffles the options, appends "I don't know", and writes the question block to the note.
-3. It records the tool-use id in `quiz-logged.json`. From now on this quiz's blocks are the server's to write, and the mirror will not log it a second time.
+2. The server shuffles the options and appends "I don't know".
+3. It records the tool-use id in `quiz-logged.json`. From now on this quiz's block is the server's to write, and the mirror will not log it a second time.
 4. It shows the quiz.
    - Inside tmux: `tmux display-popup -E python3 quiz_popup.py spec.json result.json`. The popup is plain curses, with wrapped text, bold, Unicode math from `latex_text.py`, and a note field. On submit it shows the grade and the explanation, then writes `result.json`.
    - Outside tmux: MCP elicitation, which Claude Code renders as a cramped one-line form.
 
-   An optional `figure` argument names an image, relative to the vault, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open. Without the argument, a quiz whose note belongs to a course and whose text names "Figure N.M" gets that figure: the server crops it with `book.py figure` itself. In the note, a book figure the question names is embedded by `figures.py` (see [Courses](#courses)); any other image is embedded inside the question block.
-5. It grades, writes the result block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
+   An optional `figure` argument names an image, relative to the vault, and the popup offers `f`, which runs `xdg-open` on it, detached, so the quiz stays open. Without the argument, a quiz whose note belongs to a course and whose text names "Figure N.M" gets that figure: the server crops it with `book.py figure` itself. In the note, a book figure the question names is embedded by `figures.py` (see [Courses](#courses)); any other image is embedded inside the quiz block.
+5. It grades, writes one quiz block to the note, and returns a short text result to the model. The result ends with a `QUIZ_JSON:` line that `md_log.py rebuild` can parse.
 
-**Asking first.** `?` in the popup sends a question instead of an answer. The server logs an "Asked before answering" note and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and does not log the question block again.
+**The quiz block.** `quiz_block.render` turns the server's record into one callout, folded: `> [!<kind>|quiz]- <mark> <title>`. The kind and mark come from the outcome (`success` ✓, `failure` ✗, `info` ?, `warning` ⊘ Skipped or Unavailable, `note` Asked first). The title is the question's first line, cut at the last space before 100 characters but never inside math, code or a link. Inside: the full question when the title is not all of it, the details, a non-book figure, the options, the outcome lines, the explanation and the learner's note. `|quiz` is callout metadata; Obsidian hides it, `parse` and `is_quiz_header` find quiz blocks by it, and the CSS snippet styles them by it. Nothing is written while the popup is open, so no block is ever rewritten. The server and `md_log.py` both call `render`, so a rebuilt note matches a live one.
+
+**Asking first.** `?` in the popup sends a question instead of an answer. The server writes an "Asked first" block (the quiz and the learner's question) and tells the model to answer, then call `quiz` again. The second call is recognised by its option set (`quiz-last-asked.json`). It reuses the order the learner saw and writes the full graded block, so the note reads: Asked first, the teacher's answer, the graded quiz.
 
 **Long quizzes.** Claude Code moves a tool call to the background after two minutes. `settings.json` sets `CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` so a quiz can stay open as long as the learner needs. If a call is backgrounded anyway, its result arrives as a `<task-notification>`; the teach skill waits for it, and a rebuild places it where the quiz was asked.
 
@@ -175,7 +178,7 @@ The rule assumes the caption sits below the figure, as in Murphy. `--box TOP BOT
 
 ### Figures in the note
 
-The teacher only names figures. `hooks/figures.py` puts them in the note. Every block written to a note in a course directory passes through `figures.process`: the prose and replayed quiz blocks from `md_log.append` and `insert_before_quiz`, and the quiz blocks the server writes live.
+The teacher only names figures. `hooks/figures.py` puts them in the note. Every block written to a note in a course directory passes through `figures.process`: the prose and replayed quiz blocks from `md_log.append` and `insert_before_quiz`, and the quiz blocks the server writes.
 
 1. Find "Figure 1.4", "Figure 1.4a" or "Fig. 1.4", skipping headings, code, math and existing links.
 2. A figure without a `^fig-1-4` block in the note yet is cropped and embedded once, as `![[pml1-fig-1-4.png|600]] ^fig-1-4`. It goes below the paragraph or callout of the first mention, or above it when that is a quiz question.
@@ -263,7 +266,7 @@ Mermaid renders through the bundled `@mermaid-js/mermaid-cli`, driven by an inst
 
 ## Obsidian side
 
-`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, `aside` for a question and its answer, and `example` for worked examples. `summary` (the key idea) is Obsidian's built-in style. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
+`obsidian/learn-callouts.css` styles the environment callouts: `definition`, `theorem`, `lemma`, `proposition`, `corollary`, `proof`, `notation`, `remark`, `intuition`, `aside` for a question and its answer, and `example` for worked examples. `summary` (the key idea) is Obsidian's built-in style. Quiz blocks (`data-callout-metadata` containing `quiz`) get a smaller title and tighter spacing, and print open. `install.sh` copies it into `<vault>/.obsidian/snippets/` and enables it in `appearance.json`.
 
 Equation and example references use core Obsidian features only:
 
@@ -323,7 +326,7 @@ In order of how likely they are to bite.
 
 Changes are tested in four ways:
 
-- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the quiz server's example check, the exam-related mirror rules, and the aside placed after a graded question.
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the quiz server's example check and the one block it writes per call, the quiz block's render, parse and conversion (on fixtures copied from real notes), quiz outcomes, the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:
