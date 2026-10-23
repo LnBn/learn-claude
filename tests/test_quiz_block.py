@@ -74,6 +74,15 @@ class Render(unittest.TestCase):
         self.assertEqual(text.split("\n")[0], "> [!success|quiz]- ✓ Run this:")
         self.assertIn("> Run this:\n> ```\n> print(1)\n> ```\n> What prints?", text)
 
+    def test_render_code_first_title(self):
+        q = "```python\nprint(1)\n```\nWhat prints?"
+        text = quiz_block.render(record(question=q, answers=[1], correct=True))
+        self.assertEqual(text.split("\n")[0], "> [!success|quiz]- ✓ What prints?")
+        self.assertIn("> ```python\n> print(1)\n> ```\n> What prints?", text)
+        q = "$$\nx^2\n$$\nWhat is the derivative?"
+        self.assertEqual(quiz_block.render(record(question=q, answers=[1], correct=True)).split("\n")[0],
+                         "> [!success|quiz]- ✓ What is the derivative?")
+
     def test_render_details_and_multiselect(self):
         text = quiz_block.render(record(details="Adapted from Exercise 2.3.", multiSelect=True,
                                         answers=[1], correct=True))
@@ -122,17 +131,17 @@ class Parse(unittest.TestCase):
             p = quiz_block.parse(lines(r))
             self.assertEqual((p["kind"], p["outcome"]), (kind, outcome), r["status"])
             self.assertEqual(p["title"], "What is 2+2?")
-            self.assertTrue(p["text"].startswith("What is 2+2?"))
+            self.assertTrue(p["body"].startswith("1. 4"))
 
     def test_parse_cut_title_text_is_full_question(self):
         q = " ".join(["word"] * 40) + "?"
         p = quiz_block.parse(lines(record(question=q, answers=[1], correct=True)))
         self.assertTrue(p["title"].endswith("…"))
-        self.assertTrue(p["text"].startswith(q))
+        self.assertTrue(p["body"].startswith(q))
 
     def test_parse_multiline_text(self):
         p = quiz_block.parse(lines(record(question=CODE_QUESTION, answers=[1], correct=True)))
-        self.assertTrue(p["text"].startswith(CODE_QUESTION))
+        self.assertTrue(p["body"].startswith(CODE_QUESTION))
 
     def test_parse_unanswered(self):
         p = quiz_block.parse(["> [!question|quiz]- What is 2+2?", ">", "> 1. 4"])

@@ -134,7 +134,7 @@ The teacher reads that brief, never the whole note. It asks once whether to run 
 
 **Recall check.** It goes in a review note, not in the lesson note: one `<slug>-review.md` per course, or `<stem> — Review.md` beside any other lesson. `lesson.py review <note>` prints that path and the `###` headings of the lesson note (in a course, of the previous chapter's note too) as wikilinks, so each check can link to what it tests. The teacher links the review note with `--from-now`, asks its questions, and ends the reply with a `ready` line. It links the lesson note back only on the next turn: the Stop replay writes a reply's last prose to whatever note is linked when the reply ends. `lesson.py summary` also reads the review note and lists its missed questions under `EARLIER RECALL CHECKS`, so they are asked again first. `/lesson reset` moves a lesson's own review note to the trash, but not a course's, which serves every chapter.
 
-**Quiz outcomes** are read from the note: each folded quiz block (`[!<kind>|quiz]-`) carries its outcome in its title, and `quiz_block.parse` reads it. An asked-first block is skipped; the re-ask below it carries the grade.
+**Quiz outcomes** are read from the note: each folded quiz block (`[!<kind>|quiz]-`) carries its outcome in its title, and `quiz_block.parse` reads it. An asked-first block is skipped; the re-ask below it carries the grade. A note not converted yet, or a pi-era note, still holds old `[!question] Quiz` callouts; each is paired with the next result callout before the following quiz, and pi's titles are understood.
 
 **Reset.** `/lesson reset` moves the note and its sidecar to `md-log-state/trash/<timestamp>/`.
 

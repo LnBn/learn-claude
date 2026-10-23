@@ -3,7 +3,7 @@ import unittest
 import tests._vault  # noqa: F401  (puts hooks/ on the path)
 import lesson
 import quiz_block
-from tests.test_quiz_block import ASKED, CANCELLED, CORRECT, DONT_KNOW, INCORRECT
+from tests.test_quiz_block import ASKED, CANCELLED, CORRECT, DONT_KNOW, INCORRECT, OLD_ASKED, OLD_PAIR, PI_NOTE
 
 
 class QuizOutcomes(unittest.TestCase):
@@ -17,6 +17,12 @@ class QuizOutcomes(unittest.TestCase):
     def test_unanswered(self):
         lines = quiz_block.convert_text("> [!question] Quiz\n>\n> What is 2+2?\n>\n> 1. 4\n").split("\n")
         self.assertEqual(lesson.quiz_outcomes(lines), [("What is 2+2?", "(unanswered)")])
+
+    def test_old_format_still_read(self):
+        # a note not converted yet, or a pi-era note that the converter refuses
+        lines = (OLD_PAIR + "\n" + OLD_ASKED + "\n" + quiz_block.render(INCORRECT) + "\n").split("\n")
+        self.assertEqual([o for _, o in lesson.quiz_outcomes(lines)], ["✓", "✓", "✗"])
+        self.assertEqual(lesson.quiz_outcomes(PI_NOTE.split("\n")), [("Which way does KL(q||p) push q?", "✓")])
 
     def test_other_callouts_ignored(self):
         lines = ["> [!success] ✓ Correct", ">", "> Selected: 1. 4", "", "> [!aside]+ Why?", "> Because."]

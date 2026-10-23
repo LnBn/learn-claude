@@ -274,12 +274,12 @@ def insert_before_quiz(text, question):
     want = _norm(question)
     for i, ln in enumerate(lines):
         if quiz_block.is_quiz_header(ln):
-            # the question may span several lines (a code snippet, two paragraphs): compare the block's text,
-            # which starts with the question and continues with the details and the options
+            # the question is the title, or (cut, several lines, opening with code) the start of the body
             j = i + 1
             while j < len(lines) and lines[j].startswith(">"):
                 j += 1
-            if want and _norm(quiz_block.parse(lines[i:j])["text"]).startswith(want):
+            p = quiz_block.parse(lines[i:j])
+            if want and any(_norm(t).startswith(want) for t in (p["body"], p["title"] + " " + p["body"])):
                 target = i  # keep the LAST match
     if target is None:
         return False

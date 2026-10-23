@@ -46,6 +46,19 @@ class InsertBeforeQuiz(unittest.TestCase):
     def test_insert_before_multiline_question(self):
         self.check(CODE_QUESTION)
 
+    def test_insert_before_code_first_question(self):
+        self.check("```python\nprint(1)\n```\nWhat prints?")
+
+    def test_insert_when_a_link_splits_the_cut_title(self):
+        # figures.py links "Figure 1.4" in the body; the title was cut between "Figure" and its number
+        question = "x" * 88 + " see Figure 1.4 for the tree; what is at the root?"
+        lines = quiz_block.render(record(question=question, answers=[1], correct=True)).split("\n")
+        self.assertTrue(lines[0].endswith("see Figure…"))
+        lines[1:] = [ln.replace("Figure 1.4", "[[#^fig-1-4|Figure 1.4]]") for ln in lines[1:]]
+        self.note.write_text("Earlier.\n\n" + "\n".join(lines) + "\n")
+        self.assertTrue(md_log.insert_before_quiz("Prose.", question))
+        self.assertIn("Prose.\n\n" + lines[0], self.note.read_text())
+
     def test_insert_picks_last_match(self):
         first = quiz_block.render(record(answers=[2], correct=False))
         second = quiz_block.render(record(answers=[1], correct=True))

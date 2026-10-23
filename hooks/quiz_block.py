@@ -62,6 +62,21 @@ def cut_title(line, limit=TITLE_LIMIT):
     return line[:end] + "…"
 
 
+def title_line(question):
+    """The question's first line of prose: a question that opens with code or display math is titled by the
+    words after it."""
+    fence = None
+    for ln in question.split("\n"):
+        s = ln.strip()
+        if fence:
+            fence = None if s.startswith(fence) else fence
+        elif s.startswith("```") or s == "$$":
+            fence = "```" if s.startswith("```") else "$$"
+        elif s:
+            return s
+    return question.split("\n")[0]
+
+
 def block(kind, title, parts):
     """A folded quiz callout; `parts` are paragraphs (each may hold several lines), separated by blank lines."""
     lines = [f"> [!{kind}|quiz]- {title}"]
@@ -94,7 +109,7 @@ def render(r):
     """The block for a quiz record of mcp/quiz_server.py (the QUIZ_JSON line of its result)."""
     question = r["question"].strip()
     details = (r.get("details") or "").strip()
-    title = cut_title(question.split("\n")[0])
+    title = cut_title(title_line(question))
     kind, prefix, outcome = _outcome(r)
     parts = [question] if title != question else []
     parts.append(details)
@@ -116,8 +131,8 @@ def is_quiz_header(line):
 
 
 def parse(lines):
-    """{"kind", "outcome", "title", "text"} for a quiz callout's lines, or None for any other callout.
-    `text` is the question followed by the rest of the block, for matching a block to the question asked."""
+    """{"kind", "outcome", "title", "body"} for a quiz callout's lines, or None for any other callout.
+    The question is at the start of the body when the title is not all of it, else it is the title."""
     m = HEADER_RE.match(lines[0].rstrip()) if lines else None
     if not m:
         return None
@@ -128,9 +143,7 @@ def parse(lines):
             outcome, title = out, title[len(prefix):]
             break
     body = "\n".join(ln[2:] if ln.startswith("> ") else ln[1:] for ln in lines[1:]).strip("\n")
-    core = title[:-1] if title.endswith("…") else title
-    text = body if body.startswith(core) else title + "\n" + body
-    return {"kind": kind, "outcome": outcome, "title": title, "text": text}
+    return {"kind": kind, "outcome": outcome, "title": title, "body": body}
 
 
 # ---- converting notes written before the folded block

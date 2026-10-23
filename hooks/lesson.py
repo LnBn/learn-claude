@@ -34,6 +34,17 @@ import sys
 import quiz_block
 
 CHECKPOINT_RE = re.compile(r"^> \[!summary\] Checkpoint", re.I)
+OLD_QUIZ = "> [!question] Quiz"  # a quiz in a note written before quiz_block.py: question, then result callout
+OLD_RESULTS = {
+    "> [!success] ✓ Correct": "✓",
+    "> [!failure] ✗ Incorrect": "✗",
+    "> [!info] I don't know": "?",
+    "> [!warning] Quiz — cancelled": "skip",
+    # pi's md-log extension
+    "> [!success] Quiz — correct ✓": "✓",
+    "> [!failure] Quiz — incorrect ✗": "✗",
+    "> [!question] Quiz — I don't know": "?",
+}
 NOTE_SUFFIXES = (" — Resume Here.md", " - Resume Here.md", " — resume here.md", " - resume here.md")
 MAX_NOTE_LINES = 200
 MAX_TAIL_LINES = 60
@@ -170,12 +181,31 @@ def last_mermaid(lines):
 
 def quiz_outcomes(lines):
     """(title, outcome) for each graded quiz block, in note order. An "asked first" block is not an outcome:
-    the re-ask after the teacher's answer is its own block and carries the grade."""
+    the re-ask after the teacher's answer is its own block and carries the grade.
+
+    A note not converted yet (or a pi-era note, which cannot be) holds old quizzes: a question callout, then its
+    result as far ahead as the next question, with an "Asked before answering" note and the teacher's answer
+    possibly between."""
+    blocks = list(callout_blocks(lines))
     out = []
-    for _, blk in callout_blocks(lines):
+    for k, (_, blk) in enumerate(blocks):
         p = quiz_block.parse(blk)
-        if p and p["outcome"] != "asked":
-            out.append((p["title"], p["outcome"]))
+        if p:
+            if p["outcome"] != "asked":
+                out.append((p["title"], p["outcome"]))
+            continue
+        if blk[0].strip() != OLD_QUIZ:
+            continue
+        body = [ln[2:] if ln.startswith("> ") else ln[1:] for ln in blk[1:]]
+        outcome = "(unanswered)"
+        for _, nxt in blocks[k + 1:]:
+            head = nxt[0].strip()
+            if head in OLD_RESULTS:
+                outcome = OLD_RESULTS[head]
+                break
+            if head == OLD_QUIZ or quiz_block.is_quiz_header(head):
+                break
+        out.append((next((b for b in body if b.strip()), "").strip(), outcome))
     return out
 
 
