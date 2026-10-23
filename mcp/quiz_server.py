@@ -170,9 +170,10 @@ def log_file():
 
 
 def append_log(text):
+    """Append a block to the note; returns the text written (after figures and section links), or None."""
     path = log_file()
     if not path or not text.strip():
-        return
+        return None
     try:
         current = ""
         if os.path.exists(path):
@@ -182,8 +183,36 @@ def append_log(text):
         prefix = ("\n" if current.endswith("\n") else "\n\n") if current.strip() else ""
         with open(path, "a", encoding="utf-8") as f:
             f.write(prefix + text.strip("\n") + "\n")
+        return text.strip("\n")
     except Exception:
-        pass
+        return None
+
+
+def replace_log(old, text):
+    """Put `text` where `old` (a quiz block this server wrote) is in the note; append it if `old` is gone."""
+    path = log_file()
+    try:
+        with open(path, encoding="utf-8") as f:
+            current = f.read()
+    except Exception:
+        current = ""
+    at = current.rfind(old) if old else -1
+    if at < 0:
+        return append_log(text)
+    try:
+        text = sections.process(figures.process(text, path, existing=current), path, existing=current).strip("\n")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(current[:at] + text + current[at + len(old):])
+        return text
+    except Exception:
+        return None
+
+
+def quiz_part(written):
+    """The quiz block in what append_log wrote: figures.py may have put a figure embed above it."""
+    lines = (written or "").split("\n")
+    start = next((i for i, ln in enumerate(lines) if quiz_block.is_quiz_header(ln)), None)
+    return "\n".join(lines[start:]) if start is not None else None
 
 
 def diag(msg):
@@ -360,6 +389,9 @@ def run_quiz(args, tool_use_id, progress_token=None):
         if auto:
             record["figure"] = auto
 
+    # the question and options go in the note now, open, so a long quiz can be read there while answering;
+    # the outcome replaces this block in place
+    pending = quiz_part(append_log(quiz_block.render({**record, "status": "pending"})))
     mark_logged(tool_use_id)  # now, not after the answer: this quiz's block is the server's to write
     clear_last_asked()
 
@@ -374,7 +406,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
         q = str(ui.get("question") or "").strip()
         record["status"] = "asked"
         record["learnerQuestion"] = q
-        append_log(quiz_block.render(record))
+        replace_log(pending, quiz_block.render(record))
         mark_logged(tool_use_id)
         save_last_asked(displayed)
         return result(
@@ -385,7 +417,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
 
     if ui.get("action") != "accept":
         record["status"] = "cancelled"
-        append_log(quiz_block.render(record))
+        replace_log(pending, quiz_block.render(record))
         mark_logged(tool_use_id)
         return result("User skipped the quiz (cancelled). Ask whether to continue or move on.", record)
 
@@ -395,7 +427,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
     correct = (not dont_know) and sorted(picked) == correct_indices
     record.update({"answers": picked, "correct": correct, "dontKnow": dont_know, "note": note})
 
-    append_log(quiz_block.render(record))
+    replace_log(pending, quiz_block.render(record))
     mark_logged(tool_use_id)
 
     by_index = {o["index"]: o["label"] for o in displayed}
@@ -412,6 +444,9 @@ def run_quiz(args, tool_use_id, progress_token=None):
         text += "\nThe user has already seen this feedback in the popup — do not repeat the grade; continue from it."
     else:
         text += "\nThe user has NOT seen this feedback yet — relay the grade, the correct answer and the explanation in one short block before continuing."
+        text += ("\nThe quiz was shown in Claude Code's one-line form, not the popup, so a long question was cut off "
+                 "(the full quiz is in the note). If you have not said so this session, tell the learner in one line "
+                 "to start Claude Code inside tmux to get the popup.")
     return result(text, record)
 
 
@@ -446,11 +481,16 @@ def ask_via_tmux(record):
         + sum(rows(o["label"]) for o in record["options"]) + rows(record.get("explanation")) \
         + (2 if record.get("figure") else 0)
     height = str(min(max(n_lines, 14), 45))
-    cmd = ["tmux", "display-popup", "-E", "-w", "85%", "-h", height, "-T", " quiz ",
-           f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]
-    try:
-        proc = subprocess.run(cmd, check=False, timeout=3600, stdin=subprocess.DEVNULL,
+    def popup(height):
+        cmd = ["tmux", "display-popup", "-E", "-w", "85%", "-h", height, "-T", " quiz ",
+               f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]
+        return subprocess.run(cmd, check=False, timeout=3600, stdin=subprocess.DEVNULL,
                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        proc = popup(height)
+        if proc.returncode != 0 and "too large" in (proc.stderr or "") and not os.path.exists(out_path):
+            diag(f"popup of height {height} is taller than the terminal; trying 90%")
+            proc = popup("90%")  # PgUp/PgDn scroll the rest
     except Exception as exc:
         diag(f"tmux display-popup failed to start: {exc}; using the elicitation form")
         shutil.rmtree(work, ignore_errors=True)

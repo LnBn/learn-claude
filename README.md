@@ -119,7 +119,7 @@ Quizzes open in a popup over the terminal.
 
 ### Quizzes in the note
 
-Each quiz is written to the note as one box, folded, at the place it was asked. Its line shows the result and the question, so the note reads as text with a row of short quiz lines in it. Click the line to open the question, the options, your answer and the explanation.
+While you answer, the quiz is in the note as an open box with the question and the options, so a long question can be read there too. Once you answer, it becomes one box, folded, at the place it was asked. Its line shows the result and the question, so the note reads as text with a row of short quiz lines in it. Click the line to open the question, the options, your answer and the explanation.
 
 ```markdown
 > [!failure|quiz]- ✗ Which pirates are the cheapest votes for the proposer to buy?
@@ -467,7 +467,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
 ## Troubleshooting
 
 **The quiz is a one-line form with "Your answer: not set", not a popup.**
-Claude Code was probably started outside tmux. `.claude/md-log-state/quiz-server.log` gives the reason. Restart Claude Code from inside tmux; the quiz server is started with the session.
+Claude Code was probably started outside tmux, and the teacher says so after the first quiz. `.claude/md-log-state/quiz-server.log` gives the reason. Restart Claude Code from inside tmux; the quiz server is started with the session. Until then, read the full question in the note, where it is open while you answer.
 
 **There is no quiz tool; questions come as plain prompts.**
 Run `/mcp` and check that `quiz` is listed and enabled. Check that `.mcp.json` exists in the project root.

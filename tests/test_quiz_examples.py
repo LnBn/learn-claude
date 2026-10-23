@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import shlex
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,8 +88,11 @@ class WritesOneBlock(unittest.TestCase):
         self.note.write_text("")
         self.ui = []  # scripted popup results, one per call
         self.seen = []  # the note's content when the popup opened
+        self.meanwhile = None  # what happens to the note while the popup is open
         def ask(record, displayed, msg_details, multi):
             self.seen.append(self.note.read_text())
+            if self.meanwhile:
+                self.meanwhile()
             return self.ui.pop(0)
         for name, value in [("log_file", lambda: str(self.note)), ("tmux_available", lambda: False),
                             ("set_target", lambda tool_use_id: None), ("ask_via_elicitation", ask),
@@ -104,11 +109,54 @@ class WritesOneBlock(unittest.TestCase):
         quiz_server.run_quiz(dict(ARGS), "toolu_1")
         self.assertEqual(self.headers(), ["> [!success|quiz]- ✓ What is 2+2?"])
 
-    def test_nothing_written_before_answer(self):
+    def test_open_block_while_answering(self):
         self.ui = [{"action": "accept", "answers": [2]}]
         quiz_server.run_quiz(dict(ARGS), "toolu_1")
-        self.assertEqual(self.seen, [""])
+        self.assertTrue(self.seen[0].startswith("> [!question|quiz]+ What is 2+2?"))
+        self.assertIn("> 2. 5", self.seen[0])
+        self.assertNotIn("Arithmetic.", self.seen[0])
         self.assertEqual(self.headers(), ["> [!failure|quiz]- ✗ What is 2+2?"])
+
+    def test_open_block_replaced_in_place(self):
+        self.note.write_text("Before.\n")
+        self.meanwhile = lambda: self.note.write_text(self.note.read_text() + "\nWritten meanwhile.\n")
+        self.ui = [{"action": "accept", "answers": [1]}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        text = self.note.read_text()
+        self.assertTrue(text.startswith("Before.\n\n> [!success|quiz]- ✓ What is 2+2?"))
+        self.assertTrue(text.endswith("> Arithmetic.\n\nWritten meanwhile.\n"))
+
+    def test_open_block_edited_away(self):
+        self.meanwhile = lambda: self.note.write_text("Edited.\n")
+        self.ui = [{"action": "accept", "answers": [1]}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertTrue(self.note.read_text().startswith("Edited.\n\n> [!success|quiz]- ✓ What is 2+2?"))
+
+    def test_form_tells_teacher_about_tmux(self):
+        self.ui = [{"action": "accept", "answers": [1]}]
+        out = quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertIn("start Claude Code inside tmux", out["content"][0]["text"])
+
+    def test_popup_too_tall_retries(self):
+        calls = []
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            if len(calls) == 1:
+                return subprocess.CompletedProcess(cmd, 1, "", "height too large")
+            out_path = shlex.split(cmd[-1])[-1]
+            with open(out_path, "w") as f:
+                json.dump({"action": "accept", "answers": [1]}, f)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        for name, value in [("tmux_available", lambda: True), ("subprocess", type("S", (), {
+                "run": staticmethod(fake_run), "DEVNULL": subprocess.DEVNULL, "PIPE": subprocess.PIPE}))]:
+            self.addCleanup(setattr, quiz_server, name, getattr(quiz_server, name))
+            setattr(quiz_server, name, value)
+        out = quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1][calls[1].index("-h") + 1], "90%")
+        self.assertEqual(self.seen, [])  # the form was not used
+        self.assertNotIn("tmux", out["content"][0]["text"].split("QUIZ_JSON")[0])
+        self.assertEqual(self.headers(), ["> [!success|quiz]- ✓ What is 2+2?"])
 
     def test_ask_then_reask(self):
         self.ui = [{"action": "ask", "question": "Why?"}, {"action": "accept", "answers": [1]}]

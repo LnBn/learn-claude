@@ -77,9 +77,10 @@ def title_line(question):
     return question.split("\n")[0]
 
 
-def block(kind, title, parts):
-    """A folded quiz callout; `parts` are paragraphs (each may hold several lines), separated by blank lines."""
-    lines = [f"> [!{kind}|quiz]- {title}"]
+def block(kind, title, parts, fold="-"):
+    """A quiz callout, folded unless `fold` is "+"; `parts` are paragraphs (each may hold several lines),
+    separated by blank lines."""
+    lines = [f"> [!{kind}|quiz]{fold} {title}"]
     for part in parts:
         lines.append(">")
         lines += [f"> {ln}" if ln else ">" for ln in part.split("\n")]
@@ -89,6 +90,8 @@ def block(kind, title, parts):
 def _outcome(r):
     """(kind, title prefix, outcome paragraphs) for a quiz record."""
     status = r.get("status")
+    if status == "pending":
+        return "question", "", []
     if status == "cancelled":
         return "warning", "⊘ Skipped: ", ["(skipped)"]
     if status == "unavailable":
@@ -106,7 +109,8 @@ def _outcome(r):
 
 
 def render(r):
-    """The block for a quiz record of mcp/quiz_server.py (the QUIZ_JSON line of its result)."""
+    """The block for a quiz record of mcp/quiz_server.py (the QUIZ_JSON line of its result). A "pending" record
+    (the learner has not answered yet) gives an open block with the question and options only."""
     question = r["question"].strip()
     details = (r.get("details") or "").strip()
     title = cut_title(title_line(question))
@@ -119,11 +123,11 @@ def render(r):
     if r.get("multiSelect"):
         parts.append("(select all that apply)")
     parts += outcome
-    if r.get("status") != "asked":
+    if r.get("status") not in ("asked", "pending"):
         parts.append((r.get("explanation") or "").strip())
     if r.get("note"):
         parts.append(f"Note: {r['note']}")
-    return block(kind, prefix + title, [p for p in parts if p])
+    return block(kind, prefix + title, [p for p in parts if p], "+" if r.get("status") == "pending" else "-")
 
 
 def is_quiz_header(line):

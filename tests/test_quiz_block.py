@@ -69,6 +69,15 @@ class Render(unittest.TestCase):
         self.assertIn("> Your question: Is 4 even?", out)
         self.assertNotIn("> Arithmetic.", out)
 
+    def test_render_pending(self):
+        out = lines(record(status="pending"))
+        self.assertEqual(out[0], "> [!question|quiz]+ What is 2+2?")
+        self.assertIn("> 2. 5", out)
+        text = "\n".join(out)
+        for hidden in ("Arithmetic.", "Correct answer", "Selected"):
+            self.assertNotIn(hidden, text)
+        self.assertEqual(quiz_block.parse(out)["outcome"], "(unanswered)")
+
     def test_render_multiline_question(self):
         text = quiz_block.render(record(question=CODE_QUESTION, answers=[1], correct=True))
         self.assertEqual(text.split("\n")[0], "> [!success|quiz]- ✓ Run this:")
