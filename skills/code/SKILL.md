@@ -12,7 +12,7 @@ A code task is a problem the learner solves in a real file, in their own editor.
 | Arguments | Section |
 |---|---|
 | a topic or a track name | **A new track** if `coding.py list` has no such track, else **Setting a task** in it |
-| `next` | **Setting a task** in the track of the last task |
+| `next` | **Setting a task** in the track named on the newest `TRACK` line of `coding.py list`, or the one the learner names |
 | `submit`, or the learner says `submit` | **Submit** |
 | `hint`, or the learner says `hint` or that they are stuck | **Hints** |
 | `solution` | **The solution** |
@@ -93,7 +93,7 @@ A code task is a problem the learner solves in a real file, in their own editor.
    ```
    python3 .claude/hooks/coding.py submit ["<task note>"]
    ```
-   `CHOOSE` lines mean several tasks are unfinished: ask which with one `AskUserQuestion` (header `Submit`), then run it again with that note.
+   Without a note it takes the newest unfinished task and names it on the `TASK` line. If the learner meant another one, run it again with that note.
 3. **Failed** (`RESULT failed`): one or two sentences. Name the failing case and what differed, as the `FIRST FAIL` or `SPEED` lines say. Do not explain the bug or how to fix it. Offer a hint in one line: "Type **hint** if you want one."
    - A `SPEED fail` with a time far over the limit is the complexity: say which complexity the limit expects. One just over the limit may be noise: say so, and that resubmitting costs nothing.
 4. **Passed** (`RESULT passed`): Read the file on the `REVIEW` line, then write the review under the heading `## Review`. Keep it short, as an interviewer's debrief:
@@ -133,4 +133,4 @@ For a programming topic, the teach skill's **Apply** step may be a code task ins
 
 ## Resuming
 
-`python3 .claude/hooks/coding.py status` lists the unfinished tasks. One unfinished: link the mirror to it (a track) and say in one line where they are ("Task 03, two submissions, the last one 5/8"); they carry on. None: `coding.py status <track>` for the last track, then **Setting a task**.
+`python3 .claude/hooks/coding.py status` lists the unfinished tasks. Take the newest (the last `TASK` line) unless the learner names another: link the mirror to it (a track) and say in one line where they are ("Task 03, two submissions, the last one 5/8"); they carry on. Older unfinished tasks stay listed; mention them once, in a clause. None unfinished: `coding.py list` shows the tracks; with one, or the one the learner names, run `coding.py status <track>`, then **Setting a task**.

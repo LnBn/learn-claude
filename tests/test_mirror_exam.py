@@ -30,8 +30,7 @@ p(D|h).
 
 class CommandOf(unittest.TestCase):
     def test_typed_forms(self):
-        self.assertEqual(md_log.command_of("submit"), ("exam", "submit"))
-        self.assertEqual(md_log.command_of("Submit."), ("exam", "submit"))
+        # a bare "submit" is the exam's only while a paper is out: see test_code.Mirror
         self.assertEqual(md_log.command_of("exam"), ("exam", ""))
         self.assertEqual(md_log.command_of("exam 2"), ("exam", "2"))
         self.assertEqual(md_log.command_of("exam submit"), ("exam", "submit"))

@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from tests._vault import make_vault, run
+from tests._vault import append, assistant, hook, make_vault, run, tool_result, transcript, user
 from tests import _code_fixtures as fx
 
 
@@ -109,6 +109,29 @@ class Check(Base):
         self.assertEqual(r.returncode, 1)
         self.assertIn("REFUSED the speed tests do not separate slow() from reference()", r.stdout)
 
+    def test_check_slow_equal_to_reference_refused_despite_slow_setup(self):
+        # building the input takes longer than the kill time; only the call itself may count
+        self.make_track()
+        tests = fx.TESTS.replace("    import random\n", "    import random, time\n    time.sleep(1.8)\n").replace("def slow(xs):", "def slow(xs):\n    return reference(xs)\n\n\ndef _unused(xs):")
+        p = self.write_task(["--track", "quant"], tests=tests)
+        r = self.check(p["NOTE"])
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("do not separate", r.stdout)
+
+    def test_check_again_keeps_the_history(self):
+        self.make_track()
+        p = self.write_task(["--track", "quant"])
+        self.check(p["NOTE"])
+        (self.vault / p["STARTER"]).write_text(fx.WRONG)
+        self.code("submit")
+        self.code("hint")
+        r = self.check(p["NOTE"])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        rec = self.state("practice/quant")["tasks"][0]
+        self.assertEqual((len(rec["submissions"]), rec["hints"], rec["status"]), (1, 1, "open"))
+        self.assertIn("RESULT failed", self.code("submit").stdout)
+        self.assertTrue((self.vault / "practice/quant/.track/submissions/01-running-max-2.py").exists())
+
     def test_check_refuses_unknown_topic(self):
         self.make_track()
         p = self.write_task(["--track", "quant"])
@@ -175,6 +198,13 @@ class Submit(Base):
         self.assertIn("SPEED fail n = 10000", r.stdout)
         self.assertIn("✗ Submission 1 — 3/3 passed · speed ✗", self.note.read_text())
 
+    def test_slow_setup_does_not_fail_speed(self):
+        tests = self.vault / self.p["TESTS"]
+        tests.write_text(fx.TESTS.replace("    import random\n", "    import random, time\n    time.sleep(1.8)\n"))
+        r = self.submit(fx.GOOD)
+        self.assertIn("RESULT passed", r.stdout)
+        self.assertIn("SPEED ok", r.stdout)
+
     def test_timeout_reported(self):
         start = time.monotonic()
         r = self.submit(fx.LOOPS)
@@ -233,12 +263,15 @@ class Submit(Base):
         self.assertEqual(self.record()["hints"], 2)
         self.assertIn("| open | 0 | 2 |", (self.vault / "practice/quant/quant.md").read_text())
 
-    def test_choose_between_open_tasks(self):
+    def test_bare_submit_takes_the_newest_unfinished_task(self):
         p = self.write_task(["--track", "quant"], slug="other")
         self.code("check", p["NOTE"], "--topics", "lists", "--level", "1")
+        (self.vault / p["STARTER"]).write_text(fx.GOOD)
         r = self.code("submit")
-        self.assertEqual(r.returncode, 2)
-        self.assertEqual(r.stdout.count("CHOOSE "), 2)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(r.stdout.splitlines()[0], "TASK practice/quant/02-other.md")
+        self.assertIn("RESULT passed", r.stdout)
+        self.assertEqual(self.code("hint").stdout.splitlines()[0], "TASK practice/quant/01-running-max.md")
 
     def test_open_tasks_and_list(self):
         sys.path.insert(0, str(self.vault / ".claude" / "hooks"))
@@ -302,13 +335,35 @@ class Mirror(Base):
         p = self.write_task(["--track", "quant"])
         self.code("check", p["NOTE"], "--topics", "lists", "--level", "1")
 
-    def test_typed_submit_goes_to_open_code_task(self):
-        self.assertEqual(self.md_log.command_of("submit"), ("exam", "submit"))
-        self.assertTrue(self.md_log.is_admin_command(self.md_log.command_of("submit")))
-        self.open_task()
+    def test_typed_submit_is_the_exam_only_with_a_paper_out(self):
         self.assertEqual(self.md_log.command_of("submit"), ("code", "submit"))
         self.assertFalse(self.md_log.is_admin_command(self.md_log.command_of("submit")))
         self.assertFalse(self.md_log.is_user_prose("submit"))
+        exams = self.vault / "lessons" / ".exams"
+        exams.mkdir(parents=True)
+        scheme = {"paper": "lessons/exams/x-exam-1.md", "questions": [], "status": "open"}
+        (exams / "x-exam-1.json").write_text(json.dumps(scheme))
+        self.assertEqual(self.md_log.command_of("submit"), ("exam", "submit"))
+        self.assertEqual(self.md_log.command_of("Submit."), ("exam", "submit"))
+        self.assertTrue(self.md_log.is_admin_command(self.md_log.command_of("submit")))
+        (exams / "x-exam-1.json").write_text(json.dumps({**scheme, "status": "graded"}))
+        self.assertEqual(self.md_log.command_of("submit"), ("code", "submit"))
+
+    def test_review_logged_after_a_pass(self):
+        # the replay that reads the typed "submit" runs after coding.py has closed the task
+        self.open_task()
+        note = "practice/quant/01-running-max.md"
+        (self.vault / "practice/quant/01-running-max.py").write_text(fx.GOOD)
+        s = "sess"
+        tp = transcript(self.vault, s)
+        run(self.vault, "md_log.py", "link", note, "--session", s, "--from-now", "--no-header")
+        hook(self.vault, {"hook_event_name": "UserPromptSubmit", "session_id": s, "transcript_path": str(tp),
+                          "prompt": "submit"})
+        append(tp, user("submit"), assistant("m1", tool="Bash"))
+        self.assertIn("RESULT passed", self.code("submit").stdout)
+        append(tp, tool_result("tu-m1"), assistant("m2", text="## Review\n\nComplexity: O(n) time, one pass."))
+        hook(self.vault, {"hook_event_name": "Stop", "session_id": s, "transcript_path": str(tp)})
+        self.assertIn("Complexity: O(n) time, one pass.", (self.vault / note).read_text())
 
     def test_typed_hint_not_logged(self):
         self.assertFalse(self.md_log.is_user_prose("hint"))

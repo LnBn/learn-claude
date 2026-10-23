@@ -337,7 +337,7 @@ The starter file has the function's signature and the examples under `if __name_
 | `hint` | One step further: what to look at, then the approach, then a sketch of the hard part. Never the full code. |
 | `/code solution` | After you confirm, the teacher's solution, walked through. The problem counts as solved with help. |
 
-Some problems have speed tests: large inputs with a time limit. The limit is ten times what the teacher's own solution takes, and at least 0.2 s, so a sound solution passes easily and one of the wrong complexity misses it by far. A failed speed test shows your time beside the limit.
+Some problems have speed tests: large inputs with a time limit on your function's call (building the input does not count). The limit is ten times what the teacher's own solution takes, and at least 0.2 s, so a sound solution passes easily and one of the wrong complexity misses it by far. A failed speed test shows your time beside the limit.
 
 After a pass the review gives the time and space complexity, any edge case your code gets right only by luck, at most two rewrites in more idiomatic code, and the follow-up an interviewer would ask, which you can take on as the next problem.
 
@@ -450,7 +450,7 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/exam list` | Every exam paper, with its status and score. |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
-| `/code submit` | Run the hidden tests on your file. Typing `submit` does the same when a code task is unfinished. |
+| `/code submit` | Run the hidden tests on the newest unfinished problem (or the one you name). Typing `submit` does the same, unless an exam paper is out. |
 | `/code hint` | The next hint for the problem. Typing `hint` does the same. |
 | `/code solution` | Show the teacher's solution, after you confirm. |
 | `/code status` | Unfinished problems; `/code status <track>` for a track's levels and recent results. |

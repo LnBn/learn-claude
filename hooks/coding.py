@@ -21,7 +21,8 @@ the lesson note or the track index. Run it from the vault root.
                         a track's brief, or a task's record; with no argument the unfinished tasks
     coding.py list      every track and lesson's tasks, with their status
 
-<task.md> may be left out when only one task is unfinished (open, or shown and not yet passed).
+<task.md> may be left out: submit, hint and solution then take the newest unfinished task (open, or shown and
+not yet passed), and name it on their first line.
 """
 import argparse
 import glob
@@ -40,7 +41,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUNNER = os.path.join(HERE, "coding_runner.py")
 FLOOR = 0.2  # seconds: the smallest speed limit, so that timing noise does not fail a sound solution
 FACTOR = 10  # the limit is this many times the reference's time
-CASE_KILL = 5.0  # seconds before a correctness case is killed
+CASE_KILL = 5.0  # seconds a correctness case's call may take
+OVERHEAD = 30  # seconds on top of a call's limit for the child to start, build its inputs and report
 TASK_RE = re.compile(r"^(\d\d)-(.+)\.md$")
 UNFINISHED = ("open", "shown")
 
@@ -106,18 +108,19 @@ def statement(note_text):
 # ---- running cases
 
 def run_case(tests, case, solution=None, impl=None, kill=CASE_KILL, python="python3"):
-    """The runner's result for one case, plus "timeout"; a case that dies without a result is a failure."""
+    """The runner's result for one case. `kill` limits the call itself (the child times it); the process as a
+    whole gets OVERHEAD seconds more. A case that dies without a result is a failure, or a timeout."""
     cmd = [python, RUNNER, tests, case] + (["--solution", solution] if solution else ["--impl", impl]) \
-        + ["--cpu", str(math.ceil(kill))]
+        + ["--timeout", f"{kill:g}", "--cpu", str(math.ceil(kill) + OVERHEAD)]
     blank = {"name": case, "passed": False, "got": None, "expected": None, "seconds": None, "stdout": "",
              "error": None, "timeout": False}
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=kill)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=kill + OVERHEAD)
     except subprocess.TimeoutExpired:
         return {**blank, "timeout": True}
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     try:
-        return {**json.loads(lines[-1]), "timeout": False}
+        return {"timeout": False, **json.loads(lines[-1])}
     except (IndexError, ValueError):
         if proc.returncode == -signal.SIGXCPU:
             return {**blank, "timeout": True}
@@ -228,22 +231,22 @@ def locate(note):
 
 
 def pick(arg):
-    """(base, state, record), or an exit status after printing why there is none."""
+    """(base, state, record) of the named task, or else of the newest unfinished one, after a TASK line naming it;
+    or an exit status after printing why there is none."""
     if arg:
         found = locate(arg)
         if not found:
             print(f"REFUSED {arg} is not a checked code task")
             return 1
-        return found
-    tasks = open_tasks()
-    if not tasks:
-        print("REFUSED no unfinished code task: name one, or see coding.py list")
-        return 1
-    if len(tasks) > 1:
-        for t in tasks:
-            print(f"CHOOSE {t}")
-        return 2
-    return locate(tasks[0])
+    else:
+        unfinished = [(rec["created"], rec["n"], base, state, rec) for base, state in all_states()
+                      for rec in state["tasks"] if rec["status"] in UNFINISHED]
+        if not unfinished:
+            print("REFUSED no unfinished code task: name one, or see coding.py list")
+            return 1
+        found = max(unfinished, key=lambda t: (t[0], t[1]))[2:]
+    print(f"TASK {note_of(found[0], found[2])}")
+    return found
 
 
 def save(base, state, rec):
@@ -613,10 +616,13 @@ def cmd_check(a):
             print(f"REFUSED {msg}")
         return 1
     n = int(m.group(1))
-    state["tasks"] = [t for t in state["tasks"] if t["n"] != n]  # a re-check replaces the record
+    old = next((t for t in state["tasks"] if t["n"] == n), None)  # a re-check (the tests were fixed) keeps the history
+    state["tasks"] = [t for t in state["tasks"] if t["n"] != n]
     rec = {"n": n, "slug": m.group(2), "title": task_title(read(note)), "topics": topics, "level": a.level,
            "status": "open", "submissions": [], "hints": 0, "limit": limit,
-           "created": time.strftime("%Y-%m-%d %H:%M"), "passed_at": None}
+           "created": time.strftime("%Y-%m-%d %H:%M:%S"), "passed_at": None}
+    if old:
+        rec.update({k: old[k] for k in ("status", "submissions", "hints", "created", "passed_at")})
     state["tasks"].append(rec)
     state["tasks"].sort(key=lambda t: t["n"])
     save_state(base, state)

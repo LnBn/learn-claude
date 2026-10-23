@@ -100,6 +100,41 @@ class Runner(unittest.TestCase):
         self.assertFalse(r["passed"])
         self.assertEqual(r["got"], "<unprintable>")
 
+    def test_nan_equals_nan(self):
+        self.assertTrue(coding_runner.compare([float("nan"), 1.0], [float("nan"), 1.0]))
+        self.assertFalse(coding_runner.compare([float("nan")], [1.0]))
+
+    def test_numpy_array_against_a_list(self):
+        class ndarray(list):
+            @property
+            def shape(self):
+                return (len(self),)
+        fake = type(sys)("numpy")
+        fake.ndarray = ndarray
+        fake.asarray = lambda x: x if isinstance(x, ndarray) else ndarray(x)
+        fake.allclose = lambda a, b: all(abs(x - y) < 1e-8 for x, y in zip(a, b))
+        sys.modules["numpy"] = fake
+        self.addCleanup(sys.modules.pop, "numpy")
+        self.assertTrue(coding_runner.compare(ndarray([2.0, 4.0]), [2.0, 4.0]))
+        self.assertFalse(coding_runner.compare(ndarray([2.0, 4.0, 6.0]), [2.0, 4.0]))
+
+    def test_recursion_traceback_capped(self):
+        mutual = "def a(xs):\n    return b(xs)\n\n\ndef b(xs):\n    return a(xs)\n\n\nrunning_max = a\n"
+        r, _ = self.run_case("case:0", mutual)  # two alternating frames: Python cannot fold them
+        self.assertTrue(r["error"].startswith("RecursionError"))
+        self.assertLess(len(r["error"]), 3000)
+
+    def test_printed_output_capped_by_length(self):
+        r, _ = self.run_case("case:0", fx.GOOD.replace("    out, m = [], None", "    print(list(range(10**5)))\n    out, m = [], None"))
+        self.assertTrue(r["passed"])
+        self.assertLess(len(r["stdout"]), 2100)
+
+    def test_no_core_dumps(self):
+        tests = self.d / "core.py"
+        tests.write_text('FUNCTION = "f"\n\ndef reference():\n    return [0, 0]\n\nCASES = [{"name": "core", "args": [], "expected": [0, 0]}]\n')
+        r, _ = self.run_case("case:0", "import resource\n\ndef f():\n    return list(resource.getrlimit(resource.RLIMIT_CORE))\n", tests=tests)
+        self.assertTrue(r["passed"], r)
+
     def test_broken_solution(self):
         r, _ = self.run_case("case:0", fx.SYNTAX_ERROR)
         self.assertFalse(r["passed"])

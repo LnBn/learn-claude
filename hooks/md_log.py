@@ -524,8 +524,11 @@ def command_of(text):
         if m:
             return "exam", (m.group(1) or "").strip('"').lower()
         if TYPED_SUBMIT_RE.match(text):
-            import coding  # only here: finding unfinished code tasks walks the vault
-            return ("code", "submit") if coding.open_tasks() else ("exam", "submit")
+            # the exam's only while a paper is out; else a code task's, whose review is lesson content. Decided by
+            # the papers, not the code tasks: the replay that reads this prompt runs after the submission closed it
+            import exam  # only here: finding the papers walks the vault
+            out = exam.find_papers(".", "open") or exam.find_papers(".", "submitted")
+            return ("exam", "submit") if out else ("code", "submit")
         if TYPED_HINT_RE.match(text):
             return "code", "hint"
     return None
