@@ -132,6 +132,22 @@ class WritesOneBlock(unittest.TestCase):
         quiz_server.run_quiz(dict(ARGS), "toolu_1")
         self.assertTrue(self.note.read_text().startswith("Edited.\n\n> [!success|quiz]- ✓ What is 2+2?"))
 
+    def test_figure_above_open_block_is_kept(self):
+        (self.d / ".course").mkdir()
+        (self.d / ".course" / "book.json").write_text("{}")
+        (self.d / ".course" / "state.json").write_text(json.dumps({"slug": "pml1"}))
+        for name, value in [("crop", lambda c, fid: str(self.d / f"pml1-fig-{fid}.png"))]:
+            self.addCleanup(setattr, quiz_server.figures, name, getattr(quiz_server.figures, name))
+            setattr(quiz_server.figures, name, value)
+        self.addCleanup(setattr, quiz_server, "course_figure", quiz_server.course_figure)
+        quiz_server.course_figure = lambda text: None
+        self.ui = [{"action": "accept", "answers": [1]}]
+        quiz_server.run_quiz({**ARGS, "question": "In Figure 1.4, what is 2+2?"}, "toolu_1")
+        text = self.note.read_text()
+        self.assertEqual(text.count("![[pml1-fig-1.4.png|600]] ^fig-1-4"), 1)
+        self.assertTrue(text.startswith("![[pml1-fig-1.4.png|600]] ^fig-1-4\n\n> [!success|quiz]- ✓ In "))
+        self.assertNotIn("[!question|quiz]+", text)
+
     def test_form_tells_teacher_about_tmux(self):
         self.ui = [{"action": "accept", "answers": [1]}]
         out = quiz_server.run_quiz(dict(ARGS), "toolu_1")
