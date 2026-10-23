@@ -278,5 +278,39 @@ class LessonSubmit(Base):
         self.assertTrue(self.lesson.read_text().startswith("# Py\n\nEdited by hand.\n\n> [!success|code]- ✓ Task 01"))
 
 
+class Mirror(Base):
+    """A typed submit or hint with a code task unfinished is a pacing word: the reply is lesson content."""
+
+    def setUp(self):
+        super().setUp()
+        import md_log
+        self.md_log = md_log
+        cwd = os.getcwd()
+        os.chdir(self.vault)
+        self.addCleanup(os.chdir, cwd)
+
+    def open_task(self):
+        self.make_track()
+        p = self.write_task(["--track", "quant"])
+        self.code("check", p["NOTE"], "--topics", "lists", "--level", "1")
+
+    def test_typed_submit_goes_to_open_code_task(self):
+        self.assertEqual(self.md_log.command_of("submit"), ("exam", "submit"))
+        self.assertTrue(self.md_log.is_admin_command(self.md_log.command_of("submit")))
+        self.open_task()
+        self.assertEqual(self.md_log.command_of("submit"), ("code", "submit"))
+        self.assertFalse(self.md_log.is_admin_command(self.md_log.command_of("submit")))
+        self.assertFalse(self.md_log.is_user_prose("submit"))
+
+    def test_typed_hint_not_logged(self):
+        self.assertFalse(self.md_log.is_user_prose("hint"))
+        self.assertFalse(self.md_log.is_admin_command(self.md_log.command_of("hint")))
+
+    def test_code_list_muted(self):
+        self.assertTrue(self.md_log.is_admin_command(("code", "list")))
+        self.assertTrue(self.md_log.is_admin_command(("code", "status")))
+        self.assertFalse(self.md_log.is_admin_command(("code", "submit")))
+
+
 if __name__ == "__main__":
     unittest.main()

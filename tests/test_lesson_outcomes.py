@@ -1,4 +1,9 @@
+import contextlib
+import io
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 import tests._vault  # noqa: F401  (puts hooks/ on the path)
 import lesson
@@ -23,6 +28,25 @@ class QuizOutcomes(unittest.TestCase):
         lines = (OLD_PAIR + "\n" + OLD_ASKED + "\n" + quiz_block.render(INCORRECT) + "\n").split("\n")
         self.assertEqual([o for _, o in lesson.quiz_outcomes(lines)], ["✓", "✓", "✗"])
         self.assertEqual(lesson.quiz_outcomes(PI_NOTE.split("\n")), [("Which way does KL(q||p) push q?", "✓")])
+
+    def test_code_outcomes(self):
+        lines = ["> [!success|code]- ✗→✓ Task 01: A", "> body", "", "> [!failure|code]- ✗ Task 02: B", "",
+                 "> [!question|code]+ Task 03: C", "", "> [!warning|code]- ⊘ Task 04: D (solution shown)", "",
+                 "> [!info|code]- ✓ Task 05: E (solution shown)"]
+        self.assertEqual(lesson.code_outcomes(lines),
+                         [("A", "✓"), ("B", "✗"), ("C", "open"), ("D", "shown"), ("E", "helped")])
+
+    def test_summary_tallies_code_tasks(self):
+        d = Path(tempfile.mkdtemp(prefix="lesson-code-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        note = d / "py.md"
+        note.write_text("## Session — 2026-10-23 (Fri) 10:00\n\nText.\n\n" + quiz_block.render(CORRECT) +
+                        "\n\n> [!success|code]- ✗→✓ Task 01: A\n\n> [!failure|code]- ✗ Task 02: B\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            lesson.summary(str(note))
+        self.assertIn("quizzes: 1 (✓ 1", out.getvalue())
+        self.assertIn("code tasks: 2 (✓ 1) · checkpoints:", out.getvalue())
 
     def test_other_callouts_ignored(self):
         lines = ["> [!success] ✓ Correct", ">", "> Selected: 1. 4", "", "> [!aside]+ Why?", "> Because."]

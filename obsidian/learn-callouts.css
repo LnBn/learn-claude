@@ -34,12 +34,15 @@
   --callout-icon: lucide-message-circle;
 }
 
-/* a graded quiz (hooks/quiz_block.py): folded, and a little smaller than the lesson's own callouts */
-.callout[data-callout-metadata~="quiz"] {
+/* a graded quiz (hooks/quiz_block.py) or a code task (hooks/coding.py): folded, a little smaller than the
+   lesson's own callouts */
+.callout[data-callout-metadata~="quiz"],
+.callout[data-callout-metadata~="code"] {
   padding: 8px 12px;
   margin: 0.6em 0;
 }
-.callout[data-callout-metadata~="quiz"] > .callout-title {
+.callout[data-callout-metadata~="quiz"] > .callout-title,
+.callout[data-callout-metadata~="code"] > .callout-title {
   font-size: 0.9em;
 }
 
@@ -65,11 +68,13 @@
   .callout, .math-block, mjx-container[display="true"], .image-embed, img, table, pre {
     break-inside: avoid;
   }
-  /* quizzes print open */
-  .callout[data-callout-metadata~="quiz"] > .callout-content {
+  /* quizzes and code tasks print open */
+  .callout[data-callout-metadata~="quiz"] > .callout-content,
+  .callout[data-callout-metadata~="code"] > .callout-content {
     display: block !important;
   }
-  .callout[data-callout-metadata~="quiz"] .callout-fold {
+  .callout[data-callout-metadata~="quiz"] .callout-fold,
+  .callout[data-callout-metadata~="code"] .callout-fold {
     display: none;
   }
 }

@@ -496,6 +496,7 @@ ADMIN_COMMANDS = {
     "md-log": None,    # None: every use of the command
     "md-unlog": None,
     "exam": None,
+    "code": {"list", "status"},  # /code submit, hint, solution and next: the reply is the task's record
 }
 # a command typed without its slash ("course next"): still a command, not something the learner said
 TYPED_COMMAND_RE = re.compile(
@@ -504,6 +505,7 @@ TYPED_COMMAND_RE = re.compile(
 # "exam" alone or with one argument (submit, list, a chapter id, a note), and a prompt that is just "submit"
 TYPED_EXAM_RE = re.compile(r'^\W*exam(?:\s+(submit|list|[A-Z]|\d+|"[^"]+"|\S+\.md))?\W*$', re.I)
 TYPED_SUBMIT_RE = re.compile(r"^\W*submit\W*$", re.I)
+TYPED_HINT_RE = re.compile(r"^\W*hint\W*$", re.I)
 
 
 def command_of(text):
@@ -522,7 +524,10 @@ def command_of(text):
         if m:
             return "exam", (m.group(1) or "").strip('"').lower()
         if TYPED_SUBMIT_RE.match(text):
-            return "exam", "submit"
+            import coding  # only here: finding unfinished code tasks walks the vault
+            return ("code", "submit") if coding.open_tasks() else ("exam", "submit")
+        if TYPED_HINT_RE.match(text):
+            return "code", "hint"
     return None
 
 

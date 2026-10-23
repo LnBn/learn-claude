@@ -209,6 +209,20 @@ def quiz_outcomes(lines):
     return out
 
 
+CODE_BOX_RE = re.compile(r"^> \[!(\w+)\|code\][-+] (?:(✓|✗→✓|✗|⊘) )?Task \d+: (.*?)(?: \(solution shown\))?\s*$")
+CODE_OUTCOMES = {"success": "✓", "failure": "✗", "question": "open", "warning": "shown", "info": "helped"}
+
+
+def code_outcomes(lines):
+    """(title, outcome) for each code task's box in a lesson note: ✓, ✗, open, shown or helped."""
+    out = []
+    for ln in lines:
+        m = CODE_BOX_RE.match(ln.rstrip())
+        if m:
+            out.append((m.group(3), CODE_OUTCOMES.get(m.group(1), m.group(1))))
+    return out
+
+
 def max_equation_number(lines):
     """Highest \\tag{n} / ^eq-n used, so a resumed session continues the numbering."""
     text = "\n".join(lines)
@@ -261,10 +275,11 @@ def summary(path, notes=None):
         if o in tally:
             tally[o] += 1
 
+    code = code_outcomes(lines)
     print(f"LESSON: {path}")
     print(f"sessions: {session_count(lines) or 'unmarked (pi-era log)'} · prompts from learner: {user_prose(lines)} · quizzes: {len(outcomes)} "
           f"(✓ {tally['✓']} · ✗ {tally['✗']} · don't-know {tally['?']} · skipped {tally['skip']}) · "
-          f"checkpoints: {len(side) + len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else "")
+          + (f"code tasks: {len(code)} (✓ {sum(o in ('✓', 'helped') for _, o in code)}) · " if code else "") + f"checkpoints: {len(side) + len(cps)}" + (f" · hand-off note: {os.path.basename(notes)}" if notes else "")
           + f" · equations numbered so far: {max_equation_number(lines)} · worked examples so far: "
           f"{max_example_number(lines)} (continue both from the next number)")
     print()
