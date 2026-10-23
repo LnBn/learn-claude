@@ -14,12 +14,22 @@ the lesson note or the track index. Run it from the vault root.
                         to practise next); writes nothing in a track, the lesson's state on first use
     coding.py check <task.md> --topics a,b --level 1-5
                         validate the task against its reference and register it as open
+    coding.py submit [<task.md>]     run the hidden tests on the learner's file and record the result
+    coding.py hint [<task.md>]       count a hint
+    coding.py solution [<task.md>]   mark the solution shown; print the reference's path
+    coding.py status [<track> | <task.md>]
+                        a track's brief, or a task's record; with no argument the unfinished tasks
+    coding.py list      every track and lesson's tasks, with their status
+
+<task.md> may be left out when only one task is unfinished (open, or shown and not yet passed).
 """
 import argparse
+import glob
 import json
 import math
 import os
 import re
+import shutil
 import signal
 import statistics
 import subprocess
@@ -32,6 +42,7 @@ FLOOR = 0.2  # seconds: the smallest speed limit, so that timing noise does not 
 FACTOR = 10  # the limit is this many times the reference's time
 CASE_KILL = 5.0  # seconds before a correctness case is killed
 TASK_RE = re.compile(r"^(\d\d)-(.+)\.md$")
+UNFINISHED = ("open", "shown")
 
 
 # ---- paths and state
@@ -176,6 +187,291 @@ def put_lesson_box(state, base, rec):
     while end < len(lines) and lines[end].startswith(">"):
         end += 1
     write(note, "\n".join(lines[:start] + box.split("\n") + lines[end:]))
+
+
+# ---- finding tasks
+
+def all_states(root="."):
+    """(base, state) of every track and every lesson's tasks under root."""
+    found = []
+    for hidden in (".track", ".tests"):
+        for path in sorted(glob.glob(os.path.join(root, "**", hidden, "state.json"), recursive=True)):
+            base = os.path.relpath(os.path.dirname(os.path.dirname(path)), root)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    found.append((base, json.load(f)))
+            except (OSError, ValueError):
+                pass
+    return found
+
+
+def note_of(base, rec):
+    return task_paths(base, rec["n"], rec["slug"])["note"]
+
+
+def open_tasks(root="."):
+    """The task notes not finished yet: open, or shown and not yet passed."""
+    return [note_of(base, rec) for base, state in all_states(root) for rec in state["tasks"]
+            if rec["status"] in UNFINISHED]
+
+
+def locate(note):
+    """(base, state, record) of a task note, or None."""
+    note = os.path.normpath(note)
+    base = os.path.dirname(note)
+    state = load_state(base)
+    m = TASK_RE.match(os.path.basename(note))
+    if not state or not m:
+        return None
+    rec = next((t for t in state["tasks"] if t["n"] == int(m.group(1))), None)
+    return (base, state, rec) if rec else None
+
+
+def pick(arg):
+    """(base, state, record), or an exit status after printing why there is none."""
+    if arg:
+        found = locate(arg)
+        if not found:
+            print(f"REFUSED {arg} is not a checked code task")
+            return 1
+        return found
+    tasks = open_tasks()
+    if not tasks:
+        print("REFUSED no unfinished code task: name one, or see coding.py list")
+        return 1
+    if len(tasks) > 1:
+        for t in tasks:
+            print(f"CHOOSE {t}")
+        return 2
+    return locate(tasks[0])
+
+
+def save(base, state, rec):
+    save_state(base, state)
+    if state["kind"] == "track":
+        write_index(base, state)
+    else:
+        put_lesson_box(state, base, rec)
+
+
+def change_levels(state, topics, step):
+    for t in state["syllabus"]:
+        if t["topic"] in topics:
+            t["level"] = min(5, max(1, t["level"] + step))
+
+
+# ---- a submission
+
+def ms(seconds):
+    return f"{seconds * 1000:.1f} ms" if seconds < 0.1 else f"{round(seconds * 1000)} ms"
+
+
+def outcome(r, kill):
+    """What the learner's code did on a failed case, as one line."""
+    if r["timeout"]:
+        return f"timeout (over {kill:g} s)"
+    if r["error"]:
+        return r["error"].splitlines()[0]
+    return r["got"]
+
+
+def submission_box(sub, fail_case):
+    speed = sub["speed"]
+    head = f"Submission {sub['k']} — {sub['cases']} passed"
+    if speed and speed["ok"]:
+        head += f" · speed ✓ ({ms(speed['seconds'])}, limit {ms(speed['limit'])})"
+    elif speed:
+        head += " · speed ✗"
+    body = []
+    if fail_case:
+        r, kill = fail_case
+        body += [f"First failing case: **{r['name']}**", f"- call: `{r.get('call') or r['name']}`"]
+        if r.get("expected") is not None:
+            body.append(f"- expected: `{r['expected']}`")
+        if r["timeout"] or not r["error"]:
+            body.append(f"- yours: `{outcome(r, kill)}`")
+        else:
+            body += ["- error:", "```text", r["error"], "```"]
+        if r.get("stdout"):
+            body += ["- printed:", "```text", r["stdout"], "```"]
+    elif speed and not speed["ok"]:
+        took = f"timeout (over {speed['kill']:g} s)" if speed["timeout"] else ms(speed["seconds"])
+        body.append(f"Speed case **{speed['case']}**: {took}, limit {ms(speed['limit'])}.")
+    else:
+        body.append("All cases passed.")
+    kind, mark = ("success", "✓") if sub["passed"] else ("failure", "✗")
+    lines = [f"> [!{kind}|code]- {mark} {head}", ">"] + [f"> {ln}" if ln else ">" for b in body for ln in b.split("\n")]
+    return "\n".join(lines)
+
+
+def append_submission(note, box):
+    lines = read(note).rstrip("\n").split("\n")
+    if "## Submissions" not in lines:
+        lines += ["", "## Submissions"]
+    i = lines.index("## Submissions")
+    end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+    section = lines[i + 1:end]
+    while section and not section[-1].strip():
+        section.pop()
+    rest = lines[end:]
+    lines = lines[:i + 1] + section + [""] + box.split("\n") + ([""] + rest if rest else [])
+    write(note, "\n".join(lines) + "\n")
+
+
+def cmd_submit(a):
+    found = pick(a.note)
+    if isinstance(found, int):
+        return found
+    base, state, rec = found
+    paths = task_paths(base, rec["n"], rec["slug"])
+    python = state["python"]
+    k = len(rec["submissions"]) + 1
+    snap = os.path.join(hidden_dir(base), "submissions", f"{rec['n']:02d}-{rec['slug']}-{k}.py")
+    os.makedirs(os.path.dirname(snap), exist_ok=True)
+    shutil.copyfile(paths["starter"], snap)
+    info = count(paths["tests"], python)
+    results = [run_case(paths["tests"], f"case:{i}", solution=snap, python=python) for i in range(len(info["cases"]))]
+    for r, name in zip(results, info["cases"]):
+        r["name"] = r["name"] if not r["name"].startswith("case:") else name
+    passed_n = sum(r["passed"] for r in results)
+    first = next(((r, CASE_KILL) for r in results if not r["passed"]), None)
+    speed = None
+    if first is None and info["large"] and rec["limit"]:
+        limit, kill = rec["limit"], 3 * rec["limit"] + 1
+        worst = None
+        for i, name in enumerate(info["large"]):
+            r = run_case(paths["tests"], f"large:{i}", solution=snap, kill=kill, python=python)
+            if not r["passed"] and not r["timeout"]:
+                r["name"] = name if r["name"].startswith("large:") else r["name"]
+                first = (r, kill)
+                break
+            ok = not r["timeout"] and r["seconds"] <= limit
+            if worst is None or not ok or (worst["ok"] and r["seconds"] > worst["seconds"]):
+                worst = {"ok": ok, "case": name, "seconds": r["seconds"] or 0, "timeout": r["timeout"],
+                         "limit": limit, "kill": kill}
+            if not ok:
+                break
+        speed = worst if first is None else None
+    passed = first is None and (speed is None or speed["ok"])
+    sub = {"k": k, "passed": passed, "cases": f"{passed_n}/{len(results)}", "speed": speed,
+           "at": time.strftime("%Y-%m-%d %H:%M")}
+    first_pass = passed and not any(s["passed"] for s in rec["submissions"])
+    rec["submissions"].append(sub)
+    if first_pass:
+        rec["passed_at"] = sub["at"]
+        if rec["status"] == "shown":
+            rec["status"] = "helped"
+        elif rec["status"] == "open":
+            rec["status"] = "passed"
+            if state["kind"] == "track" and k == 1 and rec["hints"] == 0:
+                change_levels(state, rec["topics"], +1)
+    append_submission(paths["note"], submission_box(sub, first))
+    save(base, state, rec)
+
+    print(f"RESULT {'passed' if passed else 'failed'}")
+    print(f"CASES {sub['cases']}")
+    if first:
+        r, kill = first
+        print(f"FIRST FAIL {r['name']}")
+        print(f"  call {r.get('call') or r['name']}")
+        if r.get("expected") is not None:
+            print(f"  expected {r['expected']}")
+        if r["timeout"] or not r["error"]:
+            print(f"  yours {outcome(r, kill)}")
+        else:
+            print("  error " + r["error"].replace("\n", "\n    "))
+        if r.get("stdout"):
+            print("  printed " + r["stdout"].replace("\n", "\n    "))
+    if speed:
+        took = f"timeout (over {speed['kill']:g} s)" if speed["timeout"] else ms(speed["seconds"])
+        print(f"SPEED {'ok' if speed['ok'] else 'fail ' + speed['case']} {took} / {ms(speed['limit'])}")
+    if passed:
+        print(f"REVIEW {snap}")
+    print(f"STATUS {rec['status']}")
+    if state["kind"] == "track":
+        print("LEVELS " + ", ".join(f"{t['topic']}={t['level']}/{t['target']}" for t in state["syllabus"]))
+        nxt = suggest(state)
+        print(f"NEXT {nxt}" if nxt else "NEXT none: every topic is at its target")
+    return 0
+
+
+def cmd_hint(a):
+    found = pick(a.note)
+    if isinstance(found, int):
+        return found
+    base, state, rec = found
+    rec["hints"] += 1
+    save(base, state, rec)
+    print(f"HINTS {rec['hints']}")
+    return 0
+
+
+def cmd_solution(a):
+    found = pick(a.note)
+    if isinstance(found, int):
+        return found
+    base, state, rec = found
+    if rec["status"] == "open":
+        rec["status"] = "shown"
+        if state["kind"] == "track":
+            change_levels(state, rec["topics"], -1)
+            state["revisit"] += [t for t in rec["topics"] if t not in state["revisit"]]
+        save(base, state, rec)
+    print(f"REFERENCE {task_paths(base, rec['n'], rec['slug'])['tests']}")
+    print(f"STATUS {rec['status']}")
+    return 0
+
+
+def print_record(base, rec):
+    subs = rec["submissions"]
+    print(f"TASK {note_of(base, rec)} {rec['status']} topics={','.join(rec['topics'])} level={rec['level']} "
+          f"submissions={len(subs)} hints={rec['hints']}"
+          + (f" last={'✓' if subs[-1]['passed'] else '✗'} {subs[-1]['cases']}" if subs else ""))
+
+
+def cmd_status(a):
+    if a.target and a.target.endswith(".md"):
+        found = locate(a.target)
+        if not found:
+            return fail(f"REFUSED {a.target} is not a checked code task")
+        print_record(found[0], found[2])
+        return 0
+    if a.target:
+        base = track_dir(a.target)
+        state = load_state(base)
+        if not state:
+            return fail(f"REFUSED no track {a.target}")
+        print(f"TRACK {base} ({state['title']})")
+        print("LEVELS " + ", ".join(f"{t['topic']}={t['level']}/{t['target']}" for t in state["syllabus"]))
+        if state["revisit"]:
+            print("REVISIT " + ", ".join(state["revisit"]))
+        for rec in state["tasks"][-8:]:
+            print_record(base, rec)
+        nxt = suggest(state)
+        print(f"SUGGEST {nxt}" if nxt else "SUGGEST none: every topic is at its target")
+        return 0
+    tasks = open_tasks()
+    if not tasks:
+        print("UNFINISHED none")
+    for t in tasks:
+        base, _, rec = locate(t)
+        print_record(base, rec)
+    return 0
+
+
+def cmd_list(a):
+    states = all_states()
+    if not states:
+        print("no code tasks under this folder")
+    for base, state in states:
+        if state["kind"] == "track":
+            print(f"TRACK {base} ({state['title']}) · " +
+                  ", ".join(f"{t['topic']}={t['level']}/{t['target']}" for t in state["syllabus"]))
+        else:
+            print(f"LESSON {state['note']}")
+        for rec in state["tasks"]:
+            print(f"  {note_of(base, rec)} {rec['status']} · {len(rec['submissions'])} submissions, {rec['hints']} hints")
+    return 0
 
 
 # ---- commands
@@ -345,10 +641,15 @@ def main(argv):
     c.add_argument("note")
     c.add_argument("--topics", required=True)
     c.add_argument("--level", type=int, choices=range(1, 6), required=True)
+    for name in ("submit", "hint", "solution"):
+        sub.add_parser(name).add_argument("note", nargs="?")
+    sub.add_parser("status").add_argument("target", nargs="?")
+    sub.add_parser("list")
     a = p.parse_args(argv[1:])
     if a.cmd == "track" and a.action == "syllabus" and not a.file:
         p.error("track syllabus needs --file")
-    return {"track": cmd_track, "plan": cmd_plan, "check": cmd_check}[a.cmd](a)
+    return {"track": cmd_track, "plan": cmd_plan, "check": cmd_check, "submit": cmd_submit, "hint": cmd_hint,
+            "solution": cmd_solution, "status": cmd_status, "list": cmd_list}[a.cmd](a)
 
 
 if __name__ == "__main__":

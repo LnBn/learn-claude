@@ -8,7 +8,7 @@ not in the caller. Memory is capped at 2 GiB; --cpu caps CPU seconds (the kernel
     coding_runner.py <tests.py> --count
                         {"function", "cases": [names], "large": [names], "slow": bool} of a hidden-tests module
     coding_runner.py <tests.py> case:<i>|large:<i> (--solution <file.py> | --impl reference|slow) [--cpu <s>]
-                        {"name", "passed", "got", "expected", "seconds", "stdout", "error"}
+                        {"name", "call", "passed", "got", "expected", "seconds", "stdout", "error"}
 
 The tests module: FUNCTION, reference(*args), CASES [{"name", "args", "expected"}], and optionally slow(*args),
 large() yielding {"name", "args"} (expected = reference(*args)), and check(got, expected, args).
@@ -94,7 +94,8 @@ def run(tests_path, case, solution=None, impl=None):
         args = c["args"]
         expected = tests.reference(*copy.deepcopy(args))
     name = c.get("name", f"{'case' if kind == 'case' else 'large'} {int(i) + 1}")
-    result = {"name": name, "passed": False, "got": None, "expected": short(expected),
+    call = f"{tests.FUNCTION}({', '.join(short(x) for x in args)})"
+    result = {"name": name, "call": call if len(call) <= MAX_REPR else call[:MAX_REPR] + "…", "passed": False, "got": None, "expected": short(expected),
               "seconds": None, "stdout": "", "error": None}
     path = os.path.abspath(solution or tests_path)
     out = io.StringIO()

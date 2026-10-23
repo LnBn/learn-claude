@@ -51,6 +51,7 @@ class Runner(unittest.TestCase):
         self.assertFalse(r["passed"])
         self.assertEqual(r["got"], "[3, 1, 4, 1, 5]")
         self.assertEqual(r["expected"], "[3, 3, 4, 4, 5]")
+        self.assertEqual(r["call"], "running_max([3, 1, 4, 1, 5])")
 
     def test_exception_traceback_trimmed(self):
         r, _ = self.run_case("case:1", fx.RAISES)
