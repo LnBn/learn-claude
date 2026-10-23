@@ -16,7 +16,7 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 
 Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
@@ -306,6 +306,47 @@ Run `/exam 3` again for a new paper with new questions. Every attempt is kept, a
 
 An exam on a lesson note outside a course works the same way, with its papers in an `exams/` folder beside the note.
 
+## Coding practice
+
+Coding problems work like LeetCode. Each problem is a note in Obsidian and a starter file you open in your own editor. You write the function, run the file yourself as often as you like, and type `submit` when you think it is right. Hidden tests then judge it, and the teacher reviews a passing solution the way an interviewer would.
+
+### A practice track
+
+```
+/code quant python
+```
+
+starts a track on a topic: the teacher asks what it is for (an interview, a course, a language) and how far you are, checks what that goal really tests, and proposes a syllabus of topics, each with a target level from 1 to 5. Once you approve it, the first problem is set. `/code next` sets the next one, and `/code` alone picks up an unfinished problem.
+
+Each topic has a level. A problem passed on the first submission with no hints raises the level of its topics; asking for the solution lowers it and brings the topic back later. The next problem goes to the weakest topic below its target, and every fourth or so revisits an earlier one. When a problem needs an idea you have not met, a short reading and a quiz or two come first.
+
+### A problem
+
+```
+practice/quant-python/
+  quant-python.md        the track: topics with their levels, every problem with its status
+  01-running-max.md      the problem, your submissions, the review
+  01-running-max.py      your file: the signature and the examples, ready to run
+```
+
+The starter file has the function's signature and the examples under `if __name__ == "__main__":`, so `python3 01-running-max.py` shows your output beside the expected one. The hidden tests are in `.track/`, which Obsidian does not show.
+
+| You type | What happens |
+|---|---|
+| `submit` | The tests run on your file. The note gets a folded box per submission: the cases passed, the speed result, and the first failing case with its call, the expected value, yours (or the error), and what your code printed. |
+| `hint` | One step further: what to look at, then the approach, then a sketch of the hard part. Never the full code. |
+| `/code solution` | After you confirm, the teacher's solution, walked through. The problem counts as solved with help. |
+
+Some problems have speed tests: large inputs with a time limit. The limit is ten times what the teacher's own solution takes, and at least 0.2 s, so a sound solution passes easily and one of the wrong complexity misses it by far. A failed speed test shows your time beside the limit.
+
+After a pass the review gives the time and space complexity, any edge case your code gets right only by luck, at most two rewrites in more idiomatic code, and the follow-up an interviewer would ask, which you can take on as the next problem.
+
+Your code runs on your machine, one test at a time, each in its own process with a memory limit and a time limit, so an infinite loop costs a few seconds. A track can use another Python, such as a virtual environment with numpy and pandas: the teacher sets it when the track is created.
+
+### Code tasks in a lesson
+
+In a lesson on a programming topic, the check after a section can be a code task instead of a quiz. Its files go in a folder beside the note (`lessons/python-types — code/`), and the lesson note gets one folded box where the task was set, titled with the outcome (`✓`, `✗`, or `✗→✓` when it passed after failing), with a line per submission. A task you needed the solution for counts as a missed question: the teacher re-teaches the step that went wrong, then sets a variant.
+
 ## The lesson note
 
 A note holds the lesson and nothing else. A session writes to a note once you point it there, with `/md-log`, `/lesson resume`, `/course next`, `/course study` or `/exercise`; a session you have not pointed anywhere is not mirrored.
@@ -407,8 +448,15 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/exam reopen <paper>` | Take back a paper you submitted but that is not graded yet, to change it and submit again. |
 | `/exam abandon <paper>` | Drop a paper you will not finish; it stays on file. |
 | `/exam list` | Every exam paper, with its status and score. |
+| `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
+| `/code next` | The next problem of the current track. |
+| `/code submit` | Run the hidden tests on your file. Typing `submit` does the same when a code task is unfinished. |
+| `/code hint` | The next hint for the problem. Typing `hint` does the same. |
+| `/code solution` | Show the teacher's solution, after you confirm. |
+| `/code status` | Unfinished problems; `/code status <track>` for a track's levels and recent results. |
+| `/code list` | Every track and lesson task, with its status. |
 
-Words you type at a prompt: `ready` when you have read a section, `probe` at a chapter overview to be tested first, or any question.
+Words you type at a prompt: `ready` when you have read a section, `probe` at a chapter overview to be tested first, `submit` and `hint` on a code task, or any question.
 
 ## Repository layout
 
@@ -424,6 +472,7 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     course/              /course new | next | study | status | toc | list | use | select | assess | solutions
     exercise/            hints in steps for a textbook's exercises
     exam/                /exam: set a paper, grade it, discuss the feedback
+    code/                /code: practice tracks and code tasks, hints, reviews
     md-log/, md-unlog/   /md-log <file>, /md-unlog
   agents/
     researcher.md        web research and fact verification
@@ -441,6 +490,8 @@ Words you type at a prompt: `ready` when you have read a section, `probe` at a c
     figures.py           embeds the book figures a course note names, and links the mentions
     sections.py          links "§1.2" references to the heading of that section
     exam.py              exam papers: paths, validation, marking, feedback, results
+    coding.py            code tasks: tracks, checking the tests, running a submission, the records
+    coding_runner.py     runs one test case of a code task in a limited child process
   tests/                 unit tests for the scripts: python3 -m unittest discover -s tests
   scripts/
     install.sh           one-off setup

@@ -331,6 +331,9 @@ def cmd_submit(a):
     shutil.copyfile(paths["starter"], snap)
     info = count(paths["tests"], python)
     results = [run_case(paths["tests"], f"case:{i}", solution=snap, python=python) for i in range(len(info["cases"]))]
+    for r in results:  # the learner edits the starter, not the snapshot: name their file in tracebacks
+        if r["error"]:
+            r["error"] = r["error"].replace(os.path.abspath(snap), paths["starter"])
     for r, name in zip(results, info["cases"]):
         r["name"] = r["name"] if not r["name"].startswith("case:") else name
     passed_n = sum(r["passed"] for r in results)
@@ -341,6 +344,8 @@ def cmd_submit(a):
         worst = None
         for i, name in enumerate(info["large"]):
             r = run_case(paths["tests"], f"large:{i}", solution=snap, kill=kill, python=python)
+            if r["error"]:
+                r["error"] = r["error"].replace(os.path.abspath(snap), paths["starter"])
             if not r["passed"] and not r["timeout"]:
                 r["name"] = name if r["name"].startswith("large:") else r["name"]
                 first = (r, kill)
@@ -470,7 +475,9 @@ def cmd_list(a):
         else:
             print(f"LESSON {state['note']}")
         for rec in state["tasks"]:
-            print(f"  {note_of(base, rec)} {rec['status']} · {len(rec['submissions'])} submissions, {rec['hints']} hints")
+            n, h = len(rec["submissions"]), rec["hints"]
+            print(f"  {note_of(base, rec)} {rec['status']} · {n} submission{'' if n == 1 else 's'}, "
+                  f"{h} hint{'' if h == 1 else 's'}")
     return 0
 
 

@@ -190,6 +190,12 @@ class Submit(Base):
             self.assertIn("CASES 0/3", r.stdout)
             self.assertIn(error, r.stdout)
 
+    def test_traceback_names_the_learners_file(self):
+        r = self.submit(fx.RAISES)
+        self.assertIn('File "practice/quant/01-running-max.py", line 2, in running_max', r.stdout)
+        self.assertNotIn("submissions", r.stdout.split("REVIEW")[0])
+        self.assertIn('File "practice/quant/01-running-max.py", line 2', self.note.read_text())
+
     def test_level_up_on_first_try(self):
         self.submit(fx.GOOD)
         self.assertEqual(self.level(), 2)
@@ -243,7 +249,9 @@ class Submit(Base):
         self.addCleanup(os.chdir, cwd)
         self.assertEqual(coding.open_tasks(), ["practice/quant/01-running-max.md"])
         out = self.code("list").stdout
-        self.assertIn("practice/quant/01-running-max.md open", out)
+        self.assertIn("practice/quant/01-running-max.md open · 0 submissions, 0 hints", out)
+        self.code("hint")
+        self.assertIn("· 0 submissions, 1 hint\n", self.code("list").stdout)
 
 
 class LessonSubmit(Base):

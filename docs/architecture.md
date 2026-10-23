@@ -2,7 +2,7 @@
 
 How the pieces of learn-claude fit together, why they are built the way they are, and where the system is fragile. Read the [README](../README.md) first; this document is for changing the code.
 
-**Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Exams](#exams) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
+**Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Exams](#exams) · [Coding practice](#coding-practice) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
 
 ## Components
 
@@ -20,6 +20,7 @@ The teacher is the Claude Code session itself. Everything else is a prompt it lo
 | Figures | `hooks/figures.py` | Embeds a book figure the note names, once, and links every mention. |
 | Section links | `hooks/sections.py` | Links each "§1.2" in a block to the heading of that section. |
 | Exam helper | `hooks/exam.py` | Paths, validation, marking and feedback of exam papers; their place in the course. |
+| Code tasks | `hooks/coding.py`, `coding_runner.py`, `skills/code/` | Practice tracks and code tasks in lessons: hidden tests checked against a reference, submissions run case by case, results in the notes. |
 | Subagents | `agents/*.md` | `researcher` checks facts on the web. `mermaid-maker` and `svg-maker` draw diagrams. |
 | Renderers | `scripts/render-*.sh` | Turn Mermaid or SVG source into a PNG. |
 
@@ -252,6 +253,22 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **Feeding back.** `lesson.py summary` imports `exam.exam_misses`. It lists the questions that lost marks in the newest graded exam on the note and, in a course, on the chapter before it. The recall check asks those first. `book.py done` prints an `EXAM:` line when a chapter or the course is complete, and the teacher offers `/exam` in one sentence.
 
+## Coding practice
+
+A code task is three files the teacher writes: a task note, a starter file the learner edits, and a hidden tests module. `coding.py` does what must be exact; `coding_runner.py` runs one case. The `code` skill is the teacher's procedure.
+
+**The tests module** (`coding_runner.py` docstring): `FUNCTION`, `reference(*args)`, `CASES` (`name`, `args`, `expected`), and optionally `slow(*args)`, `large()` (seeded speed cases, expected from `reference`) and `check(got, expected, args)`. Without `check`, results compare with `==`, floats inside lists, tuples and dicts with `math.isclose(rel_tol=1e-9, abs_tol=1e-12)`, numpy arrays with `allclose` when numpy is loaded.
+
+**Creating a task.** `plan` prints the paths and the number; the teacher writes the files; `check` refuses the task unless the starter defines `FUNCTION`, every case agrees with `reference`, and, when there are speed cases and a `slow`, `slow` misses the limit. The limit is `max(0.2 s, 10 × median of 3 reference runs)` on the slowest speed case, fixed at `check` and kept in the task record. `check` registers the task as `open`; in a lesson it also appends the task's box to the lesson note.
+
+**Running a case.** Each case is a child process: `<python> coding_runner.py <tests> case:<i>|large:<i> --solution <snapshot> --cpu <s>`. The child caps memory at 2 GiB and CPU at the kill time, imports both files by path, calls the function on a deep copy of the arguments under `perf_counter`, compares in-process (so tuples, sets and arrays keep their types), and prints one JSON line with `repr`s cut to 300 characters, at most 20 lines of printed output and a traceback cut to the solution's frames. The parent kills a correctness case after 5 s and a speed case after `3 × limit + 1 s`; a case that dies without a JSON line is a timeout (`SIGXCPU`, or the wall clock) or a failure with the last line of stderr. Speed cases run only when every correctness case passed. A submission runs on a snapshot of the starter (`submissions/NN-slug-k.py`), so editing during a run changes nothing, and the review reads the code that was judged.
+
+**Recording.** A folded `[!success|code]` or `[!failure|code]` box per submission under the task note's `## Submissions`. In a lesson, the task's box in the lesson note is found by its `Task NN:` header and rewritten (appended if it is gone): the outcome in the title, the statement, a link to the task note, one line per submission. In a track, the index note is rewritten from `state.json`.
+
+**Status and levels.** A task is `open` until a pass (`passed`), or until `solution` (`shown`, then `helped` if it passes later). A first pass on submission 1 with no hints raises each of the task's topics by one level (at most 5); `solution` on an open task lowers them by one (at least 1) and queues them in `revisit`. `plan` suggests a revisit when `len(tasks) % 4 == 3`, else the first syllabus topic below its target.
+
+**Typed words.** A prompt that is only `submit` is a code submission when `coding.open_tasks()` finds an unfinished task (open or shown): the prompt is not logged, the reply is, because the review belongs in the note. Otherwise it is `/exam submit`, muted as before. A prompt that is only `hint` is the same pacing word. `/code list` and `/code status` are muted housekeeping.
+
 ## Visuals
 
 The `visualize` skill has the teacher brief a maker subagent with one idea and few elements. The maker:
@@ -304,6 +321,11 @@ Everything under `.claude/` in this table is gitignored.
 | `<notes>/.exams/<…>-exam-<n>.submitted.md` | the paper as handed in | `exam.py submit` |
 | `<notes>/.exams/<…>-exam-<n>.marks.json` | the teacher's marks and feedback for the written answers | the teacher (Write), read by `exam.py grade --marks` |
 | `<notes>/.exams/<…>-exam-<n>.edited.md` | a paper changed after it was submitted, set aside at grading | `exam.py grade` |
+| `practice/<track>/<track>.md` | a track's index: topic levels, every task with its status | `coding.py` |
+| `practice/<track>/.track/state.json` | syllabus with levels, revisit queue, task records, interpreter | `coding.py` |
+| `<notes>/<note> — code/.tests/state.json` | the task records of a lesson's code tasks | `coding.py` |
+| `…/.track/NN-<slug>.py`, `…/.tests/NN-<slug>.py` | a task's hidden tests | the teacher (Write), checked by `coding.py check` |
+| `…/submissions/NN-<slug>-<k>.py` | the file as submitted, k-th time | `coding.py submit` |
 | `<project>/viz/` | published diagrams | the render scripts |
 
 ## Fragile parts
@@ -321,13 +343,14 @@ In order of how likely they are to bite.
 9. **Where an aside stops.** `aside_spot` treats plain paragraphs after a block as discussion of it. A paragraph that introduces the next example without a bold or italic lead is passed over, and the aside lands one paragraph late. If the teacher leaves out the marker, the question and answer are written as before: a quote and bare prose at the end.
 10. **Multi-select quizzes.** Checkboxes in the popup; one boolean per option in the fallback. Not yet used in a real lesson.
 11. **Exam papers the learner edited.** `exam.py` reads a paper by its `### Q<n> (… marks)` headings and `- [ ] a)` options. A heading the learner rewrote, or an option line they reformatted beyond `-`/`*` and the box, makes `submit` refuse the paper by question, and the learner repairs it. The feedback of a regrade is found between its callout title and its `^q<n>` line, so a learner who deletes that line blocks the regrade of that question.
-12. **A prompt that is only `submit`.** It is read as `/exam submit` and muted, in any session. A learner who means something else by it gets an exam command.
+12. **A prompt that is only `submit`.** With a code task unfinished it is a code submission; otherwise it is read as `/exam submit` and muted, in any session. With both an exam paper and a code task open, the skill asks which.
+13. **Timing noise in speed tests.** A busy machine can push a sound solution over its limit. The 10× factor and the 0.2 s floor make this rare; the brief prints the time beside the limit so the teacher can tell noise from complexity, and a resubmit costs nothing. A reference that is itself slow on the speed case gives a generous limit, so a `slow()` that must miss it is what proves the cases separate the complexities.
 
 ## Testing
 
 Changes are tested in four ways:
 
-- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the quiz server's example check and the one block it writes per call, the quiz block's render, parse and conversion (on fixtures copied from real notes), quiz outcomes, the exam-related mirror rules, and the aside placed after a graded question.
+- **Unit tests.** `python3 -m unittest discover -s tests -v`, standard library only. `tests/_vault.py` builds a throwaway vault with a copy of this repo's `hooks/` in its `.claude/`, so the scripts write their state there and never into the real `md-log-state/`. (A symlink would not do: Python resolves the script's directory, so the modules a script imports would find the repo's state directory.) It also makes a course without a PDF and hand-made transcripts for the hooks. The suite covers `exam.py`, `sections.py`, the quiz server's example check and the one block it writes per call, the quiz block's render, parse and conversion (on fixtures copied from real notes), quiz outcomes, the code-task runner and `coding.py` (on a running-maximum task with right, wrong, raising, looping, printing, mutating, quadratic and broken solutions), the exam-related mirror rules, and the aside placed after a graded question.
 - **Scripts directly.** `book.py`, `lesson.py` and the `md_log.py` commands run from a shell. A hook is tested by piping it a JSON payload with a hand-made transcript.
 - **The popup** in detached tmux sessions, with keys fed through the attached client's pty.
 - **Skills** with a headless run in a scratch copy of the project:
