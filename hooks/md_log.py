@@ -16,8 +16,9 @@ Captures only reading-relevant content:
   - assistant text (lesson prose)          (bare, no label) — minus narration
                                             ("I'll load the skill", "waiting on your answer"), see is_narration
   - AskUserQuestion Q&A blocks             (> [!question] Question  +  > [!example] Answer)
-  - graded quiz tool blocks                (> [!question] Quiz  +  ✓/✗ result) — the quiz MCP server
-                                            writes these itself, live; the Stop replay only backfills
+  - graded quiz tool blocks                (> [!success|quiz]- ✓ <question>, folded; see quiz_block.py) —
+                                            the quiz MCP server writes these itself once the learner answers;
+                                            the Stop replay only backfills
   - a dated session header                 (---  ## Session — 2026-09-30 (Wed) 14:05) the first time a
                                             session writes to the file, and "Session (continued)" if the
                                             same session writes again on a later day
@@ -68,6 +69,7 @@ import sys
 import time
 
 import figures
+import quiz_block
 import sections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -198,49 +200,7 @@ def answer_block(q, selected, other, note):
     return callout("example", "Answer", body)
 
 
-# ---- graded quiz tool (mcp/quiz_server.py) — formatting kept in sync with the server
-
-def quiz_question_block(r):
-    body = [r["question"]]
-    if r.get("details"):
-        body += ["", r["details"]]
-    if r.get("figure") and not figures.mentions(r["question"] + " " + r.get("details", "")):
-        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]  # a book figure the text names is embedded by figures.py
-    body.append("")
-    body += [f"{o['index']}. {o['label']}" for o in r["options"]]
-    if r.get("multiSelect"):
-        body += ["", "(select all that apply)"]
-    return callout("question", "Quiz", body)
-
-
-def quiz_result_block(r):
-    status = r.get("status")
-    if status == "cancelled":
-        return callout("warning", "Quiz — cancelled", ["(user skipped)"])
-    if status == "unavailable":
-        return callout("warning", "Quiz — unavailable", [r.get("message", "")])
-    if status == "asked":
-        return callout("note", "Asked before answering", [r.get("learnerQuestion", "")])
-    by_index = {o["index"]: o["label"] for o in r["options"]}
-    correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
-    body = []
-    if r.get("dontKnow"):
-        kind, title = "info", "I don't know"
-        body.append(f"Correct answer: {correct}")
-    else:
-        selected = ", ".join(f"{i}. {by_index[i]}" for i in r.get("answers", []))
-        if r.get("correct"):
-            kind, title = "success", "✓ Correct"
-            body.append(f"Selected: {selected}")
-        else:
-            kind, title = "failure", "✗ Incorrect"
-            body += [f"Selected: {selected}", f"Correct answer: {correct}"]
-    if r.get("explanation"):
-        body += ["", r["explanation"]]
-    if r.get("note"):
-        body += ["", f"Note: {r['note']}"]
-    return callout(kind, title, body)
-
+# ---- graded quiz tool (mcp/quiz_server.py): the block format lives in quiz_block.py
 
 def quiz_blocks_from_result(text):
     """Parse the QUIZ_JSON line the quiz tool appends to its result."""
@@ -250,9 +210,7 @@ def quiz_blocks_from_result(text):
         r = json.loads(text.split("QUIZ_JSON:", 1)[1].strip().splitlines()[0])
     except Exception:
         return ""
-    if r.get("reask"):
-        return quiz_result_block(r)  # the question block was logged with the "asked before answering" note
-    return quiz_question_block(r) + "\n\n" + quiz_result_block(r)
+    return quiz_block.render(r)
 
 
 def ensure_session_header(state, when=None):
@@ -301,7 +259,7 @@ def _norm(q):
 
 
 def insert_before_quiz(text, question):
-    """The quiz server writes its question block live, but the teacher's prose that preceded the call in the
+    """The quiz server writes its block itself as the learner answers, but the teacher's prose that preceded the call in the
     same message is persisted by Claude Code only after the tool returns. When that prose arrives, put it ABOVE
     the quiz block it preceded. Returns True if inserted, False if no matching block exists (caller appends)."""
     path = log_file()
@@ -315,15 +273,13 @@ def insert_before_quiz(text, question):
     target = None
     want = _norm(question)
     for i, ln in enumerate(lines):
-        if ln.strip() == "> [!question] Quiz":
-            # the question may span several lines (a code snippet, two paragraphs): compare the whole callout
-            # body, which starts with the question and continues with the details and the options
-            body = []
+        if quiz_block.is_quiz_header(ln):
+            # the question may span several lines (a code snippet, two paragraphs): compare the block's text,
+            # which starts with the question and continues with the details and the options
             j = i + 1
             while j < len(lines) and lines[j].startswith(">"):
-                body.append(lines[j][2:] if lines[j].startswith("> ") else lines[j][1:])
                 j += 1
-            if want and _norm(" ".join(body)).startswith(want):
+            if want and _norm(quiz_block.parse(lines[i:j])["text"]).startswith(want):
                 target = i  # keep the LAST match
     if target is None:
         return False
@@ -928,7 +884,7 @@ def replay_transcript(path, state):
                             if m:
                                 task = m.group(1)
                                 if tid in logged_ids:
-                                    # the server logged this quiz live; do not log its notification again
+                                    # the server logged this quiz itself; do not log its notification again
                                     logged_ids.add("task:" + task)
                                 elif task in task_results and ("task:" + task) not in logged_ids:
                                     # rebuild: place the quiz where it was asked, not where its result arrived
@@ -1027,7 +983,7 @@ def handle_hook():
         diag(f"UserPromptSubmit prose={'yes' if key else 'no'} cursor={state.get('line')}")
 
     elif event == "PreToolUse" and data.get("tool_name") in (QUIZ_TOOL, "AskUserQuestion"):
-        # the quiz server writes its question block itself, live; prose the teacher wrote just before the
+        # the quiz server writes its block itself; prose the teacher wrote just before the
         # call is only in the transcript, so flush it now to keep the note in reading order
         if tp and os.path.exists(tp):
             found = wait_for_tool_use(tp, data.get("tool_use_id"), data.get("tool_name"), state.get("line", 0))
