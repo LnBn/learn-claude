@@ -15,11 +15,24 @@
 
 `|quiz` is callout metadata: Obsidian hides it, and code and CSS find quiz blocks by it. mcp/quiz_server.py and
 md_log.py write the block (render); md_log.py, lesson.py and figures.py read it back (parse).
+
+Notes written before this block existed hold a "> [!question] Quiz" callout and a result callout per quiz:
+
+    quiz_block.py convert [--write] [--force] <note>...
+
+prints the diff that folds them; --write applies it, after copying each note to md-log-state/quiz-fold-backup/.
 """
+import difflib
 import os
 import re
+import shutil
+import sys
+import time
 
 import figures
+
+CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKUP_DIR = os.path.join(CLAUDE_DIR, "md-log-state", "quiz-fold-backup")
 
 TITLE_LIMIT = 100
 HEADER_RE = re.compile(r"^>\s?\[!(\w+)\|quiz\][-+]?[ \t]*(.*)$")
@@ -118,3 +131,141 @@ def parse(lines):
     core = title[:-1] if title.endswith("…") else title
     text = body if body.startswith(core) else title + "\n" + body
     return {"kind": kind, "outcome": outcome, "title": title, "text": text}
+
+
+# ---- converting notes written before the folded block
+
+OLD_QUESTION = "> [!question] Quiz"
+OLD_ASKED = "> [!note] Asked before answering"
+OLD_RESULTS = {  # result callout -> (kind, title prefix) of the folded block
+    "> [!success] ✓ Correct": ("success", "✓ "),
+    "> [!failure] ✗ Incorrect": ("failure", "✗ "),
+    "> [!info] I don't know": ("info", "? "),
+    "> [!warning] Quiz — cancelled": ("warning", "⊘ Skipped: "),
+    "> [!warning] Quiz — unavailable": ("warning", "⊘ Unavailable: "),
+}
+FALLBACK_ANSWER = "> [!example] Answer"  # the fallback quiz protocol's answer: ungraded, left as it is
+PI_TITLES = ("Quiz — correct ✓", "Quiz — incorrect ✗", "[!question] Quiz — I don't know")
+
+
+def _callouts(lines):
+    """(start, end) line ranges, end exclusive, of every '>'-prefixed block."""
+    out, i = [], 0
+    while i < len(lines):
+        if lines[i].startswith(">"):
+            j = i
+            while j < len(lines) and lines[j].startswith(">"):
+                j += 1
+            out.append((i, j))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def _body(lines):
+    body = [ln[2:] if ln.startswith("> ") else ln[1:] for ln in lines]
+    while body and not body[0].strip():
+        body.pop(0)
+    while body and not body[-1].strip():
+        body.pop()
+    return body
+
+
+def convert_text(text, force=False):
+    """`text` with each old question callout and its result folded into one quiz block.
+    Raises ValueError for a pi-era note, or for a note that already has folded blocks unless `force`."""
+    if any(t in text for t in PI_TITLES):
+        raise ValueError("pi-era note: its questions and results are not in pairs")
+    lines = text.split("\n")
+    spans = _callouts(lines)
+    head = [lines[a].strip() for a, _ in spans]
+    olds = [k for k, h in enumerate(head)
+            if h == OLD_QUESTION and not (k + 1 < len(spans) and head[k + 1] == FALLBACK_ANSWER)]
+    if olds and not force and any(is_quiz_header(lines[a]) for a, _ in spans):
+        raise ValueError("the note has folded quiz blocks and old ones; --force converts the old ones")
+    new = {}  # span index -> replacement text, "" to remove the callout
+    for k in olds:
+        a, b = spans[k]
+        question = _body(lines[a + 1:b])
+        title = cut_title(question[0]) if question else ""
+        para = question.index("") if "" in question else len(question)
+        if "\n".join(question[:para]).strip() == title:
+            question = question[para + 1:]  # the title is the whole question
+        asked = result = None
+        for j in range(k + 1, len(spans)):
+            if head[j] == OLD_QUESTION:
+                break
+            if head[j] == OLD_ASKED and asked is None:
+                asked = j
+            elif head[j] in OLD_RESULTS:
+                result = j
+                break
+        q = "\n".join(question)
+        if asked is not None:
+            note = "\n".join(_body(lines[spans[asked][0] + 1:spans[asked][1]]))
+            new[k] = block("note", "Asked first: " + title, [q, "Your question: " + note])
+            new[asked] = ""
+        if result is not None:
+            kind, prefix = OLD_RESULTS[head[result]]
+            r = "\n".join(_body(lines[spans[result][0] + 1:spans[result][1]]))
+            folded = block(kind, prefix + title, [p for p in (q, r) if p])
+            if asked is None:
+                new[k], new[result] = folded, ""
+            else:
+                new[result] = folded
+        elif asked is None:
+            new[k] = block("question", title, [q])
+    out, i, starts = [], 0, {spans[k][0]: k for k in new}
+    while i < len(lines):
+        k = starts.get(i)
+        if k is None:
+            out.append(lines[i])
+            i += 1
+            continue
+        if new[k]:
+            out.append(new[k])
+        elif spans[k][1] < len(lines) and not lines[spans[k][1]].strip():
+            while out and not out[-1].strip():
+                out.pop()  # a removed callout takes the blank lines before it; those after it stay
+        i = spans[k][1]
+    return "\n".join(out)
+
+
+def convert(paths, write=False, force=False):
+    refused = False
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            old = f.read()
+        try:
+            text = convert_text(old, force=force)
+        except ValueError as e:
+            print(f"REFUSED {path}: {e}")
+            refused = True
+            continue
+        if text == old:
+            print(f"unchanged {path}")
+        elif not write:
+            sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), text.splitlines(True), path, path))
+        else:
+            os.makedirs(BACKUP_DIR, exist_ok=True)
+            stem = os.path.splitext(os.path.basename(path))[0]
+            shutil.copy2(path, os.path.join(BACKUP_DIR, f"{stem}-{time.strftime('%Y%m%d-%H%M%S')}.md"))
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            print(f"converted {path}: {sum(1 for ln in text.split(chr(10)) if is_quiz_header(ln))} quiz blocks")
+    return 1 if refused else 0
+
+
+def main(argv):
+    args = argv[1:]
+    flags = {a for a in args[1:] if a.startswith("--")}
+    paths = [a for a in args[1:] if not a.startswith("--")]
+    if not args or args[0] != "convert" or flags - {"--write", "--force"} or not paths:
+        print("usage: quiz_block.py convert [--write] [--force] <note>...", file=sys.stderr)
+        return 2
+    return convert(paths, write="--write" in flags, force="--force" in flags)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
