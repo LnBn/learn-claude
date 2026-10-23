@@ -32,7 +32,7 @@ CASES = [
 def large():
     import random
     r = random.Random(1)
-    yield {"name": "n = 4000", "args": [[r.random() for _ in range(4000)]]}
+    yield {"name": "n = 10000", "args": [[r.random() for _ in range(10000)]]}
 '''
 
 NOTE = """# Running maximum

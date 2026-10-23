@@ -36,7 +36,8 @@ class Runner(unittest.TestCase):
     def test_count(self):
         out = subprocess.run([sys.executable, str(RUNNER), str(self.tests), "--count"],
                              capture_output=True, text=True).stdout
-        self.assertEqual(json.loads(out), {"function": "running_max", "cases": 3, "large": 1})
+        self.assertEqual(json.loads(out), {"function": "running_max", "cases": ["example", "empty", "all equal"],
+                                           "large": ["n = 10000"], "slow": True})
 
     def test_pass(self):
         r, _ = self.run_case("case:0", fx.GOOD)

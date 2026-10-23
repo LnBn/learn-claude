@@ -6,7 +6,7 @@ coding.py starts this script once per case, so a crash, a runaway loop or a runa
 not in the caller. Memory is capped at 2 GiB; --cpu caps CPU seconds (the kernel kills the process past it).
 
     coding_runner.py <tests.py> --count
-                        {"function", "cases", "large"} of a hidden-tests module
+                        {"function", "cases": [names], "large": [names], "slow": bool} of a hidden-tests module
     coding_runner.py <tests.py> case:<i>|large:<i> (--solution <file.py> | --impl reference|slow) [--cpu <s>]
                         {"name", "passed", "got", "expected", "seconds", "stdout", "error"}
 
@@ -79,7 +79,8 @@ def error_text(exc, path):
 def count(tests_path):
     tests = load(tests_path, "hidden_tests")
     large = list(tests.large()) if hasattr(tests, "large") else []
-    return {"function": tests.FUNCTION, "cases": len(tests.CASES), "large": len(large)}
+    return {"function": tests.FUNCTION, "cases": [c.get("name", f"case {i + 1}") for i, c in enumerate(tests.CASES)],
+            "large": [c.get("name", f"large {i + 1}") for i, c in enumerate(large)], "slow": hasattr(tests, "slow")}
 
 
 def run(tests_path, case, solution=None, impl=None):
@@ -92,7 +93,8 @@ def run(tests_path, case, solution=None, impl=None):
         c = list(tests.large())[int(i)]
         args = c["args"]
         expected = tests.reference(*copy.deepcopy(args))
-    result = {"name": c.get("name", case), "passed": False, "got": None, "expected": short(expected),
+    name = c.get("name", f"{'case' if kind == 'case' else 'large'} {int(i) + 1}")
+    result = {"name": name, "passed": False, "got": None, "expected": short(expected),
               "seconds": None, "stdout": "", "error": None}
     path = os.path.abspath(solution or tests_path)
     out = io.StringIO()
