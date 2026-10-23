@@ -24,27 +24,16 @@ lesson — helpers for resuming a multi-session lesson from its markdown log.
                                      Obsidian; the lesson note stays clean)
 
 The lesson file is the md-log mirror written by hooks/md_log.py and the quiz
-server — or by pi's md-log extension (its callout titles are understood too);
-nothing here is loaded into context except what this script prints.
+server (quiz blocks: hooks/quiz_block.py); nothing here is loaded into context except what this script prints.
 """
 import json
 import os
 import re
 import sys
 
+import quiz_block
+
 CHECKPOINT_RE = re.compile(r"^> \[!summary\] Checkpoint", re.I)
-RESULT_KINDS = {
-    # this setup (mcp/quiz_server.py)
-    "> [!success] ✓ Correct": "✓",
-    "> [!failure] ✗ Incorrect": "✗",
-    "> [!info] I don't know": "?",
-    "> [!warning] Quiz — cancelled": "skip",
-    # pi's md-log extension
-    "> [!success] Quiz — correct ✓": "✓",
-    "> [!failure] Quiz — incorrect ✗": "✗",
-    "> [!question] Quiz — I don't know": "?",
-    "> [!warning] Quiz — cancelled": "skip",
-}
 NOTE_SUFFIXES = (" — Resume Here.md", " - Resume Here.md", " — resume here.md", " - resume here.md")
 MAX_NOTE_LINES = 200
 MAX_TAIL_LINES = 60
@@ -180,27 +169,13 @@ def last_mermaid(lines):
 
 
 def quiz_outcomes(lines):
-    """Pair each Quiz question block with the result callout that follows it.
-
-    The result is usually the very next block. When the learner asked the teacher first (`?` in the popup),
-    an "Asked before answering" note and the teacher's answer (which may hold callouts of its own) sit
-    between the question and its grade, so look ahead as far as the next Quiz block."""
-    blocks = list(callout_blocks(lines))
+    """(title, outcome) for each graded quiz block, in note order. An "asked first" block is not an outcome:
+    the re-ask after the teacher's answer is its own block and carries the grade."""
     out = []
-    for k, (i, blk) in enumerate(blocks):
-        if blk[0].strip() != "> [!question] Quiz":
-            continue
-        body = [ln[2:] if ln.startswith("> ") else ln[1:] for ln in blk[1:]]
-        question = next((b for b in body if b.strip()), "").strip()
-        outcome = "(unanswered)"
-        for _, nxt in blocks[k + 1:]:
-            head = nxt[0].strip()
-            if head in RESULT_KINDS:
-                outcome = RESULT_KINDS[head]
-                break
-            if head == "> [!question] Quiz":
-                break
-        out.append((question, outcome))
+    for _, blk in callout_blocks(lines):
+        p = quiz_block.parse(blk)
+        if p and p["outcome"] != "asked":
+            out.append((p["title"], p["outcome"]))
     return out
 
 

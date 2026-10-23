@@ -19,6 +19,8 @@ import shutil
 import subprocess
 import sys
 
+import quiz_block  # imports this module too; each uses the other only inside functions
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOOK = os.path.join(HERE, "book.py")
 VAULT_DIR = os.path.dirname(os.path.dirname(HERE))  # book.py writes viz/ under its working directory
@@ -138,7 +140,7 @@ def process(text, note, existing=None):
             continue
         linked.add(fid)
         a, b = _span(lines, i)
-        before = lines[a].strip().startswith("> [!question]")
+        before = quiz_block.is_quiz_header(lines[a])
         inserts.append((a if before else b + 1, before, f"![[{os.path.basename(path)}|600]] ^{block_id(fid)}"))
     for i in range(len(lines)):
         if i not in skip:

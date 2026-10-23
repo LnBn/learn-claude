@@ -1,6 +1,11 @@
+import json
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests._vault import make_vault, run
+import figures
 import quiz_block
 
 
@@ -140,6 +145,25 @@ class Parse(unittest.TestCase):
         self.assertTrue(quiz_block.is_quiz_header("> [!question|quiz]- Foo"))
         self.assertFalse(quiz_block.is_quiz_header("> [!question] Quiz"))
 
+
+
+class FigureAboveQuiz(unittest.TestCase):
+    def test_figure_above_quiz(self):
+        course = Path(tempfile.mkdtemp(prefix="quiz-figure-"))
+        self.addCleanup(shutil.rmtree, course, True)
+        (course / ".course").mkdir()
+        (course / ".course" / "book.json").write_text("{}")
+        (course / ".course" / "state.json").write_text(json.dumps({"slug": "pml1"}))
+        note = course / "pml1-ch01.md"
+        note.write_text("Earlier.\n")
+        orig = figures.crop
+        figures.crop = lambda c, fid: str(course / f"pml1-fig-{fid}.png")
+        self.addCleanup(setattr, figures, "crop", orig)
+        block = quiz_block.render(record(question="In Figure 1.4, what is at the root?", answers=[1], correct=True))
+        out = figures.process(block, str(note), existing="Earlier.\n").split("\n")
+        self.assertEqual(out[0], "![[pml1-fig-1.4.png|600]] ^fig-1-4")
+        self.assertEqual(out[1], "")
+        self.assertTrue(quiz_block.is_quiz_header(out[2]))
 
 
 # ---- old notes, as the vault holds them (lines shortened)
