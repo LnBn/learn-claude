@@ -14,9 +14,8 @@ Options-only: single-select or multi-select. An "I don't know" choice is always
 added so the learner can signal a genuine gap instead of guessing. An optional
 free-text note travels with any answer.
 
-Logging: if the calling session mirrors a note, the question block is appended
-BEFORE the learner answers (so it appears live, never containing the answer),
-and the answer + feedback block after. Which note that is comes from
+Logging: if the calling session mirrors a note, one folded quiz block (hooks/quiz_block.py)
+is appended once the learner answers, skips, or asks the teacher first. Which note that is comes from
 `.claude/md-log-state/quiz-target.json`, written per call by the md-log
 PreToolUse hook (the server itself does not know its session); without an
 entry it falls back to `.claude/md-log.json`. The tool-use id is recorded in
@@ -39,6 +38,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 VAULT_DIR = os.path.dirname(CLAUDE_DIR)  # relative figure paths resolve here
 sys.path.insert(0, os.path.join(CLAUDE_DIR, "hooks"))
 import figures  # noqa: E402  (book figures named in a course quiz: cropped, embedded once, linked)
+import quiz_block  # noqa: E402  (the folded quiz callout written to the note)
 import sections  # noqa: E402  ("§1.2" in a quiz: a link to that section's heading)
 MDLOG_CONFIG = os.path.join(CLAUDE_DIR, "md-log.json")
 STATE_DIR = os.path.join(CLAUDE_DIR, "md-log-state")
@@ -228,57 +228,6 @@ def mark_logged(tool_use_id):
         pass
 
 
-def callout(kind, title, body_lines):
-    lines = [f"> [!{kind}] {title}", ">"]
-    for line in body_lines:
-        for sub in str(line).split("\n"):
-            lines.append(f"> {sub}" if sub else ">")
-    return "\n".join(lines)
-
-
-def question_block(r):
-    body = [r["question"]]
-    if r.get("details"):
-        body += ["", r["details"]]
-    if r.get("figure") and not figures.mentions(r["question"] + " " + r.get("details", "")):
-        body += ["", f"![[{os.path.basename(r['figure'])}|500]]"]  # a book figure the text names is embedded by figures.py
-    body.append("")
-    body += [f"{o['index']}. {o['label']}" for o in r["options"]]
-    if r.get("multiSelect"):
-        body += ["", "(select all that apply)"]
-    return callout("question", "Quiz", body)
-
-
-def result_block(r):
-    """Shared with hooks/md_log.py (kept in sync by hand)."""
-    status = r.get("status")
-    if status == "cancelled":
-        return callout("warning", "Quiz — cancelled", ["(user skipped)"])
-    if status == "unavailable":
-        return callout("warning", "Quiz — unavailable", [r.get("message", "")])
-    if status == "asked":
-        return callout("note", "Asked before answering", [r.get("learnerQuestion", "")])
-    by_index = {o["index"]: o["label"] for o in r["options"]}
-    correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
-    body = []
-    if r.get("dontKnow"):
-        kind, title = "info", "I don't know"
-        body.append(f"Correct answer: {correct}")
-    else:
-        selected = ", ".join(f"{i}. {by_index[i]}" for i in r["answers"])
-        if r.get("correct"):
-            kind, title = "success", "✓ Correct"
-            body.append(f"Selected: {selected}")
-        else:
-            kind, title = "failure", "✗ Incorrect"
-            body += [f"Selected: {selected}", f"Correct answer: {correct}"]
-    if r.get("explanation"):
-        body += ["", r["explanation"]]
-    if r.get("note"):
-        body += ["", f"Note: {r['note']}"]
-    return callout(kind, title, body)
-
-
 # ----------------------------------------------------------------- quiz logic
 
 def normalize_options(raw):
@@ -386,7 +335,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
                    "end that reply with the ready line, and ask this question after they say ready.")
 
     # A re-ask after "ask the teacher first": same option set as the pending question -> keep the
-    # displayed order the learner already saw and do not log the question block again.
+    # displayed order the learner already saw.
     prev = load_json(LAST_ASKED, {})
     key_now = sorted(o["label"].strip().lower() for o in options)
     reask = bool(prev) and prev.get("labels") == key_now
@@ -411,10 +360,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
         if auto:
             record["figure"] = auto
 
-    # --- show the question (live) before the learner answers (not again on a re-ask)
-    if not reask:
-        append_log(question_block(record))
-    mark_logged(tool_use_id)  # now, not after the answer: this quiz's blocks are the server's to write
+    mark_logged(tool_use_id)  # now, not after the answer: this quiz's block is the server's to write
     clear_last_asked()
 
     # --- ask the learner: tmux popup when available (full question + options, like pi),
@@ -428,7 +374,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
         q = str(ui.get("question") or "").strip()
         record["status"] = "asked"
         record["learnerQuestion"] = q
-        append_log(result_block(record))
+        append_log(quiz_block.render(record))
         mark_logged(tool_use_id)
         save_last_asked(displayed)
         return result(
@@ -439,7 +385,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
 
     if ui.get("action") != "accept":
         record["status"] = "cancelled"
-        append_log(result_block(record))
+        append_log(quiz_block.render(record))
         mark_logged(tool_use_id)
         return result("User skipped the quiz (cancelled). Ask whether to continue or move on.", record)
 
@@ -449,7 +395,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
     correct = (not dont_know) and sorted(picked) == correct_indices
     record.update({"answers": picked, "correct": correct, "dontKnow": dont_know, "note": note})
 
-    append_log(result_block(record))
+    append_log(quiz_block.render(record))
     mark_logged(tool_use_id)
 
     by_index = {o["index"]: o["label"] for o in displayed}

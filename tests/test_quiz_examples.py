@@ -70,5 +70,60 @@ class MissingExamples(unittest.TestCase):
         self.assertIn("Example 20 is not in the note", out["content"][0]["text"])
 
 
+ARGS = {
+    "question": "What is 2+2?", "options": [{"label": "4", "value": "four"}, {"label": "5", "value": "five"}],
+    "correctAnswer": "four", "explanation": "Arithmetic.", "shuffle": False,
+}
+
+
+class WritesOneBlock(unittest.TestCase):
+    """The server writes one folded block per quiz call, after the learner acts, and nothing before."""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="quiz-block-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.note = self.d / "lesson.md"
+        self.note.write_text("")
+        self.ui = []  # scripted popup results, one per call
+        self.seen = []  # the note's content when the popup opened
+        def ask(record, displayed, msg_details, multi):
+            self.seen.append(self.note.read_text())
+            return self.ui.pop(0)
+        for name, value in [("log_file", lambda: str(self.note)), ("tmux_available", lambda: False),
+                            ("set_target", lambda tool_use_id: None), ("ask_via_elicitation", ask),
+                            ("LAST_ASKED", str(self.d / "last-asked.json")),
+                            ("QUIZ_LOGGED", str(self.d / "quiz-logged.json"))]:
+            self.addCleanup(setattr, quiz_server, name, getattr(quiz_server, name))
+            setattr(quiz_server, name, value)
+
+    def headers(self):
+        return [ln for ln in self.note.read_text().split("\n") if ln.startswith("> [!")]
+
+    def test_answer_writes_one_block(self):
+        self.ui = [{"action": "accept", "answers": [1]}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertEqual(self.headers(), ["> [!success|quiz]- ✓ What is 2+2?"])
+
+    def test_nothing_written_before_answer(self):
+        self.ui = [{"action": "accept", "answers": [2]}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertEqual(self.seen, [""])
+        self.assertEqual(self.headers(), ["> [!failure|quiz]- ✗ What is 2+2?"])
+
+    def test_ask_then_reask(self):
+        self.ui = [{"action": "ask", "question": "Why?"}, {"action": "accept", "answers": [1]}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        quiz_server.run_quiz(dict(ARGS), "toolu_2")
+        self.assertEqual(self.headers(), ["> [!note|quiz]- Asked first: What is 2+2?",
+                                          "> [!success|quiz]- ✓ What is 2+2?"])
+        self.assertEqual(self.note.read_text().count("What is 2+2?"), 2)
+        self.assertIn("> Your question: Why?", self.note.read_text())
+
+    def test_cancel(self):
+        self.ui = [{"action": "decline"}]
+        quiz_server.run_quiz(dict(ARGS), "toolu_1")
+        self.assertEqual(self.headers(), ["> [!warning|quiz]- ⊘ Skipped: What is 2+2?"])
+
+
 if __name__ == "__main__":
     unittest.main()
