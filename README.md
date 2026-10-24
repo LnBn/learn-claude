@@ -16,7 +16,7 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 
 Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Interviews](#interviews) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
@@ -273,8 +273,10 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
 | `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
 | `courses/<name>/exams/` | Exam papers, one per attempt: `<name>-ch02-exam-1.md`. |
+| `courses/<name>/interviews/` | Mock interviews, one note per round: `<name>-interview-1.md`. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
 | `courses/<name>/.exams/` | Hidden: each exam's marking scheme, and your answers as submitted. |
+| `courses/<name>/.interviews/` | Hidden: each round's problems, clock record and marks. |
 | `courses/<name>/.checkpoints/` | Hidden: checkpoints, as for any lesson. |
 
 ## Exams
@@ -332,6 +334,40 @@ Nothing is blocked: you can go on to the next chapter whatever the score.
 Run `/exam 3` again for a new paper with new questions. Every attempt is kept, and the newest one counts for recall checks. A paper you started but do not want to finish can be dropped with `/exam abandon <paper>`. `/exam list` shows every paper with its score.
 
 An exam on a lesson note outside a course works the same way, with its papers in an `exams/` folder beside the note.
+
+## Interviews
+
+A mock interview is a timed round of problems you have not seen, on the units of the course you have finished, with an interviewer who behaves like a real one.
+
+```
+/interview            # asks how long
+/interview standard   # 3 problems, 12 minutes each
+```
+
+| Length | Problems | Time |
+|---|---|---|
+| short | 2 | 24 minutes |
+| standard | 3 | 36 minutes |
+| long | 4 | 48 minutes |
+
+The problems are written for the round and checked by running code before it starts. They are not labelled by topic: recognising which idea a problem needs is part of the test.
+
+### During the round
+
+Think aloud in plain messages. The interviewer says little while you make progress, asks you to justify a step a real interviewer would question, and checks your final answer the moment you give it. Give answers as a number or a formula, as in a typed quiz.
+
+- **Hints.** When you are stuck, or time is running short, the interviewer gives a nudge. A pointed-out error ("are you sure about that term?") also counts as a hint. Being asked *why* does not.
+- **The clock.** Each problem has 12 minutes, shown in the tmux status bar (`P2/3 9:40/12:00`). Near the end the interviewer gives a stronger nudge; when time is up it sketches the solution and moves on. Your own status bar comes back when the round ends.
+- **Follow-ups.** A correct answer with at least two minutes left gets a follow-up: the same problem with one thing changed.
+- **Stopping.** `/interview stop`, or saying you want to stop, ends the round and goes to the scorecard.
+
+### The scorecard
+
+The round's note, `courses/<name>/interviews/<name>-interview-1.md`, holds the conversation, one heading per problem, and then the scorecard: each problem's outcome (solved, solved with hints, not solved, not reached), time, hints, follow-up and the idea it needed; feedback on how you explained your reasoning; two or three things to work on, with links to the sections to revisit; and each problem's solution, folded. You can ask about any problem afterwards; the answer goes into the note beside it.
+
+A problem you did not solve unaided comes back in the next recall check of its chapter.
+
+`/interview list` shows every round with its result. `/interview abandon` drops a round you will not finish.
 
 ## Coding practice
 
@@ -475,6 +511,10 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/exam reopen <paper>` | Take back a paper you submitted but that is not graded yet, to change it and submit again. |
 | `/exam abandon <paper>` | Drop a paper you will not finish; it stays on file. |
 | `/exam list` | Every exam paper, with its status and score. |
+| `/interview [short \| standard \| long]` | A timed mock interview on the units finished so far. |
+| `/interview stop` | End the round early and get the scorecard. |
+| `/interview list` | Every round, with its result. |
+| `/interview abandon` | Drop a round you will not finish. |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
 | `/code submit` | Run the hidden tests on the newest unfinished problem (or the one you name). Typing `submit` does the same, unless an exam paper is out. |
