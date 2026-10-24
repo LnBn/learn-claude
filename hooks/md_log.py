@@ -455,7 +455,13 @@ def append(text):
         with open(path, "a", encoding="utf-8") as f:
             f.write(prefix + text.strip("\n") + "\n")
     except Exception:
-        pass
+        return
+    if "[[" in text and re.search(r"Techniques?\s*:", text, re.I):  # a section was tagged: the notes list it now
+        try:
+            import technique
+            technique.sync()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------- cleaning

@@ -190,7 +190,11 @@ For **every node**, in this order:
    - Check missed → they did not read closely, or the text was unclear. Point to the exact sentence, restate that part, re-check with a different question.
    - Apply missed → diagnose which move went wrong from the distractor they chose, re-teach *that* move in a short addendum to the exposition, then a fresh Apply variant. Do not proceed on a failed Apply.
    - "I don't know" → a genuine gap: re-teach, do not re-ask the same question.
-   - Both passed → the node is solid. One line to close the section, then the next heading.
+   - Both passed → the node is solid. Close the section, then the next heading. Closing a section:
+     1. In a course, and in a lesson outside a course only when it is about solving problems (puzzles, probability, interview questions; not a tool, a language or a system), name the techniques the section used. Run `python3 .claude/hooks/technique.py list` and reuse a name or an alias when the trick is the same one. Most sections use one or two; a section that teaches a definition and uses no trick has none, and skips to 4.
+     2. **A technique that has no note yet:** write its note as the `techniques` skill's **Writing a technique note** says. Then end the reply with one question, as plain text: *What in this problem should have made you think of <technique>?* When they answer, record it in their words: `python3 .claude/hooks/technique.py cue "<technique>" "<their answer>" --source "<note stem>#<heading>"`, then go on to 4.
+     3. **A known technique in a setting that disguised it well** may get the same question, at most once per section. Otherwise none. If the problem showed a trap or a cue the technique's note lacks, add it with the Edit tool.
+     4. One line to close the section, then, as the section's last line, the tag line: `*Techniques: [[<technique>]] · [[<technique>]]*`, canonical names only. A section with no technique gets no tag line.
 
    **A re-teach ends the reply too**, for the reason in step 2: the restated part, the addendum, the new worked example. Close it with `Say **ready** when you have read this.` and stop. The new question comes after they say ready, with no lead-in text. A one-line pointer to a sentence already in the note is not a re-teach and can go in the reply with the next quiz.
 
@@ -276,6 +280,8 @@ When the session was started with `/course next` or `/course study`, the lesson 
 **Quizzes from the book.** The check comes from your exposition, as always. The apply may be your own, or adapted from one of the book's worked examples or exercises. A worked example is already in the exposition, so an apply drawn from one changes its setting or a condition it relies on (step 4 of Phase 3), never only its numbers. The book's exercises are often the author's own transfer problems and make good applies. Name the source in the quiz's `details` ("Adapted from Exercise 2.3, p. 74."). Before you use an exercise, run `python3 .claude/hooks/book.py exercise <id>`: one marked `ASSESSED` is never used. You need the answer to write the options, so solve it and check every number by running code. Afterwards record it with `book.py exercise <id> --status quizzed`.
 
 **Record progress.** When every node of a unit has passed, run `python3 .claude/hooks/book.py done <id>`, with `--status shaky` if an apply in the unit was missed more than once or is still failing when the learner stops. Write nothing about the call. Its output names the next unit and its pages: go on to it in the same session. When it says the chapter is complete, close the chapter in two or three sentences on what was built, save a checkpoint as for `/lesson pause`, and tell the learner that `/course next` opens the next chapter. End with one sentence saying that `/exam <chapter>` sets an exam on the chapter just finished (the `EXAM:` line), and that `/interview` runs a mock interview on everything finished so far. Do not start either unasked.
+
+**Techniques.** Every section of a unit is closed with its techniques, as in Phase 3 step 5, so the technique notes collect the book's problems as the course goes.
 
 **Help with the book's exercises** follows the `exercise` skill: hints in steps, never the whole solution unprompted.
 

@@ -269,6 +269,18 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **Feeding back.** `lesson.py summary` imports `interview.interview_misses` after the exam misses: the problems not solved unaided in the newest finished round, whose first unit belongs to the note being resumed or the chapter before it.
 
+## Technique notes
+
+`hooks/technique.py` keeps the notes in `<vault>/techniques/`; `skills/techniques/SKILL.md` holds the note template and the backfill.
+
+**Tags.** A lesson section is tagged by a line closing it, `*Techniques: [[Symmetry]] · [[Pigeonhole principle]]*` (regex `^\*Techniques: (.+)\*$`, wikilinks separated by ` · `), which belongs to the nearest `###` heading above it; several tag lines in a section are merged. An interview problem is tagged by the `techniques` list of its problem file. `interview.py check` accepts a name with no note and lists it on a `NEW TECHNIQUES` line: a note written while setting the round would show the learner its tricks, so the interview skill writes those notes after `finish`. Tag lines are read leniently (`**Techniques:**`, a missing closing `*`, inside a callout, `Technique:`), and nothing inside a fenced code block is read, so design documents that quote the format are not counted. Notes under `techniques/`, `.claude/`, `.obsidian/`, any `exams/` or `interviews/` folder and review notes are not scanned.
+
+**Resolution.** A tag's target (the text before `|` or `#`) is matched case-insensitively against each note's file name and its frontmatter `aliases`. Obsidian itself does not resolve a raw alias link, so the teacher writes canonical names; unresolved targets are listed under **Unknown techniques** in the index.
+
+**What the script writes.** Only the block between `%% problems: written by technique.py sync; edits inside are replaced %%` and `%% /problems %%` in each note (appended under `## Problems` when missing), and the whole index. Records: a section's graded quiz marks (✓ pass; ✗, ? miss), an interview problem's outcome (`solved` pass; `hinted`, `unsolved` miss). The index sorts by pass rate, lowest first. A file whose content would not change is not written.
+
+**When `sync` runs.** From `md_log.append`, after it writes text containing `*Techniques:` to a note: a separate `Stop` hook entry could run in parallel with the mirror and read the note before the tag line is in it. Also from `interview.py finish`, from `technique.py tag`, `cue` and `list`, and by hand. The cue question's answer is added with `technique.py cue`, under `**In your words:**`.
+
 ## Coding practice
 
 A code task is three files the teacher writes: a task note, a starter file the learner edits, and a hidden tests module. `coding.py` does what must be exact; `coding_runner.py` runs one case. The `code` skill is the teacher's procedure.
