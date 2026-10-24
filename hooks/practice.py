@@ -20,6 +20,7 @@ import glob
 import hashlib
 import json
 import os
+import random
 import re
 import sys
 from datetime import date, timedelta
@@ -29,6 +30,9 @@ import lesson
 import quiz_block
 import technique
 
+sys.path.insert(0, os.path.join(technique.CLAUDE_DIR, "mcp"))
+import answer_check  # noqa: E402  (drill answers: the typed-answer checker)
+
 VAULT = technique.VAULT
 PRACTICE_DIR = os.path.join(VAULT, "practice")
 CARDS = os.path.join(PRACTICE_DIR, ".cards.json")
@@ -37,6 +41,8 @@ INTERVALS = [1, 3, 7, 16, 35]
 SPREAD_DAYS = 14
 SKIP_DIRS = {"exams", "interviews"}
 TOP_SKIP = {"techniques", "practice"}
+MIN_TECHNIQUES = 4  # the recognition question has four options
+STRONG_FLOOR = 2
 
 
 # ---------------------------------------------------------------- finding misses
@@ -141,11 +147,26 @@ def interview_misses(res):
     return out
 
 
+def drill_misses():
+    out = []
+    for d in drills():
+        problems = {p.get("slot"): p for p in (load_drill_problems(d["id"]) or [])}
+        for sl in d["slots"]:
+            if "recognised" not in sl or (sl["recognised"] == "right" and sl["solved"] == "right"):
+                continue
+            out.append({"key": f"drill:{d['id']}#{sl['slot']}", "kind": "drill", "source": f"{d['date']}#Drill {d['id']}",
+                        "label": f"drill {d['id']}, problem {sl['slot']}", "section": None,
+                        "techniques": [sl["technique"]],
+                        "prompt": " ".join(str(problems.get(sl["slot"], {}).get("statement") or "").split()),
+                        "missed": d["date"]})
+    return out
+
+
 def find_misses():
     res = technique.resolver(technique.load_techniques())
     section_tags = {}
     out = quiz_misses(res, section_tags)
-    return out + exam_misses(section_tags) + interview_misses(res)
+    return out + exam_misses(section_tags) + interview_misses(res) + drill_misses()
 
 
 # ---------------------------------------------------------------- the cards
@@ -231,6 +252,205 @@ def section_key_ideas(section):
     return []
 
 
+# ---------------------------------------------------------------- drills
+
+def drill_path(drill_id, problems=False):
+    return os.path.join(DRILLS_DIR, f"{drill_id}{'.problems' if problems else ''}.json")
+
+
+def drills():
+    """Every drill, oldest first."""
+    out = []
+    for p in sorted(glob.glob(os.path.join(glob.escape(DRILLS_DIR), "*.json"))):
+        if p.endswith(".problems.json"):
+            continue
+        d = book.load_json(p, None)
+        if isinstance(d, dict) and isinstance(d.get("slots"), list):
+            out.append(d)
+    return out
+
+
+def load_drill(drill_id):
+    d = book.load_json(drill_path(drill_id), None)
+    if not isinstance(d, dict):
+        book.die(f"no drill {drill_id}", 1)
+    return d
+
+
+def save_drill(d):
+    book.save_json(drill_path(d["id"]), d)
+
+
+def load_drill_problems(drill_id):
+    data = book.load_json(drill_path(drill_id, problems=True), None)
+    return data.get("problems") if isinstance(data, dict) else None
+
+
+def drill_rates():
+    """{technique: (recognised right, recognised total, solved right, solved total)} over every drill."""
+    out = {}
+    for d in drills():
+        for sl in d["slots"]:
+            if "recognised" not in sl:
+                continue
+            r = out.setdefault(sl["technique"], [0, 0, 0, 0])
+            r[0] += sl["recognised"] == "right"
+            r[1] += 1
+            r[2] += sl["solved"] == "right"
+            r[3] += 1
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def _rate(right, total):
+    return right / total if total else 0.5
+
+
+def plan_drill(n, drill_id):
+    """[{"slot", "technique", "wrong"}]: techniques drawn by weakness, at least two strong ones, shuffled."""
+    techs, entries, _, _ = technique.collect()
+    names = sorted(techs)
+    if len(names) < MIN_TECHNIQUES:
+        book.die("a drill needs at least 4 technique notes; /techniques backfill makes them", 1)
+    passes = {}
+    for name in names:
+        p, m = technique.record(entries[name])
+        passes[name] = _rate(p, p + m)
+    recog = drill_rates()
+    weight = {name: 1 + 2 * (1 - passes[name]) + 2 * (1 - _rate(*recog.get(name, (0, 0))[:2])) for name in names}
+    rng = random.Random(hashlib.sha256(drill_id.encode()).hexdigest())
+
+    def draw(pool):
+        return rng.choices(pool, weights=[weight[x] for x in pool])[0]
+
+    picks = []
+    for _ in range(n):
+        left = [x for x in names if x not in picks]
+        picks.append(draw(left or names))
+    strong = sorted(names, key=lambda x: (-passes[x], x))[:len(names) // 2]
+    need = min(STRONG_FLOOR, n)
+    for i in reversed(range(len(picks))):  # replace the last drawn weak slots until the floor is met
+        if sum(x in strong for x in picks) >= need:
+            break
+        if picks[i] not in strong:
+            unused = [x for x in strong if x not in picks]
+            picks[i] = draw(unused or strong)
+    rng.shuffle(picks)
+    return [{"slot": i, "technique": t, "wrong": rng.sample([x for x in names if x != t], 3)}
+            for i, t in enumerate(picks, 1)]
+
+
+def _callout(lines, head):
+    for i, ln in enumerate(lines):
+        if ln.startswith(head):
+            out = []
+            for nxt in lines[i + 1:]:
+                if not nxt.startswith(">"):
+                    break
+                out.append(nxt.lstrip(">").strip())
+            return " ".join(x for x in out if x)
+    return ""
+
+
+def _items_after(lines, marker):
+    out, inside = [], False
+    for ln in lines:
+        if ln.strip() == marker:
+            inside = True
+            continue
+        if inside:
+            if ln.startswith("- "):
+                out.append(ln[2:].strip())
+            elif ln.strip():
+                break
+    return out
+
+
+def technique_brief(name):
+    """(trick, cues, problems already used) from a technique note."""
+    t = technique.load_techniques().get(name)
+    lines = lesson.read(t["path"]) if t else []
+    trick = _callout(lines, "> [!definition] The trick")
+    cues = _items_after(lines, "## Reach for it when")
+    cues += [re.sub(r'^"(.*?)".*$', r"\1", c) for c in _items_after(lines, "**In your words:**")]
+    text = "\n".join(lines)
+    used = []
+    if technique.START in text and technique.END in text:
+        block = text[text.index(technique.START):text.index(technique.END)]
+        used = [ln[2:] for ln in block.split("\n") if ln.startswith("- ")]
+    return trick, cues, used
+
+
+def cmd_drill(a):
+    today = date.today().isoformat()
+    k = sum(1 for d in drills() if d.get("date") == today) + 1
+    drill_id = f"{today}-{k}"
+    slots = plan_drill(a.n, drill_id)
+    os.makedirs(DRILLS_DIR, exist_ok=True)
+    save_drill({"id": drill_id, "date": today, "n": a.n, "slots": slots})
+    print(f"DRILL: {drill_id}")
+    print(f"PROBLEMS: {book.rel(drill_path(drill_id, problems=True))}")
+    for sl in slots:
+        trick, cues, used = technique_brief(sl["technique"])
+        print(f"SLOT {sl['slot']}: {sl['technique']}")
+        print(f"  trick: {trick or '—'}")
+        print(f"  cues: {'; '.join(cues) or '—'}")
+        print(f"  already used: {'; '.join(used) or '(none)'}")
+        print(f"  wrong options: {', '.join(sl['wrong'])}")
+
+
+def cmd_drill_check(a):
+    d = load_drill(a.id)
+    problems = load_drill_problems(a.id)
+    if problems is None:
+        book.die(f"no problem file at {book.rel(drill_path(a.id, problems=True))}", 1)
+    by_slot = {p.get("slot"): p for p in problems if isinstance(p, dict)}
+    errors = []
+    missing = [str(sl["slot"]) for sl in d["slots"] if sl["slot"] not in by_slot]
+    if missing:
+        errors.append(f"a problem for every slot: missing {', '.join(missing)}")
+    for slot, p in sorted(by_slot.items(), key=lambda x: str(x[0])):
+        for field in ("statement", "solution"):
+            if not str(p.get(field) or "").strip():
+                errors.append(f"slot {slot}: {field} is empty")
+        variables = p.get("variables") or {}
+        try:
+            answer_check.parse_ranges(variables)
+            answer_check.read(str(p.get("answer", "")), variables)
+        except answer_check.AnswerError as exc:
+            errors.append(f"slot {slot}: answer: {exc}")
+    if errors:
+        print("\n".join(errors))
+        sys.exit(1)
+    d["ready"] = True
+    save_drill(d)
+    print(f"🗒 drill ready: {len(by_slot)} problems")
+
+
+def cmd_drill_result(a):
+    d = load_drill(a.id)
+    sl = next((x for x in d["slots"] if str(x["slot"]) == a.slot), None)
+    if sl is None:
+        book.die(f"drill {a.id} has no slot {a.slot}", 1)
+    if "recognised" in sl:
+        book.die(f"slot {a.slot} of drill {a.id} is already recorded", 1)
+    sl.update({"recognised": a.recognised, "solved": a.solved, "date": date.today().isoformat()})
+    if a.picked:
+        sl["picked"] = a.picked
+    save_drill(d)
+    print(f"🗒 slot {a.slot}: recognised {a.recognised}, solved {a.solved}")
+
+
+def cmd_drill_summary(a):
+    d = load_drill(a.id)
+    done = [sl for sl in d["slots"] if "recognised" in sl]
+    rec = sum(sl["recognised"] == "right" for sl in done)
+    sol = sum(sl["solved"] == "right" for sl in done)
+    print(f"Recognised {rec}/{len(done)} · solved {sol}/{len(done)}")
+    for sl in done:
+        if sl["recognised"] == "wrong" and sl.get("picked"):
+            print(f"took {sl['picked']} for {sl['technique']}")
+
+
 # ---------------------------------------------------------------- commands
 
 def cmd_scan(a):
@@ -282,8 +502,21 @@ def main(argv=None):
     s.add_argument("card")
     s.add_argument("result", choices=["right", "wrong"])
     sub.add_parser("stats")
+    s = sub.add_parser("drill")
+    s.add_argument("--n", type=int, default=8)
+    s = sub.add_parser("drill-check")
+    s.add_argument("id")
+    s = sub.add_parser("drill-result")
+    s.add_argument("id")
+    s.add_argument("slot")
+    s.add_argument("--recognised", choices=["right", "wrong"], required=True)
+    s.add_argument("--picked")
+    s.add_argument("--solved", choices=["right", "wrong"], required=True)
+    s = sub.add_parser("drill-summary")
+    s.add_argument("id")
     a = p.parse_args(argv)
-    {"scan": cmd_scan, "due": cmd_due, "result": cmd_result, "stats": cmd_stats}[a.cmd](a)
+    {"scan": cmd_scan, "due": cmd_due, "result": cmd_result, "stats": cmd_stats, "drill": cmd_drill,
+     "drill-check": cmd_drill_check, "drill-result": cmd_drill_result, "drill-summary": cmd_drill_summary}[a.cmd](a)
 
 
 if __name__ == "__main__":
