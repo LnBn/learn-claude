@@ -1,9 +1,10 @@
+import json
 import random
 import unittest
 from collections import Counter
 
-import tests._vault  # noqa: F401  (puts hooks/ on the path)
-import arith
+from tests._vault import make_vault, run
+import arith  # noqa: E402  (the repo copy: pure functions only, nothing that touches a vault)
 
 
 def qs(mode, n=2000, seed=1):
@@ -119,6 +120,90 @@ class Questions(unittest.TestCase):
         self.assertEqual(arith.mode_of("12.5% of"), "fractions")
         self.assertEqual(arith.mode_of("cube"), "powers")
         self.assertEqual(arith.mode_of("≈ ÷"), "estimate")
+
+
+
+def sprint(mode, score, complete=True, questions=(), skipped=0, seconds=120):
+    return {"date": "2026-10-24", "time": "12:00", "mode": mode, "seconds": seconds, "complete": complete,
+            "score": score, "skipped": skipped, "questions": [{"kind": k, "ms": ms} for k, ms in questions]}
+
+
+class History(unittest.TestCase):
+    def test_kind_speeds_last_50_and_ranking_floor(self):
+        h = {"sprints": [sprint("core", 0, questions=[("× 7", 5000)] * 30 + [("× 7", 1000)] * 50 + [("× 2", 900)] * 9)]}
+        sp = arith.kind_speeds(h)
+        self.assertEqual(sp["× 7"], 1000)
+        self.assertNotIn("× 2", sp)
+
+    def test_weak_kinds_relative_within_mode(self):
+        qsx = ([("× 7", 3000)] * 12 + [("× 3", 1000)] * 12 + [("+ carry", 1200)] * 12
+               + [("/16", 4000)] * 12 + [("/2", 3800)] * 12 + [("/4", 3900)] * 12)
+        w = arith.weak_kinds({"sprints": [sprint("mixed", 0, questions=qsx)]})
+        self.assertEqual(w[0], "× 7")
+        self.assertLessEqual(len(w), 5)
+
+    def test_weak_generation_share(self):
+        h = {"sprints": [sprint("mixed", 0, questions=[("× 7", 3000)] * 12 + [("× 3", 1000)] * 12
+                                + [("+ carry", 1000)] * 12)]}
+        rng = random.Random(3)
+        w = arith.weak_kinds(h)
+        share = sum(arith.generate("weak", rng, w)["kind"] in w for _ in range(2000)) / 2000
+        self.assertTrue(0.6 < share < 0.85, share)
+
+    def test_weak_without_history(self):
+        self.assertEqual(arith.weak_kinds({"sprints": []}), [])
+        arith.generate("weak", random.Random(1), [])
+
+    def test_summary(self):
+        h = {"sprints": [sprint("core", s) for s in (30, 41, 35, 36, 37, 38)] + [sprint("core", 99, complete=False)]
+             + [sprint("fractions", 60)]}
+        new = sprint("core", 38, questions=[("× 7", 2400), ("− borrow", 2100), ("÷ 8", 1900), ("+ carry", 800)],
+                     skipped=1)
+        self.assertEqual(arith.summary(new, h), "ARITHMETIC: core · 120 s · score 38 (1 skipped)\n"
+                                                 "BEST: 41 · LAST 5 AVERAGE: 37.4\n"
+                                                 "SLOWEST: × 7 2.4 s · − borrow 2.1 s · ÷ 8 1.9 s")
+
+    def test_summary_first_sprint(self):
+        new = sprint("core", 20, questions=[("× 7", 2000)])
+        self.assertEqual(arith.summary(new, {"sprints": []}).split("\n")[1], "BEST: — · LAST 5 AVERAGE: —")
+
+    def test_partial_summary(self):
+        s = sprint("core", 9, complete=False)
+        s["stopped"] = 47
+        out = arith.summary(s, {"sprints": []})
+        self.assertEqual(out.split("\n")[0], "ARITHMETIC: core · stopped at 0:47 · score 9")
+        self.assertNotIn("BEST", out)
+
+
+class Commands(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(self)
+        self.hist = self.vault / "practice" / ".arith.json"
+        self.hist.parent.mkdir()
+
+    def write(self, sprints):
+        self.hist.write_text(json.dumps({"sprints": sprints}))
+
+    def test_last_history_kinds(self):
+        q = [("× 7", 2500)] * 12 + [("× 3", 900)] * 12
+        self.write([sprint("core", 30, questions=q), sprint("core", 34, questions=q), sprint("fractions", 20)])
+        last = run(self.vault, "arith.py", "last")
+        self.assertEqual(last.returncode, 0, last.stderr)
+        self.assertIn("ARITHMETIC: fractions", last.stdout)
+        hist = run(self.vault, "arith.py", "history", "core").stdout
+        self.assertIn("core: 30 34 · best 34 · average 32.0", hist)
+        kinds = run(self.vault, "arith.py", "kinds").stdout
+        self.assertLess(kinds.index("× 7"), kinds.index("× 3"))
+        self.assertIn("× 7 2.5 s", kinds)
+
+    def test_missing_and_corrupt_history(self):
+        r = run(self.vault, "arith.py", "last")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("NO SPRINT RECORDED", r.stdout)
+        self.hist.write_text("{bad")
+        r = run(self.vault, "arith.py", "last")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.hist.read_text(), "{bad")
 
 
 if __name__ == "__main__":

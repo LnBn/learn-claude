@@ -14,9 +14,20 @@ so `weak` mode can draw from the kinds the learner is slowest at. History: `<vau
 
 Modes: core (default), fractions, powers, estimate, mixed, weak.
 """
+import argparse
+import json
+import os
 import random
+import statistics
+import sys
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from fractions import Fraction
+
+import book
+
+CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VAULT = os.path.dirname(CLAUDE_DIR)
+HISTORY = os.path.join(VAULT, "practice", ".arith.json")
 
 MODES = ("core", "fractions", "powers", "estimate", "mixed", "weak")
 CONCRETE = ("core", "fractions", "powers", "estimate")
@@ -24,6 +35,9 @@ DENOMINATORS = list(range(2, 13)) + [16, 20, 25, 40]
 PERCENTS = (5, 10, 12.5, 15, 20, 25, 30, 40, 75)
 TOLERANCE = 0.02
 WEAK_SHARE = 0.7
+SPEED_WINDOW = 50  # a kind's speed: the median over its last 50 correct answers
+RANK_FLOOR = 10  # ranked only with at least this many
+WEAK_KINDS = 5
 
 
 # ---------------------------------------------------------------- questions
@@ -148,3 +162,112 @@ def accepts(typed, q, enter=False):
         true = Decimal(q["answer"])
         return enter and abs(v - true) <= Decimal(str(TOLERANCE)) * abs(true)
     return v == Decimal(q["answer"]) and _places(typed.strip()) >= _places(q["answer"])
+
+
+# ---------------------------------------------------------------- history
+
+def load_history():
+    if not os.path.exists(HISTORY):
+        return {"sprints": []}
+    try:
+        with open(HISTORY, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("sprints"), list):
+            raise ValueError
+        return data
+    except (OSError, ValueError):
+        book.die(f"{book.rel(HISTORY)} cannot be read; fix it or move it away", 1)
+
+
+def save_sprint(sprint):
+    data = load_history()
+    data["sprints"].append(sprint)
+    os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
+    tmp = HISTORY + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, HISTORY)
+
+
+def kind_speeds(history):
+    """{kind: median ms over its last 50 correct answers}, for kinds with at least 10."""
+    times = {}
+    for sp in history["sprints"]:
+        for q in sp.get("questions", []):
+            times.setdefault(q["kind"], []).append(q["ms"])
+    return {k: statistics.median(v[-SPEED_WINDOW:]) for k, v in times.items() if len(v) >= RANK_FLOOR}
+
+
+def weak_kinds(history):
+    """The five kinds slowest relative to the other kinds of their own mode."""
+    speeds = kind_speeds(history)
+    by_mode = {}
+    for k, ms in speeds.items():
+        by_mode.setdefault(mode_of(k), []).append(ms)
+    ratio = {k: ms / statistics.median(by_mode[mode_of(k)]) for k, ms in speeds.items()}
+    return sorted(ratio, key=lambda k: (-ratio[k], k))[:WEAK_KINDS]
+
+
+def _mmss(seconds):
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
+
+
+def summary(sprint, history):
+    sprints = history["sprints"]
+    if sprint in sprints:  # compare with the sprints before this one
+        sprints = sprints[:sprints.index(sprint)]
+    mode = sprint["mode"]
+    times = {}
+    for q in sprint.get("questions", []):
+        times.setdefault(q["kind"], []).append(q["ms"])
+    slow = sorted(((statistics.median(v), k) for k, v in times.items()), reverse=True)[:3]
+    slowest = "SLOWEST: " + (" · ".join(f"{k} {ms / 1000:.1f} s" for ms, k in slow) if slow else "—")
+    if not sprint.get("complete"):
+        return f"ARITHMETIC: {mode} · stopped at {_mmss(sprint.get('stopped', 0))} · score {sprint['score']}\n{slowest}"
+    prior = [sp["score"] for sp in sprints if sp["mode"] == mode and sp.get("complete")]
+    best = str(max(prior)) if prior else "—"
+    avg = f"{statistics.mean(prior[-5:]):.1f}" if prior else "—"
+    return (f"ARITHMETIC: {mode} · {sprint['seconds']} s · score {sprint['score']} ({sprint.get('skipped', 0)} skipped)\n"
+            f"BEST: {best} · LAST 5 AVERAGE: {avg}\n{slowest}")
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_last(a):
+    h = load_history()
+    if not h["sprints"]:
+        print("NO SPRINT RECORDED")
+        return
+    print(summary(h["sprints"][-1], h))
+
+
+def cmd_history(a):
+    h = load_history()
+    for mode in ([a.mode] if a.mode else MODES):
+        scores = [sp["score"] for sp in h["sprints"] if sp["mode"] == mode and sp.get("complete")][-10:]
+        if scores:
+            print(f"{mode}: {' '.join(map(str, scores))} · best {max(scores)} · average {statistics.mean(scores):.1f}")
+
+
+def cmd_kinds(a):
+    speeds = kind_speeds(load_history())
+    for k in sorted(speeds, key=lambda k: -speeds[k]):
+        if not a.mode or mode_of(k) == a.mode:
+            print(f"{k} {speeds[k] / 1000:.1f} s")
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="arith.py", description="Timed mental arithmetic sprints.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("last")
+    s = sub.add_parser("history")
+    s.add_argument("mode", nargs="?", choices=MODES)
+    s = sub.add_parser("kinds")
+    s.add_argument("mode", nargs="?", choices=CONCRETE)
+    a = p.parse_args(argv)
+    {"last": cmd_last, "history": cmd_history, "kinds": cmd_kinds}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()
