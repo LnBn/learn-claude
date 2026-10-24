@@ -228,7 +228,7 @@ A lesson often spans several sessions. The lesson's markdown log is the state, n
 
 1. **Ask once how to start.** One `AskUserQuestion` call and **nothing else in the reply** (no prose before or after; the note must not show this exchange, and the hook drops questions with this header):
    - `header`: exactly `Resume`
-   - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness), then: *"Run a short recall check on earlier material first?"*
+   - `question`: one or two sentences of orientation (the goal, the last confirmed node, what comes next per the latest checkpoint or hand-off note; the newer wins; ignore tooling notes about another harness; when the brief has a `REVIEW DUE` line, one clause saying how many review cards are due and that `/review` asks them), then: *"Run a short recall check on earlier material first?"*
    - options: **Continue where we left off** and **Recall check first** (2 to 4 quizzes on the established nodes, kept in the review note, then continue). Each description says what the learner will actually meet first: "the reading for §1.2.2", or "you re-read §1.2.1 in the note, then answer its questions".
    - If there is no checkpoint and no hand-off note, add a third option **Let me say where we got to**, and reconstruct the state from the map, the quiz outcomes and the tail with their answer.
 2. **Act on the answer.** *Continue*: say nothing about the choice. *Recall check*: it goes in the **review note**, not in the lesson note. The lesson note stays the lesson; the review note keeps what was forgotten, for later recall checks.
