@@ -64,10 +64,10 @@ def _canonical(targets, res):
 def _quiz_prompt(block):
     """The question of a quiz block: its title, or the full question when the title was cut."""
     p = quiz_block.parse(block)
-    if not p["title"].endswith("…"):
-        return p["title"]
-    first = p["body"].strip().split("\n\n", 1)[0]
-    return " ".join(first.split()) or p["title"]
+    body = p["body"].strip()
+    if body.startswith(p["title"].rstrip("…")):  # the block holds the full question when the title is not all of it
+        return " ".join(body.split("\n\n", 1)[0].split()) or p["title"]
+    return p["title"]
 
 
 def quiz_misses(res, section_tags):
@@ -81,6 +81,7 @@ def quiz_misses(res, section_tags):
         for i, anchor, body, _ in technique.note_sections(lines):
             section_tags[f"{stem}#{anchor}"] = _canonical(technique.section_tags(body), res)
         code = technique.fenced(lines)
+        review = stem.endswith("-review") or stem.endswith(" — Review")
         anchor, when = None, None
         for i, ln in enumerate(lines):
             if code[i]:
@@ -90,7 +91,9 @@ def quiz_misses(res, section_tags):
                 when = m.group(1)
             if ln.startswith("### "):
                 anchor = technique.anchor_of(ln)
-            if not quiz_block.is_quiz_header(ln) or anchor is None:
+            elif ln.startswith("## ") and review:
+                anchor = None  # a recall check opens its own "### Before …" section; a lesson session continues one
+            if not quiz_block.is_quiz_header(ln):
                 continue
             block = [ln]
             for nxt in lines[i + 1:]:
@@ -101,9 +104,9 @@ def quiz_misses(res, section_tags):
             if p["outcome"] not in ("✗", "?"):
                 continue
             title_hash = hashlib.sha1(p["title"].encode("utf-8")).hexdigest()[:8]
-            section = f"{stem}#{anchor}"
+            section = f"{stem}#{anchor}" if anchor else stem
             out.append({"key": f"quiz:{section}#{title_hash}", "kind": "quiz", "source": section,
-                        "label": technique.long_label(anchor), "section": section,
+                        "label": technique.long_label(anchor) if anchor else stem, "section": section,
                         "techniques": section_tags.get(section, []), "prompt": _quiz_prompt(block), "missed": when})
     return out
 
@@ -154,7 +157,8 @@ def drill_misses():
         for sl in d["slots"]:
             if "recognised" not in sl or (sl["recognised"] == "right" and sl["solved"] == "right"):
                 continue
-            out.append({"key": f"drill:{d['id']}#{sl['slot']}", "kind": "drill", "source": f"{d['date']}#Drill {d['id']}",
+            out.append({"key": f"drill:{d['id']}#{sl['slot']}", "kind": "drill",
+                        "source": f"practice/{d['date']}#Drill {d['id']}",
                         "label": f"drill {d['id']}, problem {sl['slot']}", "section": None,
                         "techniques": [sl["technique"]],
                         "prompt": " ".join(str(problems.get(sl["slot"], {}).get("statement") or "").split()),
@@ -226,6 +230,7 @@ def schedule(card, result, today=None):
         card["due"] = (today + timedelta(INTERVALS[card["step"]])).isoformat()
     else:
         card["step"] = 0
+        card["status"] = "active"
         card["due"] = (today + timedelta(1)).isoformat()
 
 
@@ -326,8 +331,9 @@ def plan_drill(n, drill_id):
     for _ in range(n):
         left = [x for x in names if x not in picks]
         picks.append(draw(left or names))
-    strong = sorted(names, key=lambda x: (-passes[x], x))[:len(names) // 2]
-    need = min(STRONG_FLOOR, n)
+    tie = {x: rng.random() for x in names}  # equal records: no alphabetical bias
+    strong = sorted(names, key=lambda x: (-passes[x], tie[x]))[:len(names) // 2]
+    need = min(STRONG_FLOOR, n // 2)  # a small drill keeps room for weak techniques
     for i in reversed(range(len(picks))):  # replace the last drawn weak slots until the floor is met
         if sum(x in strong for x in picks) >= need:
             break
@@ -381,9 +387,12 @@ def technique_brief(name):
 
 
 def cmd_drill(a):
+    if a.n < 1:
+        book.die("a drill needs at least 1 problem", 1)
     today = date.today().isoformat()
-    k = sum(1 for d in drills() if d.get("date") == today) + 1
-    drill_id = f"{today}-{k}"
+    taken = [int(m.group(1)) for p in glob.glob(os.path.join(glob.escape(DRILLS_DIR), f"{today}-*.json"))
+             for m in [re.search(r"-(\d+)(?:\.problems)?\.json$", p)] if m]
+    drill_id = f"{today}-{max(taken, default=0) + 1}"
     slots = plan_drill(a.n, drill_id)
     os.makedirs(DRILLS_DIR, exist_ok=True)
     save_drill({"id": drill_id, "date": today, "n": a.n, "slots": slots})
@@ -408,6 +417,8 @@ def cmd_drill_check(a):
     missing = [str(sl["slot"]) for sl in d["slots"] if sl["slot"] not in by_slot]
     if missing:
         errors.append(f"a problem for every slot: missing {', '.join(missing)}")
+    known = {sl["slot"] for sl in d["slots"]}
+    errors += [f"slot {slot} is not in the drill" for slot in by_slot if slot not in known]
     for slot, p in sorted(by_slot.items(), key=lambda x: str(x[0])):
         for field in ("statement", "solution"):
             if not str(p.get(field) or "").strip():
@@ -415,7 +426,10 @@ def cmd_drill_check(a):
         variables = p.get("variables") or {}
         try:
             answer_check.parse_ranges(variables)
-            answer_check.read(str(p.get("answer", "")), variables)
+            answer = str(p.get("answer", ""))
+            answer_check.read(answer, variables)
+            if answer_check.defined_points(answer, variables) < min(3, len(answer_check.points(answer, variables))):
+                errors.append(f"slot {slot}: answer is undefined at most points of the ranges")
         except answer_check.AnswerError as exc:
             errors.append(f"slot {slot}: answer: {exc}")
     if errors:
@@ -433,6 +447,8 @@ def cmd_drill_result(a):
         book.die(f"drill {a.id} has no slot {a.slot}", 1)
     if "recognised" in sl:
         book.die(f"slot {a.slot} of drill {a.id} is already recorded", 1)
+    if a.picked and a.picked not in sl["wrong"]:
+        book.die(f"--picked {a.picked!r} is not one of the options: {', '.join(sl['wrong'])}", 1)
     sl.update({"recognised": a.recognised, "solved": a.solved, "date": date.today().isoformat()})
     if a.picked:
         sl["picked"] = a.picked
@@ -449,6 +465,10 @@ def cmd_drill_summary(a):
     for sl in done:
         if sl["recognised"] == "wrong" and sl.get("picked"):
             print(f"took {sl['picked']} for {sl['technique']}")
+    try:
+        technique.sync()  # the notes' Drills lines and the index's Recognised column
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------- commands
@@ -490,6 +510,11 @@ def cmd_stats(a):
     week = [sum(c["due"] == (today + timedelta(d)).isoformat() for c in active) for d in range(1, 8)]
     print(f"active {len(active)} · retired {retired} · due today {due_now}")
     print("next 7 days: " + " ".join(str(n) for n in week))
+    if active:
+        first = min(c["due"] for c in active)
+        print(f"next due: {first} ({sum(c['due'] == first for c in active)} cards)")
+    else:
+        print("next due: none")
 
 
 def main(argv=None):

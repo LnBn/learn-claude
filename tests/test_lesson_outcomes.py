@@ -1,5 +1,8 @@
 import contextlib
 import io
+import sys
+import types
+from unittest import mock
 import shutil
 import tempfile
 import unittest
@@ -43,8 +46,13 @@ class QuizOutcomes(unittest.TestCase):
         note.write_text("## Session — 2026-10-23 (Fri) 10:00\n\nText.\n\n" + quiz_block.render(CORRECT) +
                         "\n\n> [!success|code]- ✗→✓ Task 01: A\n\n> [!failure|code]- ✗ Task 02: B\n")
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        # summary scans for review cards; in-process it would use the repo's own vault (the folder above the
+        # repo), so the scan is replaced here by one that records it was asked
+        calls = []
+        fake = types.SimpleNamespace(scan=lambda: calls.append("scan"), due_cards=lambda: [])
+        with mock.patch.dict(sys.modules, {"practice": fake}), contextlib.redirect_stdout(out):
             lesson.summary(str(note))
+        self.assertEqual(calls, ["scan"])
         self.assertIn("quizzes: 1 (✓ 1", out.getvalue())
         self.assertIn("code tasks: 2 (✓ 1) · checkpoints:", out.getvalue())
 

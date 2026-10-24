@@ -10,7 +10,7 @@ A card is one miss. `practice.py` finds misses by scanning the notes, exams, int
    ```
    python3 .claude/hooks/practice.py due --limit 10
    ```
-   On `NO CARDS DUE`, run `python3 .claude/hooks/practice.py stats` and reply with one line: nothing is due, and when the next cards are (the first non-zero day of `next 7 days`, or "not this week"). Link nothing, and stop.
+   On `NO CARDS DUE`, run `python3 .claude/hooks/practice.py stats` and reply with one line: nothing is due, and the `next due` date and count it prints. Link nothing, and stop.
 2. **Link today's practice note** and open the section:
    ```
    python3 .claude/hooks/md_log.py link "practice/<today, YYYY-MM-DD>.md" --session ${CLAUDE_SESSION_ID} --from-now
@@ -23,6 +23,6 @@ A card is one miss. `practice.py` finds misses by scanning the notes, exams, int
    - The explanation says why the answer is right and ends with the source, as printed: `From [[<source>|<label>]].`
    - After the result: `python3 .claude/hooks/practice.py result <card> right|wrong` ("I don't know" is wrong). Write nothing about the call. Then the next card's quiz, with no lead-in text.
    - A question asked with `?` in the popup, or a quiz moved to the background, is handled as the teach skill says.
-4. **Close:** run `python3 .claude/hooks/practice.py stats` and end with one line: `Reviewed <k>: <r> right. Next due: <date> (<m> cards).` A card answered wrong twice in a row may get one sentence pointing to its source section to re-read.
+4. **Close:** run `python3 .claude/hooks/practice.py stats` and end with one line: `Reviewed <k>: <r> right. Next due: <date> (<m> cards).`, the date and count from its `next due` line.
 
 No narration of tool calls; everything written is mirrored into the practice note.

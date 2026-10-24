@@ -132,7 +132,7 @@ def tag_targets(line):
 def scanned_notes():
     for root, dirs, files in os.walk(VAULT):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS
-                         and not (root == VAULT and d == "techniques"))
+                         and not (root == VAULT and d in ("techniques", "practice")))
         for f in sorted(files):
             if f.endswith(".md") and not f.endswith("-review.md") and not f.endswith(" — Review.md"):
                 yield os.path.join(root, f)

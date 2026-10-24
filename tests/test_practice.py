@@ -170,6 +170,51 @@ class Cards(PracticeBase):
 
 
 
+class CardFixes(PracticeBase):
+    def test_quiz_before_any_section_and_review_session_starts(self):
+        (self.vault / "lessons").mkdir()
+        (self.vault / "lessons" / "intro.md").write_text(
+            "## Session — 2026-10-01 (Wed) 10:00\n\n> [!failure|quiz]- ✗ Probe question\n> body\n")
+        (self.cdir / "gb-review.md").write_text(
+            REVIEW + "\n## Session — 2026-10-12 (Mon) 10:00\n\n> [!failure|quiz]- ✗ Door to offer\n> body\n")
+        self.pr("scan")
+        by_prompt = {c["prompt"]: c for c in self.cards()}
+        self.assertEqual(by_prompt["Probe question"]["section"], "intro")
+        self.assertEqual(by_prompt["Probe question"]["label"], "intro")
+        self.assertEqual(by_prompt["Door to offer"]["section"], "gb-review")   # not "Before 2.5"
+        self.assertEqual(by_prompt["Door to offer"]["missed"], "2026-10-12")
+
+    def test_lesson_session_continues_its_section(self):
+        with open(self.cdir / "gb-ch02.md", "a", encoding="utf-8") as f:
+            f.write("\n## Session — 2026-10-08 (Thu) 10:00\n\n> [!failure|quiz]- ✗ Continued check\n> body\n")
+        self.pr("scan")
+        c = next(c for c in self.cards() if c["prompt"] == "Continued check")
+        self.assertEqual(c["section"], "gb-ch02#2.4.2 Wise men")
+
+    def test_multiline_question_prompt(self):
+        (self.vault / "lessons").mkdir()
+        (self.vault / "lessons" / "q.md").write_text(
+            "### A\n\n> [!failure|quiz]- ✗ Let $X$ be uniform on $[0,1]$.\n>\n> Let $X$ be uniform on $[0,1]$.\n"
+            "> What is $E[X^2]$?\n>\n> 1. 1/3\n> 2. 1/2\n")
+        self.pr("scan")
+        self.assertIn("Let $X$ be uniform on $[0,1]$. What is $E[X^2]$?", [c["prompt"] for c in self.cards()])
+
+    def test_retired_card_answered_wrong_comes_back(self):
+        self.pr("scan")
+        for _ in range(5):
+            self.pr("result", "c1", "right")
+        self.pr("result", "c1", "wrong")
+        self.assertEqual(self.card("c1")["status"], "active")
+
+    def test_stats_next_due(self):
+        self.pr("scan")
+        out = self.pr("stats").stdout
+        first = min(c["due"] for c in self.cards())
+        n = sum(c["due"] == first for c in self.cards())
+        self.assertIn(f"next due: {first} ({n} cards)", out)
+
+
+
 def tech_note(name):
     return (f"# {name}\n\n> [!definition] The trick\n> Trick of {name}.\n\n## Reach for it when\n\n- cue of {name}\n\n"
             f"**In your words:**\n- \"my cue for {name}\" — x, 2026-10-01\n")
@@ -273,6 +318,65 @@ class Drills(PracticeBase):
         self.assertEqual(by_key[f"drill:{d}#1"]["prompt"], "Problem 1?")
         self.assertEqual(by_key[f"drill:{d}#1"]["techniques"], [slots[0]["technique"]])
         self.assertIn(f"drill:{d}#2", by_key)
+
+    def test_drill_ids_never_overwrite(self):
+        d1 = self.start_drill(2)
+        d2 = self.start_drill(2)
+        (self.vault / "practice" / ".drills" / f"{d1}.json").unlink()
+        d3 = self.start_drill(2)
+        self.assertNotIn(d3, (d1, d2))
+        self.assertTrue(d3.endswith("-3"))
+
+    def test_small_drills_can_hold_weak_techniques(self):
+        code = ("import sys, json; sys.path.insert(0, '.claude/hooks'); import practice; "
+                "print(json.dumps([[s['technique'] for s in practice.plan_drill(2, f'2026-01-01-{k}')] for k in range(100)]))")
+        runs = json.loads(subprocess.run([sys.executable, "-c", code], cwd=self.vault, capture_output=True, text=True).stdout)
+        self.assertTrue(any(t in ("A", "B", "C") for slots in runs for t in slots))
+        self.assertTrue(all(any(t in ("D", "E") for t in slots) for slots in runs))   # one strong of two
+
+    def test_n_must_be_positive(self):
+        r = self.pr("drill", "--n", "0")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("at least 1", r.stderr)
+
+    def test_drill_check_undefined_answer_and_unknown_slot(self):
+        d = self.start_drill(2)
+        probs = self.valid_problems(2)
+        probs[0]["answer"] = "1/0"
+        probs.append({"slot": 9, "statement": "x", "answer": "1", "solution": "y"})
+        self.write_drill_problems(d, probs)
+        out = self.pr("drill-check", d).stdout
+        self.assertIn("slot 1: answer is undefined", out)
+        self.assertIn("slot 9 is not in the drill", out)
+
+    def test_picked_must_be_an_option(self):
+        d = self.start_drill(1)
+        r = self.pr("drill-result", d, "1", "--recognised", "wrong", "--picked", "Nonsense", "--solved", "right")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not one of the options", r.stderr)
+
+    def test_drill_card_links_into_practice_folder(self):
+        d = self.start_drill(1)
+        self.write_drill_problems(d, self.valid_problems(1))
+        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "wrong")
+        self.pr("scan")
+        c = next(c for c in self.cards() if c["kind"] == "drill")
+        self.assertEqual(c["source"], f"practice/{date.today().isoformat()}#Drill {d}")
+
+    def test_summary_syncs_technique_notes(self):
+        d = self.start_drill(1)
+        self.write_drill_problems(d, self.valid_problems(1))
+        slot = self.slots(d)[0]
+        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "right")
+        self.pr("drill-summary", d)
+        note = (self.vault / "techniques" / f"{slot['technique']}.md").read_text()
+        self.assertIn("**Drills:** recognised 1/1 · solved 1/1", note)
+
+    def test_practice_notes_do_not_feed_technique_records(self):
+        (self.vault / "practice" / "2026-10-24.md").write_text(
+            "### Drill x\n\n> [!failure|quiz]- ✗ Q\n> Technique: [[A]]\n\n*Techniques: [[A]]*\n")
+        run(self.vault, "technique.py", "sync")
+        self.assertNotIn("2026-10-24#Drill x", (self.vault / "techniques" / "A.md").read_text())
 
     def test_drill_result_unknown_drill(self):
         r = self.pr("drill-result", "2020-01-01-1", "1", "--recognised", "right", "--solved", "right")
