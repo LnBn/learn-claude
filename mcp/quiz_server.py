@@ -10,9 +10,10 @@ grades the pick the instant it is made, and returns tight feedback
 (via the md-log file, if linked) and the model (tool result). No model round
 trip is needed for the grade.
 
-Options-only: single-select or multi-select. An "I don't know" choice is always
-added so the learner can signal a genuine gap instead of guessing. An optional
-free-text note travels with any answer.
+Options (single- or multi-select) or a typed answer, a number or formula marked
+by answer_check.py. An "I don't know" choice is always added so the learner can
+signal a genuine gap instead of guessing. An optional free-text note travels
+with any answer.
 
 Logging: if the calling session mirrors a note, one folded quiz block (hooks/quiz_block.py)
 is appended once the learner answers, skips, or asks the teacher first. Which note that is comes from
@@ -37,6 +38,9 @@ POPUP = os.path.join(HERE, "quiz_popup.py")
 CLAUDE_DIR = os.path.dirname(HERE)
 VAULT_DIR = os.path.dirname(CLAUDE_DIR)  # relative figure paths resolve here
 sys.path.insert(0, os.path.join(CLAUDE_DIR, "hooks"))
+sys.path.insert(0, HERE)
+import answer_check  # noqa: E402  (typed answers: read, show, compare)
+import latex_text  # noqa: E402  (a typed answer's LaTeX shown in the popup)
 import figures  # noqa: E402  (book figures named in a course quiz: cropped, embedded once, linked)
 import quiz_block  # noqa: E402  (the folded quiz callout written to the note)
 import sections  # noqa: E402  ("§1.2" in a quiz: a link to that section's heading)
@@ -57,13 +61,21 @@ TOOL = {
         "correct answer supplied by you, marks the user's selection right/wrong (✓/✗), reveals the correct answer, "
         "and shows an explanation. Use it to (1) assess what the learner already understands before teaching, and "
         "(2) run tight practice/retrieval loops after explaining, or probe understanding whenever you're unsure "
-        "they've got it. Options-only: single-select or multi-select, plus an automatic 'I don't know' choice so "
+        "they've got it. Two modes. OPTIONS: single-select or multi-select, plus an automatic 'I don't know' choice so "
         "the user can signal a genuine gap instead of guessing — never add your own opt-out option. An optional "
         "note field lets the user attach free text to ANY answer; it reaches you only when non-empty. "
         "correctAnswer is REQUIRED and is the option `value`, not a position. explanation is REQUIRED. "
         "Options are shuffled before display by default. Make every distractor a specific, believable mistake "
         "(so WHICH wrong answer they pick is diagnostic), keep options even in length/specificity/format so the "
         "right one can't be picked from shape alone, and put zero justification inside any option. "
+        "TYPED: pass `answer` (and no options) when the result is a number or a formula; the user types it and it "
+        "is marked by evaluation, so equivalent forms count and a decimal counts if it matches to 3 significant "
+        "figures (set exact to refuse decimals). Syntax: + - * / ^, implicit multiplication (2n, 2(n+1)), n!, "
+        "sqrt ln log log2 log10 exp abs binom(n,k), pi e inf. Declare every variable with a range in `variables`; "
+        "give `wrongAnswers` (the results of the common wrong moves, each with `why`) and `answerLatex`. Example: "
+        "{\"question\": \"Expected tosses to get $n$ heads in a row?\", \"answer\": \"2^(n+1)-2\", "
+        "\"answerLatex\": \"2^{n+1}-2\", \"variables\": {\"n\": \"int 1..12\"}, \"wrongAnswers\": "
+        "[{\"answer\": \"2^n\", \"why\": \"...\"}], \"explanation\": \"...\"}. "
         "For non-graded questions use AskUserQuestion instead."
     ),
     "inputSchema": {
@@ -74,7 +86,7 @@ TOOL = {
             "options": {
                 "type": "array",
                 "minItems": 2,
-                "description": "The answer options (2 or more). Options only — no free-text mode. Give each a stable `value`; you reference the correct one(s) by that value in correctAnswer.",
+                "description": "The answer options (2 or more), for the options mode; leave out for a typed answer. Give each a stable `value`; you reference the correct one(s) by that value in correctAnswer.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -92,9 +104,14 @@ TOOL = {
             },
             "explanation": {"type": "string", "description": "REQUIRED. Explanation revealed AFTER the user answers (right or wrong). Say why the correct answer is correct."},
             "figure": {"type": "string", "description": "Optional path of an image the question refers to (e.g. the FILE that `book.py figure` printed, relative to the vault). It is embedded in the note above the options, and the learner can open it from the quiz with `f`."},
+            "answer": {"type": "string", "description": "Typed mode: the correct answer as an expression, e.g. \"2^(n+1)-2\" or \"1/3\". Give this instead of options and correctAnswer."},
+            "variables": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Typed mode: every variable in the answer with its range, e.g. {\"n\": \"int 1..12\", \"p\": \"0..1\"}."},
+            "exact": {"type": "boolean", "description": "Typed mode: refuse decimals; only when the exact form is what is being tested."},
+            "wrongAnswers": {"type": "array", "items": {"type": "object", "properties": {"answer": {"type": "string"}, "why": {"type": "string"}}, "required": ["answer", "why"]}, "description": "Typed mode: the results of the common wrong moves, each with what that answer means went wrong; shown to the learner when they type one."},
+            "answerLatex": {"type": "string", "description": "Typed mode: the correct answer as LaTeX (no $), for the note and the feedback."},
             "shuffle": {"type": "boolean", "description": "Defaults to true: options are reordered before display. Set false only when order is meaningful (ordered numeric values, or an 'All/None of the above' option that must stay last)."},
         },
-        "required": ["question", "options", "correctAnswer", "explanation"],
+        "required": ["question", "explanation"],
     },
 }
 
@@ -225,11 +242,13 @@ def diag(msg):
         pass
 
 
-def save_last_asked(displayed):
+def save_last_asked(displayed, typed=None):
+    """Remember the quiz the learner asked about: its option set, or for a typed quiz its question."""
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
         with open(LAST_ASKED, "w", encoding="utf-8") as f:
-            json.dump({"labels": sorted(o["label"].strip().lower() for o in displayed),
+            json.dump({"typed": typed} if typed else
+                      {"labels": sorted(o["label"].strip().lower() for o in displayed),
                        "order": [o["label"].strip().lower() for o in displayed]}, f)
     except Exception:
         pass
@@ -323,23 +342,100 @@ def missing_examples(text, note):
     return [n for n in nums if not re.search(rf"\^ex-{n}\b|\[!example\][+-]? Example {n}\b", have)]
 
 
-def run_quiz(args, tool_use_id, progress_token=None):
-    set_target(tool_use_id)
+def check_common(args):
+    """(question, details, explanation, figure) of a call, or an error result."""
     question = str(args.get("question", "")).strip()
     details = str(args.get("details") or "").strip()
+    explanation = str(args.get("explanation") or "").strip()
+    figure = str(args.get("figure") or "").strip()
+    if not question:
+        return err("question is required")
+    if not explanation:
+        return err("explanation is required")
+    if figure:
+        figure = os.path.join(VAULT_DIR, os.path.expanduser(figure))
+        if not os.path.isfile(figure):
+            return err(f"figure {args.get('figure')!r} not found (paths are relative to {VAULT_DIR})")
+    return question, details, explanation, figure
+
+
+def check_examples(seen):
+    missing = missing_examples(seen, log_file())
+    if missing:
+        names = ", ".join(f"Example {n}" for n in missing)
+        return err(f"{names} {'is' if len(missing) == 1 else 'are'} not in the note, so the learner cannot read it. Write it in a reply of its own, "
+                   "end that reply with the ready line, and ask this question after they say ready.")
+    return None
+
+
+def ask_learner(record, displayed, tool_use_id, details, multi):
+    """Write the open block, show the quiz, and return (ui result, pending block text, whether the popup showed the grade)."""
+    # the question goes in the note now, open, so a long quiz can be read there while answering;
+    # the outcome replaces this block in place
+    pending = quiz_part(append_log(quiz_block.render({**record, "status": "pending"})))
+    mark_logged(tool_use_id)  # now, not after the answer: this quiz's block is the server's to write
+    clear_last_asked()
+    # tmux popup when available (full question + options, like pi), otherwise Claude Code's
+    # elicitation form (which truncates the message to one line)
+    ui = ask_via_tmux(record) if tmux_available() else None
+    seen_feedback = ui is not None  # the tmux popup shows the grade itself
+    if ui is None:
+        ui = ask_via_elicitation(record, displayed, msg_details=details, multi=multi)
+    return ui, pending, seen_feedback
+
+
+def not_answered(ui, record, pending, tool_use_id, displayed):
+    """The result for an ask-first or a cancel, or None when the learner answered."""
+    if ui.get("action") == "ask":
+        q = str(ui.get("question") or "").strip()
+        record["status"] = "asked"
+        record["learnerQuestion"] = q
+        replace_log(pending, quiz_block.render(record))
+        mark_logged(tool_use_id)
+        save_last_asked(displayed, typed=record["question"] if record.get("mode") == "typed" else None)
+        what = "answer" if record.get("mode") == "typed" else "options, correctAnswer"
+        return result(
+            "The learner asked a question BEFORE answering (no answer was given, nothing was graded):\n"
+            f"  {q}\n"
+            f"Answer it now, without giving away the quiz answer. Then call quiz again with the same question, "
+            f"{what} and explanation so they can answer.", record)
+    if ui.get("action") != "accept":
+        record["status"] = "cancelled"
+        replace_log(pending, quiz_block.render(record))
+        mark_logged(tool_use_id)
+        return result("User skipped the quiz (cancelled). Ask whether to continue or move on.", record)
+    return None
+
+
+def feedback_tail(note, seen_feedback):
+    text = ""
+    if note:
+        text += f"\nNote from user: {note}\nIf this note asks a question, answer it before moving on."
+    if seen_feedback:
+        text += "\nThe user has already seen this feedback in the popup — do not repeat the grade; continue from it."
+    else:
+        text += "\nThe user has NOT seen this feedback yet — relay the grade, the correct answer and the explanation in one short block before continuing."
+        text += ("\nThe quiz was shown in Claude Code's one-line form, not the popup, so a long question was cut off "
+                 "(the full quiz is in the note). If you have not said so this session, tell the learner in one line "
+                 "to start Claude Code inside tmux to get the popup.")
+    return text
+
+
+def run_quiz(args, tool_use_id, progress_token=None):
+    set_target(tool_use_id)
+    if "answer" in args:
+        return run_typed(args, tool_use_id)
     options = normalize_options(args.get("options"))
     multi = bool(args.get("multiSelect"))
     shuffle = args.get("shuffle", True) is not False
-    explanation = str(args.get("explanation") or "").strip()
-    figure = str(args.get("figure") or "").strip()
 
-    if not question:
+    if not str(args.get("question", "")).strip():
         return err("question is required")
     if len(options) < 2:
         return err("quiz needs at least two options")
     if any(o["label"].lower() in {DONT_KNOW.lower(), "i dont know", "not sure", "i'm not sure", "unsure"} for o in options):
         return err("do not add your own 'I don't know' / 'not sure' option — it is added automatically")
-    if not explanation:
+    if not str(args.get("explanation") or "").strip():
         return err("explanation is required")
     if "correctAnswer" not in args:
         return err("correctAnswer is required")
@@ -351,17 +447,13 @@ def run_quiz(args, tool_use_id, progress_token=None):
         return err(f"correctAnswer {bad[0]!r} does not match any option value ({known})")
     if len(wanted) > 1 and not multi:
         return err("several correct answers given but multiSelect is not true")
-    if figure:
-        figure = os.path.join(VAULT_DIR, os.path.expanduser(figure))
-        if not os.path.isfile(figure):
-            return err(f"figure {args.get('figure')!r} not found (paths are relative to {VAULT_DIR})")
-
-    seen = " ".join([question, details, explanation] + [o["label"] for o in options])
-    missing = missing_examples(seen, log_file())
-    if missing:
-        names = ", ".join(f"Example {n}" for n in missing)
-        return err(f"{names} {'is' if len(missing) == 1 else 'are'} not in the note, so the learner cannot read it. Write it in a reply of its own, "
-                   "end that reply with the ready line, and ask this question after they say ready.")
+    common = check_common(args)
+    if isinstance(common, dict):
+        return common
+    question, details, explanation, figure = common
+    problem = check_examples(" ".join([question, details, explanation] + [o["label"] for o in options]))
+    if problem:
+        return problem
 
     # A re-ask after "ask the teacher first": same option set as the pending question -> keep the
     # displayed order the learner already saw.
@@ -382,44 +474,12 @@ def run_quiz(args, tool_use_id, progress_token=None):
         "options": [{"index": o["index"], "label": o["label"]} for o in displayed],
         "correctIndices": correct_indices, "explanation": explanation, "reask": reask,
     }
-    if figure:
-        record["figure"] = figure
-    else:
-        auto = course_figure(" ".join([question, details] + [o["label"] for o in options]))
-        if auto:
-            record["figure"] = auto
+    add_figure(record, figure, " ".join([question, details] + [o["label"] for o in options]))
 
-    # the question and options go in the note now, open, so a long quiz can be read there while answering;
-    # the outcome replaces this block in place
-    pending = quiz_part(append_log(quiz_block.render({**record, "status": "pending"})))
-    mark_logged(tool_use_id)  # now, not after the answer: this quiz's block is the server's to write
-    clear_last_asked()
-
-    # --- ask the learner: tmux popup when available (full question + options, like pi),
-    #     otherwise Claude Code's elicitation form (which truncates the message to one line)
-    ui = ask_via_tmux(record) if tmux_available() else None
-    seen_feedback = ui is not None  # the tmux popup shows the grade itself
-    if ui is None:
-        ui = ask_via_elicitation(record, displayed, msg_details=details, multi=multi)
-
-    if ui.get("action") == "ask":
-        q = str(ui.get("question") or "").strip()
-        record["status"] = "asked"
-        record["learnerQuestion"] = q
-        replace_log(pending, quiz_block.render(record))
-        mark_logged(tool_use_id)
-        save_last_asked(displayed)
-        return result(
-            "The learner asked a question BEFORE answering (no answer was given, nothing was graded):\n"
-            f"  {q}\n"
-            "Answer it now, without giving away the quiz answer. Then call quiz again with the same question, "
-            "options, correctAnswer and explanation so they can answer.", record)
-
-    if ui.get("action") != "accept":
-        record["status"] = "cancelled"
-        replace_log(pending, quiz_block.render(record))
-        mark_logged(tool_use_id)
-        return result("User skipped the quiz (cancelled). Ask whether to continue or move on.", record)
+    ui, pending, seen_feedback = ask_learner(record, displayed, tool_use_id, details, multi)
+    early = not_answered(ui, record, pending, tool_use_id, displayed)
+    if early:
+        return early
 
     picked = [i for i in ui.get("answers", []) if i in {o["index"] for o in displayed}]
     dont_know = bool(ui.get("dontKnow")) and not picked
@@ -438,16 +498,112 @@ def run_quiz(args, tool_use_id, progress_token=None):
         sel = ", ".join(f"{i}. {by_index[i]}" for i in picked) or "(nothing)"
         text = f"User answered {'correctly' if correct else 'incorrectly'}.\nSelected: {sel}\nCorrect: {correct_str}"
     text += f"\nExplanation: {explanation}"
-    if note:
-        text += f"\nNote from user: {note}\nIf this note asks a question, answer it before moving on."
-    if seen_feedback:
-        text += "\nThe user has already seen this feedback in the popup — do not repeat the grade; continue from it."
+    return result(text + feedback_tail(note, seen_feedback), record)
+
+
+def add_figure(record, figure, text):
+    if figure:
+        record["figure"] = figure
     else:
-        text += "\nThe user has NOT seen this feedback yet — relay the grade, the correct answer and the explanation in one short block before continuing."
-        text += ("\nThe quiz was shown in Claude Code's one-line form, not the popup, so a long question was cut off "
-                 "(the full quiz is in the note). If you have not said so this session, tell the learner in one line "
-                 "to start Claude Code inside tmux to get the popup.")
-    return result(text, record)
+        auto = course_figure(text)
+        if auto:
+            record["figure"] = auto
+
+
+def check_typed(args):
+    """The typed-answer fields of a call, checked: (answer, variables, wrong answers), or an error result."""
+    if "options" in args:
+        return err("give either answer or options, not both")
+    if any(k in args for k in ("multiSelect", "correctAnswer", "shuffle")):
+        return err("multiSelect, correctAnswer and shuffle belong to the options mode")
+    answer = str(args.get("answer") or "").strip()
+    variables = args.get("variables") or {}
+    if not isinstance(variables, dict):
+        return err('variables must be an object from name to range, e.g. {"n": "int 1..12"}')
+    variables = {str(k): str(v) for k, v in variables.items()}
+    try:
+        answer_check.parse_ranges(variables)
+    except answer_check.AnswerError as exc:
+        return err(str(exc))
+    try:
+        answer_check.read(answer, variables)
+    except answer_check.AnswerError as exc:
+        return err(f"answer: {exc}")
+    if answer_check.defined_points(answer, variables) < min(3, len(answer_check.points(answer, variables))):
+        return err("answer is undefined at most points of the ranges; narrow the variables' ranges")
+    wrong = []
+    for w in args.get("wrongAnswers") or []:
+        a = str((w or {}).get("answer") or "").strip() if isinstance(w, dict) else ""
+        try:
+            same = answer_check.check(a, answer, variables) == "correct"
+        except answer_check.AnswerError as exc:
+            return err(f"wrong answer {a}: {exc}")
+        if same:
+            return err(f"wrong answer {a} is equivalent to answer")
+        wrong.append({"answer": a, "why": str(w.get("why") or "").strip()})
+    return answer, variables, wrong
+
+
+def run_typed(args, tool_use_id):
+    typed_args = check_typed(args)
+    if isinstance(typed_args, dict):
+        return typed_args
+    answer, variables, wrong = typed_args
+    common = check_common(args)
+    if isinstance(common, dict):
+        return common
+    question, details, explanation, figure = common
+    problem = check_examples(" ".join([question, details, explanation]))
+    if problem:
+        return problem
+    exact = bool(args.get("exact"))
+    latex = str(args.get("answerLatex") or "").strip()
+    prev = load_json(LAST_ASKED, {})
+    record = {
+        "mode": "typed", "status": "answered", "question": question, "details": details,
+        "answer": answer, "answerLatex": latex, "variables": variables, "exact": exact,
+        "wrongAnswers": wrong, "explanation": explanation, "reask": prev.get("typed") == question,
+    }
+    add_figure(record, figure, " ".join([question, details]))
+
+    ui, pending, seen_feedback = ask_learner(record, [], tool_use_id, details, False)
+    early = not_answered(ui, record, pending, tool_use_id, [])
+    if early:
+        return early
+
+    typed = str(ui.get("typed") or "").strip()
+    dont_know = bool(ui.get("dontKnow"))
+    note = str(ui.get("note") or "").strip()
+    unreadable, correct, matched = "", False, None
+    if not dont_know:
+        try:
+            correct = answer_check.check(typed, answer, variables, exact) == "correct"
+        except answer_check.AnswerError as exc:
+            unreadable = str(exc)
+        if not correct and not unreadable:
+            matched = answer_check.matches_wrong(typed, wrong, variables, exact)
+    decimal = answer_check.is_decimal(typed)
+    record.update({"typed": typed, "correct": correct, "dontKnow": dont_know, "decimal": decimal,
+                   "matchedWrong": matched, "note": note})
+
+    replace_log(pending, quiz_block.render(record))
+    mark_logged(tool_use_id)
+
+    if dont_know:
+        text = f"User answered \"I don't know\" — a genuine gap, not a wrong guess.\nCorrect: {answer}"
+    else:
+        text = f"User answered {'correctly' if correct else 'incorrectly'}.\n"
+        if unreadable:
+            text += f"Typed: {typed} — could not be read: {unreadable}"
+        else:
+            text += f"Typed: {typed} (reads as {answer_check.display(typed, variables)})"
+        if correct and decimal:
+            text += "\n(decimal, matched to 3 significant figures)"
+        text += f"\nCorrect: {answer}"
+        if matched is not None:
+            text += f"\nMatched common mistake: {wrong[matched]['why']}"
+    text += f"\nExplanation: {explanation}"
+    return result(text + feedback_tail(note, seen_feedback), record)
 
 
 # ----------------------------------------------------------------- learner UI
@@ -462,23 +618,37 @@ def tmux_available():
     return True
 
 
+def popup_spec(record):
+    """What quiz_popup.py is given: everything it shows, and what it needs to grade the answer itself."""
+    spec = {"question": record["question"], "details": record.get("details", ""), "dontKnow": DONT_KNOW,
+            "explanation": record.get("explanation", ""), "figure": record.get("figure", "")}
+    if record.get("mode") == "typed":
+        latex = record.get("answerLatex") or ""
+        shown = latex_text.render(f"${latex}$") if latex else answer_check.display(record["answer"], record["variables"])
+        spec.update({"mode": "typed", "answer": record["answer"], "variables": record["variables"],
+                     "exact": record.get("exact", False), "wrongAnswers": record.get("wrongAnswers", []),
+                     "answerDisplay": shown})
+    else:
+        spec.update({"options": record["options"], "multiSelect": record.get("multiSelect", False),
+                     "correctIndices": record["correctIndices"]})
+    return spec
+
+
 def ask_via_tmux(record):
     """Show the quiz in a tmux popup. Returns the popup's result dict, or None if
     the popup could not be shown (caller then falls back to elicitation)."""
     work = tempfile.mkdtemp(prefix="learn-quiz.")
     spec_path = os.path.join(work, "spec.json")
     out_path = os.path.join(work, "result.json")
-    spec = {"question": record["question"], "details": record.get("details", ""),
-            "options": record["options"], "multiSelect": record.get("multiSelect", False),
-            "dontKnow": DONT_KNOW, "correctIndices": record["correctIndices"],
-            "explanation": record.get("explanation", ""), "figure": record.get("figure", "")}
+    spec = popup_spec(record)
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(spec, f, ensure_ascii=False)
     # size the popup from the content, assuming ~70 usable columns; PgUp/PgDn cover the rest
     def rows(text):
         return sum(max(1, len(par) // 70 + 1) for par in str(text).split("\n")) if text else 0
     n_lines = 9 + rows(record["question"]) + rows(record.get("details")) \
-        + sum(rows(o["label"]) for o in record["options"]) + rows(record.get("explanation")) \
+        + sum(rows(o["label"]) for o in record.get("options", [])) + rows(record.get("explanation")) \
+        + (4 if record.get("mode") == "typed" else 0) \
         + (2 if record.get("figure") else 0)
     height = str(min(max(n_lines, 14), 45))
     def popup(height):
@@ -522,6 +692,19 @@ def ask_via_elicitation(record, displayed, msg_details, multi):
 
     labels = [choice(o) for o in displayed]
     msg = record["question"] + (f"\n\n{msg_details}" if msg_details else "")
+    if record.get("mode") == "typed":
+        schema = {"type": "object",
+                  "properties": {"answer": {"type": "string", "title": "Your answer"},
+                                 "dk": {"type": "boolean", "title": DONT_KNOW, "default": False},
+                                 "note": {"type": "string", "title": "Note (optional)"}},
+                  "required": []}
+        resp = request("elicitation/create", {"message": msg, "requestedSchema": schema})
+        if "error" in resp or (resp.get("result") or {}).get("action") != "accept":
+            return {"action": "cancel"}
+        content = resp["result"].get("content") or {}
+        typed = str(content.get("answer") or "").strip()
+        return {"action": "accept", "typed": typed, "dontKnow": content.get("dk") is True and not typed,
+                "note": str(content.get("note") or "").strip()}
     if multi:
         props = {f"opt{o['index']}": {"type": "boolean", "title": choice(o), "default": False} for o in displayed}
         props["dk"] = {"type": "boolean", "title": DONT_KNOW, "default": False}
