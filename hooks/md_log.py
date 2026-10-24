@@ -455,7 +455,13 @@ def append(text):
         with open(path, "a", encoding="utf-8") as f:
             f.write(prefix + text.strip("\n") + "\n")
     except Exception:
-        pass
+        return
+    if "*Techniques:" in text:  # a section was tagged: its technique notes and the index list it now
+        try:
+            import technique
+            technique.sync()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------- cleaning

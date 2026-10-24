@@ -30,6 +30,7 @@ import time
 
 import book
 import lesson
+import technique
 
 CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(CLAUDE_DIR, "mcp"))
@@ -167,7 +168,8 @@ def cmd_new(a):
         print(f"  {u['id']} {u['title']} — {unit_link(c, u)}")
         for idea in key_ideas(c.note(u["chapter"]), u["id"]):
             print(f"    key idea: {idea}")
-    past = [pr.get("technique", "") for m, _ in rounds(c) for pr in (load_problems(c, m) or []) if pr.get("technique")]
+    past = [pr["technique"] + (f" [{', '.join(pr['techniques'])}]" if pr.get("techniques") else "")
+            for m, _ in rounds(c) for pr in (load_problems(c, m) or []) if pr.get("technique")]
     print("PAST TECHNIQUES:")
     print("\n".join(f"  {t}" for t in past) if past else "  (none)")
     save(c, n, {"status": "set", "length": a.length, "number": n, "set": time.strftime("%Y-%m-%d")})
@@ -209,6 +211,12 @@ def problem_errors(c, length, probs):
         if not units:
             errors.append(f"{pid}: units is empty")
         errors += [f"{pid}: unit {u} is not finished" for u in units if u not in finished]
+        names = pr.get("techniques")
+        if not isinstance(names, list) or not names:
+            errors.append(f"{pid}: techniques is empty")
+        else:
+            known = technique.resolver(technique.load_techniques())
+            errors += [f'{pid}: technique "{t}" has no note in techniques/' for t in names if str(t).lower() not in known]
         hints = pr.get("hints")
         if not isinstance(hints, list) or len(hints) != 3 or not all(str(h).strip() for h in hints):
             errors.append(f"{pid}: needs exactly 3 hints")
@@ -501,16 +509,23 @@ def marks_errors(st, marks):
     return errors
 
 
+def technique_cell(spec):
+    """`[[Symmetry]], [[…]] — <description>`; a name that no longer resolves stays plain text."""
+    known = technique.resolver(technique.load_techniques())
+    names = [f"[[{known[str(t).lower()]}]]" if str(t).lower() in known else str(t) for t in spec.get("techniques") or []]
+    return " — ".join(x for x in (", ".join(names), spec.get("technique", "")) if x)
+
+
 def scorecard(st, probs, marks):
     import exam  # for section_label; imports lesson and book, already loaded
     rows = ["### Scorecard", "", "| | Outcome | Time | Hints | Follow-up | Technique |", "|---|---|---|---|---|---|"]
     for i, (pr, spec) in enumerate(zip(st["problems"], probs), 1):
         if pr["outcome"] == "not reached":
-            rows.append(f"| Problem {i} | not reached | — | — | — | {spec['technique']} |")
+            rows.append(f"| Problem {i} | not reached | — | — | — | {technique_cell(spec)} |")
             continue
         hints = hints_before(pr, main_correct_at(pr)) if main_correct_at(pr) is not None else len(pr["hints"])
         rows.append(f"| Problem {i} | {pr['outcome']} | {mmss(pr['end'] - pr['start'])} | {hints} | "
-                    f"{pr['followup']} | {spec['technique']} |")
+                    f"{pr['followup']} | {technique_cell(spec)} |")
     out = ["\n".join(rows)]
     for i, pr in enumerate(st["problems"], 1):
         if pr["id"] in marks["problems"]:
@@ -549,6 +564,7 @@ def cmd_finish(a):
     write_frontmatter(note, {"status": "finished", "solved": f"{solved}/{len(st['problems'])}"})
     st.update({"status": "finished", "solved": solved})
     save(c, n, st)
+    technique.sync()  # the round's problems join their technique notes
     clear_pointer()
     clear_status_bar()
     print(f"🗒 interview finished: {solved}/{len(st['problems'])} solved")

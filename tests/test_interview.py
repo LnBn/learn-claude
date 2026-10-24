@@ -33,7 +33,7 @@ MARKS_PATH = "courses/gb/.interviews/gb-interview-1.marks.json"
 def problem(i, answer="21", variables=None, units=("1.1",)):
     return {"id": f"p{i}", "statement": f"Problem {i} statement: what is it?", "answer": answer,
             "variables": variables or {}, "answerLatex": answer, "solution": f"Solution {i}.",
-            "technique": f"technique {i}", "units": list(units), "hints": ["gentle", "stronger", "nearly"],
+            "technique": f"technique {i}", "techniques": ["Symmetry"], "units": list(units), "hints": ["gentle", "stronger", "nearly"],
             "followup": {"statement": f"Follow-up {i}?", "answer": "5", "variables": {}, "answerLatex": "5",
                          "solution": "Because."}}
 
@@ -54,6 +54,9 @@ class InterviewBase(unittest.TestCase):
         set_status(self.cdir, **{"1.1": ("done", "2026-10-05"), "2.3": ("shaky", "2026-10-06")})
         (self.cdir / "gb-ch01.md").write_text(CH01, encoding="utf-8")
         (self.cdir / "gb-ch02.md").write_text(CH02, encoding="utf-8")
+        tdir = self.vault / "techniques"
+        tdir.mkdir()
+        (tdir / "Symmetry.md").write_text("---\naliases: [symmetry argument]\n---\n# Symmetry\n", encoding="utf-8")
 
     def iv(self, *args, stdin=None, env=None):
         # TMUX is cleared unless a test passes its own: the tests must never change the real status bar
@@ -140,7 +143,7 @@ class SettingTheRound(InterviewBase):
         (d / "gb-interview-1.json").write_text(json.dumps(data))
         out = self.iv("new", "--length", "short").stdout
         self.assertIn("NOTE: courses/gb/interviews/gb-interview-2.md", out)
-        self.assertIn("PAST TECHNIQUES:\n  symmetry\n  first-step conditioning", out)
+        self.assertIn("PAST TECHNIQUES:\n  symmetry [Symmetry]\n  first-step conditioning [Symmetry]", out)
 
     def test_check_failures(self):
         self.iv("new", "--length", "short")
@@ -161,6 +164,19 @@ class SettingTheRound(InterviewBase):
             self.assertNotEqual(r.returncode, 0, msg)
             self.assertIn(msg, r.stdout + r.stderr)
         self.assertEqual(self.state()["status"], "set")
+
+    def test_check_technique_names(self):
+        self.iv("new", "--length", "short")
+        p = problems(2)
+        p["problems"][0]["techniques"] = ["Symetry"]
+        self.write_problems(p)
+        self.assertIn('p1: technique "Symetry" has no note in techniques/', self.iv("check").stdout)
+        p["problems"][0]["techniques"] = []
+        self.write_problems(p)
+        self.assertIn("p1: techniques is empty", self.iv("check").stdout)
+        p["problems"][0]["techniques"] = ["symmetry argument"]
+        self.write_problems(p)
+        self.assertEqual(self.iv("check").returncode, 0)
 
     def test_check_passes(self):
         self.iv("new", "--length", "short")
@@ -363,9 +379,10 @@ class Scorecard(InterviewBase):
         self.assertIn("🗒 interview finished: 1/3 solved", r.stdout)
         note = (self.vault / NOTE.format(n=1)).read_text()
         self.assertIn("### Scorecard", note)
-        self.assertIn("| Problem 1 | solved | 6:12 | 0 | not asked | technique 1 |", note)
-        self.assertIn("| Problem 2 | hinted | 0:00 | 1 | not asked | technique 2 |", note)
-        self.assertIn("| Problem 3 | not reached | — | — | — | technique 3 |", note)
+        self.assertIn("| Problem 1 | solved | 6:12 | 0 | not asked | [[Symmetry]] — technique 1 |", note)
+        self.assertIn("| Problem 2 | hinted | 0:00 | 1 | not asked | [[Symmetry]] — technique 2 |", note)
+        self.assertIn("| Problem 3 | not reached | — | — | — | [[Symmetry]] — technique 3 |", note)
+        self.assertIn("gb interview 1, problem 1]] — solved", (self.vault / "techniques" / "Symmetry.md").read_text())
         self.assertIn("**How you explained:** structure — good; assumptions — stated; sanity checks — none; "
                       "clarity — fine", note)
         self.assertIn("**Work on:** Check small cases.", note)

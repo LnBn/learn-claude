@@ -2,7 +2,7 @@ import json
 import time
 import unittest
 
-from tests._vault import make_course, make_vault, run
+from tests._vault import append, assistant, hook, make_course, make_vault, run, transcript, user
 import technique  # noqa: E402  (the repo copy, for the marker constants only)
 
 CH02 = """## Session — 2026-10-07 (Wed) 12:32
@@ -234,6 +234,41 @@ class Commands(TechniqueBase):
         r = self.tq("tag", "courses/gb/gb-ch02.md", "9.9 Nothing", "Symmetry")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no section", r.stderr)
+
+
+
+class Mirror(TechniqueBase):
+    def mirror(self, note, text, s="sess-t"):
+        tp = transcript(self.vault, s)
+        r = run(self.vault, "md_log.py", "link", str(note), "--session", s, "--from-now", "--no-header")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        append(tp, user("ready"), assistant("m1", text=text))
+        return hook(self.vault, {"hook_event_name": "Stop", "session_id": s, "transcript_path": str(tp)})
+
+    def test_mirror_syncs_after_a_tag_line(self):
+        self.tech("Symmetry")
+        note = self.cdir / "gb-ch03.md"
+        note.write_text("### 3.1 New\n\nText.\n")
+        self.mirror(note, "Both passed.\n\n*Techniques: [[Symmetry]]*")
+        self.assertIn("*Techniques: [[Symmetry]]*", note.read_text())
+        self.assertIn("[[gb-ch03#3.1 New|§3.1 New]]", self.read("Symmetry"))
+
+    def test_mirror_without_techniques_folder(self):
+        note = self.vault / "lessons" / "a.md"
+        note.parent.mkdir()
+        note.write_text("### A\n\nText.\n")
+        r = self.mirror(note, "Done.\n\n*Techniques: [[Symmetry]]*")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("*Techniques: [[Symmetry]]*", note.read_text())
+        idx = (self.vault / "techniques" / "Techniques.md").read_text()
+        self.assertIn("**Unknown techniques:** [[Symmetry]] in ", idx)
+        self.assertIn(", [[a#A|A]];", idx)
+
+    def test_mirror_without_a_tag_line_does_not_sync(self):
+        note = self.cdir / "gb-ch03.md"
+        note.write_text("### 3.1 New\n\nText.\n")
+        self.mirror(note, "No tags here.")
+        self.assertFalse((self.vault / "techniques").exists())
 
 
 if __name__ == "__main__":
