@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -209,11 +210,244 @@ def cmd_check(a):
     print(f"🗒 interview ready: {len(probs)} problems")
 
 
+def tmux(*args):
+    """A tmux command for this session's status bar; nothing outside tmux."""
+    if not os.environ.get("TMUX"):
+        return
+    try:
+        subprocess.run(["tmux", *args], check=False, capture_output=True, timeout=5)
+    except Exception:
+        pass
+
+
+def clear_status_bar():
+    tmux("set-option", "-u", "status-right")
+    tmux("set-option", "-u", "status-interval")
+
+
+# ---------------------------------------------------------------- the clock
+
+def mmss(seconds):
+    m, s = divmod(int(max(0, seconds)), 60)
+    return f"{m}:{s:02d}"
+
+
+def main_correct_at(pr):
+    """The time of the first correct main answer, or None."""
+    return next((a["t"] for a in pr["answers"] if a["verdict"] == "correct" and not a["followup"]), None)
+
+
+def hints_before(pr, t):
+    return sum(1 for h in pr["hints"] if t is None or h["t"] <= t)
+
+
+def followup_result(pr):
+    fus = [a for a in pr["answers"] if a["followup"]]
+    if any(a["verdict"] == "correct" for a in fus):
+        return "solved"
+    return "unsolved" if fus else "not asked"
+
+
+def round_seconds(st):
+    return len(st["problems"]) * PER_PROBLEM
+
+
+def flag(st, t):
+    pr = st["problems"][st["current"]]
+    used = t - pr["start"]
+    if t - st["started"] >= round_seconds(st):
+        return "ROUND TIME UP"
+    if used >= PER_PROBLEM:
+        return "TIME UP"
+    if used >= 0.75 * PER_PROBLEM:
+        return "TIME NEARLY UP"
+    if used >= 0.5 * PER_PROBLEM and not pr["hints"]:
+        return "NUDGE IF STUCK"
+    if main_correct_at(pr) is not None and followup_result(pr) != "solved":
+        return "FOLLOW-UP"
+    return ""
+
+
+def hook_line(st, t):
+    pr = st["problems"][st["current"]]
+    line = (f"INTERVIEW: problem {st['current'] + 1} of {len(st['problems'])} · {mmss(t - pr['start'])} of "
+            f"{mmss(PER_PROBLEM)} · hints {len(pr['hints'])} · round {mmss(t - st['started'])} of {mmss(round_seconds(st))}")
+    f = flag(st, t)
+    return line + (f" · {f}" if f else "")
+
+
+def clock_line(st, t):
+    pr = st["problems"][st["current"]]
+    used = t - pr["start"]
+    head = f"P{st['current'] + 1}/{len(st['problems'])}"
+    return f"{head} TIME UP" if used >= PER_PROBLEM else f"{head} {mmss(used)}/{mmss(PER_PROBLEM)}"
+
+
+def running(quiet=False):
+    """(course, n, state, problems) of the running round; with quiet, None instead of an error."""
+    try:
+        c = book.find_course(None)
+    except SystemExit:
+        if quiet:
+            return None
+        raise
+    op = open_round(c)
+    if not op or op[1].get("status") != "running":
+        if quiet:
+            return None
+        book.die("no round is running", 1)
+    n, st = op
+    return c, n, st, load_problems(c, n)
+
+
+# ---------------------------------------------------------------- the round
+
+def write_frontmatter(path, fields):
+    """Set these frontmatter fields, keeping the rest of the note."""
+    text = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    lines = m.group(1).split("\n") if m else []
+    body = text[m.end():] if m else text
+    for k, v in fields.items():
+        lines = [ln for ln in lines if not ln.startswith(f"{k}:")] + [f"{k}: {v}"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("---\n" + "\n".join(lines) + "\n---\n" + body)
+
+
+def cmd_start(a):
+    c = book.find_course(None)
+    n, st = current_round(c, ("ready",))
+    probs = load_problems(c, n)
+    t = time.time()
+    st["problems"] = [{"id": pr["id"], "start": None, "end": None, "hints": [], "answers": [], "outcome": None,
+                       "followup": "not asked"} for pr in probs]
+    st["problems"][0]["start"] = t
+    st.update({"status": "running", "session": a.session, "started": t, "current": 0})
+    save(c, n, st)
+    write_frontmatter(paths(c, n)["note"], {"interview": c.slug, "number": n, "date": time.strftime("%Y-%m-%d"),
+                                            "length": st["length"], "status": "running"})
+    tmux("set-option", "status-right", f'#(python3 "{os.path.abspath(__file__)}" clock)')
+    tmux("set-option", "status-interval", "1")
+    print(f"NOTE: {book.rel(paths(c, n)['note'])}")
+    print(f"PROBLEM 1: {probs[0]['statement']}")
+
+
+def cmd_hook(a):
+    try:
+        data = json.loads(sys.stdin.read() or "{}")
+        r = running(quiet=True)
+        if not r or not isinstance(data, dict):
+            return
+        c, n, st, _ = r
+        if data.get("session_id") and data.get("session_id") == st.get("session"):
+            print(hook_line(st, time.time()))
+    except Exception:
+        pass  # a hook never gets in the learner's way
+
+
+def cmd_clock(a):
+    try:
+        r = running(quiet=True)
+        if r:
+            print(clock_line(r[2], time.time()))
+    except Exception:
+        pass
+
+
+def cmd_hint(a):
+    c, n, st, probs = running()
+    pr = st["problems"][st["current"]]
+    pr["hints"].append({"t": time.time(), "kind": "error" if a.error else "nudge"})
+    save(c, n, st)
+    k = len(pr["hints"])
+    if a.error:
+        print(f"ERROR POINTED OUT, recorded as hint {k}.")
+        return
+    used = sum(1 for h in pr["hints"] if h["kind"] == "nudge")
+    prepared = probs[st["current"]]["hints"]
+    if used <= len(prepared):
+        print(f"HINT {k} recorded. Next prepared nudge: {prepared[used - 1]}")
+    else:
+        print(f"HINT {k} recorded. No prepared nudges left: give the method, or close the problem.")
+
+
+def cmd_answer(a):
+    c, n, st, probs = running()
+    pr, spec = st["problems"][st["current"]], probs[st["current"]]
+    t = time.time()
+    if a.followup:
+        if main_correct_at(pr) is None:
+            book.die("the follow-up is not open: the main answer is not correct yet", 1)
+        if followup_result(pr) == "solved":
+            book.die("the follow-up is already answered correctly: close the problem with next", 1)
+        spec = spec["followup"]
+    elif main_correct_at(pr) is not None:
+        book.die("the main answer is already answered correctly; the follow-up takes --followup", 1)
+    try:
+        verdict = answer_check.check(a.text, str(spec["answer"]), spec.get("variables") or {})
+    except answer_check.AnswerError as exc:
+        print(f"UNREADABLE: {exc}")
+        return
+    pr["answers"].append({"t": t, "text": a.text, "verdict": verdict, "followup": bool(a.followup)})
+    save(c, n, st)
+    print("CORRECT" if verdict == "correct" else "WRONG")
+    if verdict == "correct" and not a.followup:
+        left = PER_PROBLEM - (t - pr["start"])
+        print(f"FOLLOW-UP: {spec['followup']['statement']}" if left >= 120
+              else "NO TIME FOR THE FOLLOW-UP: close the problem with next")
+
+
+def close_problem(st, probs, t, gave_up=False):
+    """Close the current problem; return its CLOSED and SOLUTION lines."""
+    i = st["current"]
+    pr = st["problems"][i]
+    at = main_correct_at(pr)
+    hints = hints_before(pr, at)
+    pr["outcome"] = "unsolved" if at is None else ("solved" if hints == 0 else "hinted")
+    pr["followup"] = followup_result(pr)
+    pr["end"] = t
+    pr["gaveUp"] = bool(gave_up)
+    shown = len(pr["hints"]) if at is None else hints
+    return [f"CLOSED: Problem {i + 1} — {pr['outcome']} ({mmss(t - pr['start'])}, {shown} hint{'' if shown == 1 else 's'})",
+            f"SOLUTION: {probs[i]['solution']}"]
+
+
+def end_round(c, n, st):
+    for pr in st["problems"]:
+        if pr["outcome"] is None:
+            pr["outcome"] = "not reached"
+            pr["followup"] = "not asked"
+    st["status"] = "ended"
+    save(c, n, st)
+    print(f"ROUND OVER: write the marks to {book.rel(paths(c, n)['marks'])}, then run finish")
+
+
+def cmd_next(a):
+    c, n, st, probs = running()
+    t = time.time()
+    print("\n".join(close_problem(st, probs, t, a.gave_up)))
+    if st["current"] + 1 >= len(st["problems"]) or t - st["started"] >= round_seconds(st):
+        end_round(c, n, st)
+        return
+    st["current"] += 1
+    st["problems"][st["current"]]["start"] = t
+    save(c, n, st)
+    print(f"PROBLEM {st['current'] + 1}: {probs[st['current']]['statement']}")
+
+
+def cmd_stop(a):
+    c, n, st, probs = running()
+    print("\n".join(close_problem(st, probs, time.time())))
+    end_round(c, n, st)
+
+
 def cmd_abandon(a):
     c = book.find_course(None)
     n, st = current_round(c, OPEN)
     st["status"] = "abandoned"
     save(c, n, st)
+    clear_status_bar()
     print(f"🗒 interview abandoned: {book.rel(paths(c, n)['note'])}")
 
 
@@ -223,9 +457,22 @@ def main(argv=None):
     s = sub.add_parser("new")
     s.add_argument("--length", choices=sorted(LENGTHS), required=True)
     sub.add_parser("check")
+    s = sub.add_parser("start")
+    s.add_argument("--session", required=True)
+    sub.add_parser("hook")
+    sub.add_parser("clock")
+    s = sub.add_parser("hint")
+    s.add_argument("--error", action="store_true")
+    s = sub.add_parser("answer")
+    s.add_argument("text")
+    s.add_argument("--followup", action="store_true")
+    s = sub.add_parser("next")
+    s.add_argument("--gave-up", action="store_true")
+    sub.add_parser("stop")
     sub.add_parser("abandon")
     a = p.parse_args(argv)
-    {"new": cmd_new, "check": cmd_check, "abandon": cmd_abandon}[a.cmd](a)
+    {"new": cmd_new, "check": cmd_check, "start": cmd_start, "hook": cmd_hook, "clock": cmd_clock, "hint": cmd_hint,
+     "answer": cmd_answer, "next": cmd_next, "stop": cmd_stop, "abandon": cmd_abandon}[a.cmd](a)
 
 
 if __name__ == "__main__":
