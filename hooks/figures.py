@@ -29,11 +29,11 @@ PROTECTED_RE = re.compile(r"\[\[.*?\]\]|`[^`\n]*`|\$[^$\n]*\$")
 
 
 def course_of(note):
-    """The course directory a note belongs to (an exam paper in its `exams/` folder too), or None."""
+    """The course directory a note belongs to (an exam paper or an interview in its own folder too), or None."""
     if not note:
         return None
     d = os.path.dirname(os.path.abspath(note))
-    if os.path.basename(d) == "exams":
+    if os.path.basename(d) in ("exams", "interviews"):
         d = os.path.dirname(d)
     return d if os.path.exists(os.path.join(d, ".course", "book.json")) else None
 
