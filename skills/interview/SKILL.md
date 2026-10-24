@@ -40,6 +40,7 @@ Nothing of the setting may reach a note.
       "solution": "<a worked solution in markdown, a few lines>",
       "technique": "<the trick, in a few words>",
       "units": ["2.4"],
+      "techniques": ["<names from technique.py list>"],
       "hints": ["<gentle>", "<stronger>", "<nearly the method>"],
       "followup": {"statement": "…", "answer": "…", "variables": {}, "answerLatex": "…", "solution": "…"}}
    ]}
@@ -47,6 +48,7 @@ Nothing of the setting may reach a note.
    - As many problems as the `BUDGET` line says, with ids `p1…pn`.
    - **New problems** in the style of quant research interviews: probability, expectation, combinatorics, puzzles, estimation, whatever the finished units support. Each must be solvable in about ten minutes with the ideas on the `UNITS` lines; `units` names the ones it uses. Not a worked example or an exercise from the book, not a quiz from the lessons, and not a technique on the `PAST TECHNIQUES` lines.
    - Vary them: different techniques, and at least one problem whose setting does not look like the unit it draws on. Order them from easier to harder.
+   - `techniques` names the technique notes the problem exercises (`python3 .claude/hooks/technique.py list`). A problem on a trick with no note gets its note written first, as the `techniques` skill's **Writing a technique note** says. The free-text `technique` stays: it describes the trick as this problem uses it.
    - The graded answer is a number or a formula in the typed-answer syntax (`answer_check`): `2^(n+1)-2`, `7/12`, with every variable's range in `variables`. A problem whose answer is a proof or a strategy in words does not go in a round.
    - Three nudges, from gentle (a question that points at the right object) to nearly the method. They never give the answer.
    - The follow-up changes one thing about the problem: a parameter, a condition, the question asked.

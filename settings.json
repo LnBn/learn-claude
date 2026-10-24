@@ -64,6 +64,7 @@
       "Bash(python3 .claude/hooks/exam.py *)",
       "Bash(python3 .claude/hooks/coding.py *)",
       "Bash(python3 .claude/hooks/interview.py *)",
+      "Bash(python3 .claude/hooks/technique.py *)",
       "Write(/tmp/learn-code-*)",
       "Bash(mkdir -p /tmp/learn-book*)",
       "Write(/tmp/learn-book/**)",

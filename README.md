@@ -16,7 +16,7 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 
 Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Interviews](#interviews) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Interviews](#interviews) · [Technique notes](#technique-notes) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
@@ -274,6 +274,7 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
 | `courses/<name>/exams/` | Exam papers, one per attempt: `<name>-ch02-exam-1.md`. |
 | `courses/<name>/interviews/` | Mock interviews, one note per round: `<name>-interview-1.md`. |
+| `techniques/` | Technique notes, shared by every course, and their index `Techniques.md`. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
 | `courses/<name>/.exams/` | Hidden: each exam's marking scheme, and your answers as submitted. |
 | `courses/<name>/.interviews/` | Hidden: each round's problems, clock record and marks. |
@@ -368,6 +369,37 @@ The round's note, `courses/<name>/interviews/<name>-interview-1.md`, holds the c
 A problem you did not solve unaided comes back in the next recall check of its chapter.
 
 `/interview list` shows every round with its result. `/interview abandon` drops a round you will not finish.
+
+## Technique notes
+
+Interview problems come down to a small set of tricks: symmetry, linearity of expectation, conditioning on the first step, the pigeonhole principle. A technique note collects one of them, from every course and every round, in `techniques/<Name>.md`:
+
+- **The trick**, stated in general.
+- **Reach for it when:** the features of a problem that should make you think of it. Under them, **In your words**: your own answers, each linked to the problem it came from.
+- **Traps**, and **related** techniques.
+- **Problems:** every lesson section and interview problem that used it, with your record on each (the quizzes of a section, ✓ or ✗, or an interview outcome). This part is written by the script; edit anything else in the note freely.
+
+### How notes fill up
+
+At the end of each lesson section the teacher names the techniques it used, in a line like this:
+
+```markdown
+*Techniques: [[Symmetry]] · [[Linearity of expectation]]*
+```
+
+The first time a technique comes up, the teacher writes its note and asks you one question: *what in this problem should have made you think of it?* Your answer goes under "In your words". Writing the cue yourself is what makes it come back when you meet a new problem.
+
+`techniques/Techniques.md` lists every technique with its problem count and your record, weakest first.
+
+### Commands
+
+```
+/techniques backfill   # tag the sections of the current course you finished before technique notes existed
+/techniques list       # every technique, its aliases and your record
+/techniques sync       # rebuild the problem lists and the index, e.g. after editing tags by hand
+```
+
+The backfill proposes the tags for every finished section in one table, for you to approve or correct, then writes them into the lesson notes. Interview problems are tagged when a round is set.
 
 ## Coding practice
 
@@ -515,6 +547,9 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/interview stop` | End the round early and get the scorecard. |
 | `/interview list` | Every round, with its result. |
 | `/interview abandon` | Drop a round you will not finish. |
+| `/techniques backfill [course]` | Tag the finished sections of a course with their techniques, once. |
+| `/techniques list` | Every technique note, with its aliases and your record. |
+| `/techniques sync` | Rebuild the technique notes' problem lists and the index. |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
 | `/code submit` | Run the hidden tests on the newest unfinished problem (or the one you name). Typing `submit` does the same, unless an exam paper is out. |
