@@ -572,7 +572,7 @@ def run_typed(args, tool_use_id):
         return early
 
     typed = str(ui.get("typed") or "").strip()
-    dont_know = bool(ui.get("dontKnow"))
+    dont_know = bool(ui.get("dontKnow")) or not typed  # an empty answer (the fallback form) is no guess
     note = str(ui.get("note") or "").strip()
     unreadable, correct, matched = "", False, None
     if not dont_know:

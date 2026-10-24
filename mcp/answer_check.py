@@ -24,6 +24,8 @@ FUNCS = {"sqrt": 1, "ln": 1, "log": 1, "log2": 1, "log10": 1, "exp": 1, "abs": 1
 CONSTS = ("inf", "pi", "e")
 RESERVED = set(FUNCS) | set(CONSTS) | {"fact"}
 N_POINTS = 6
+MIN_INT_VALUES = 4
+MAX_LENGTH, MAX_DEPTH = 500, 50
 UNICODE = {"π": " pi ", "∞": " inf ", "×": "*", "·": "*", "−": "-", "√": " √ "}
 RANGE_RE = re.compile(r"^\s*(int\s+)?(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)\s*$")
 NUM_RE = re.compile(r"\d+\.?\d*|\.\d+")
@@ -51,6 +53,8 @@ def parse_ranges(variables):
             raise AnswerError(f'{name}: bad range "{spec}" — write "int a..b" or "a..b" with a < b') from None
         if a >= b:
             raise AnswerError(f'{name}: bad range "{spec}" — write "int a..b" or "a..b" with a < b')
+        if kind == "int" and b - a + 1 < MIN_INT_VALUES:
+            raise AnswerError(f"{name}: the range {str(spec).strip()} has fewer than {MIN_INT_VALUES} values")
         out[name] = (kind, a, b)
     return out
 
@@ -61,13 +65,15 @@ def points(expected, variables):
         return [{}]
     seed = hashlib.sha256((expected + json.dumps(sorted((variables or {}).items()))).encode()).hexdigest()
     rng = random.Random(int(seed, 16))
-    out = []
-    for _ in range(N_POINTS):
-        p = {}
-        for name, (kind, a, b) in sorted(ranges.items()):
-            p[name] = float(rng.randint(a, b)) if kind == "int" else a + (b - a) * (0.02 + 0.96 * rng.random())
-        out.append(p)
-    return out
+    columns = {}
+    for name, (kind, a, b) in sorted(ranges.items()):
+        if kind == "int":  # distinct values first, so a narrow range is still covered
+            values = rng.sample(range(a, b + 1), min(N_POINTS, b - a + 1))
+            values += [rng.randint(a, b) for _ in range(N_POINTS - len(values))]
+            columns[name] = [float(v) for v in values]
+        else:
+            columns[name] = [a + (b - a) * (0.02 + 0.96 * rng.random()) for _ in range(N_POINTS)]
+    return [{name: col[k] for name, col in columns.items()} for k in range(N_POINTS)]
 
 
 # ----------------------------------------------------------------- reading
@@ -86,6 +92,13 @@ def _split_letters(run, names, before_paren):
         if before_paren and rest in FUNCS:
             out.append(("func", "binom" if rest == "C" else rest))
             break
+        fn = next((f for f in sorted(FUNCS, key=len, reverse=True) if rest.startswith(f)), None)
+        if fn and FUNCS[fn] == 2:
+            raise AnswerError(f"can't read: put brackets after {fn}: {fn}(n, k)")
+        if fn:  # ln 2, sqrt2, exp n: the function applies to the next number or name
+            out.append(("bare", fn))
+            i += len(fn)
+            continue
         const = next((c for c in CONSTS if rest.startswith(c)), None)
         var = next((v for v in by_length if rest.startswith(v)), None)
         if const:
@@ -107,7 +120,7 @@ def _tokens(text, names):
     toks, i = [], 0
     while i < len(s):
         ch = s[i]
-        if ch.isspace():
+        if ch.isspace() or ch == "`":  # a backtick comes from copying inline code out of the note
             i += 1
             continue
         m = NUM_RE.match(s, i)
@@ -119,7 +132,7 @@ def _tokens(text, names):
             m = re.compile(r"[A-Za-z]+").match(s, i)
             run, j = m.group(), m.end()
             if run.endswith("log"):
-                d = re.compile(r"(2|10)(?=\s*\()").match(s, j)
+                d = re.compile(r"(2|10)(?=\s*[(A-Za-z]|\s+[\d.])").match(s, j)
                 if d:
                     run, j = run + d.group(), d.end()
             before_paren = bool(re.compile(r"\s*\(").match(s, j))
@@ -150,12 +163,14 @@ def _check_shape(toks):
     depth = 0
     for k, (kind, val) in enumerate(toks):
         depth += (kind == "lp") - (kind == "rp")
+        if depth > MAX_DEPTH:
+            raise AnswerError("can't read: the answer is too long")
         if depth < 0:
             raise AnswerError("can't read: a closing bracket has no opening one")
         nxt = toks[k + 1][0] if k + 1 < len(toks) else None
         if kind == "lp" and nxt == "rp":
             raise AnswerError("can't read: empty brackets")
-        if kind in ("op", "sqrt") and nxt in (None, "rp", "comma"):
+        if kind in ("op", "sqrt", "bare") and nxt in (None, "rp", "comma"):
             raise AnswerError(f"can't read: nothing after {val}")
     if depth > 0:
         raise AnswerError("can't read: unclosed bracket")
@@ -176,8 +191,12 @@ def _group_start(out):
 
 def _python(toks):
     out = []
-    wrap_next = False  # √ applies to the next number or name, or to the next bracket
+    wrap_next = ""  # √, or a function written without brackets, applies to the next number or name
+    prev = None
     for kind, val in toks:
+        if kind == "bang" and prev == "bang":
+            raise AnswerError("can't read: a double factorial (n!!) is not supported; write it with ordinary factorials")
+        prev = kind
         if kind == "bang":
             if not out or out[-1][0] not in ("num", "name", "rp"):
                 raise AnswerError("can't read: nothing before !")
@@ -185,34 +204,39 @@ def _python(toks):
             out[k:] = [("func", "fact"), ("lp", "(")] + out[k:] + [("rp", ")")]
             continue
         if wrap_next:
-            wrap_next = False
+            fn, wrap_next = wrap_next, ""
             if kind in ("num", "name"):
                 out += [("lp", "("), (kind, val), ("rp", ")")]
                 continue
             if kind != "lp":
-                raise AnswerError("can't read: put what √ applies to in brackets")
+                raise AnswerError(f"can't read: put what {fn} applies to in brackets")
             out.append((kind, val))
             continue
-        if out and out[-1][0] in ("num", "name", "rp") and kind in ("num", "name", "func", "lp", "sqrt"):
+        if out and out[-1][0] in ("num", "name", "rp") and kind in ("num", "name", "func", "lp", "sqrt", "bare"):
             out.append(("op", "*"))
-        if kind == "sqrt":
-            out.append(("func", "sqrt"))
-            wrap_next = True
+        if kind in ("sqrt", "bare"):
+            fn = "sqrt" if kind == "sqrt" else val
+            out.append(("func", fn))
+            wrap_next = "√" if kind == "sqrt" else fn
             continue
         out.append((kind, val))
     return "".join("**" if v == "^" else v for _, v in out)
 
 
 def read(text, variables):
+    if len(str(text)) > MAX_LENGTH:
+        raise AnswerError("can't read: the answer is too long")
     names = set(variables or {})
     toks = _tokens(str(text), names)
     _check_shape(toks)
     src = _python(toks)
     try:
         tree = ast.parse(src, mode="eval")
+        _whitelist(tree.body, names)
     except SyntaxError:
         raise AnswerError("can't read: check the operators") from None
-    _whitelist(tree.body, names)
+    except (RecursionError, MemoryError):
+        raise AnswerError("can't read: the answer is too long") from None
     return tree
 
 
@@ -296,14 +320,17 @@ def _walk(node, point):
         return a * b
     if op is ast.Div:
         return a / b
-    return a ** b
+    r = a ** b
+    if isinstance(r, complex):  # a negative base to a fractional power
+        raise ValueError
+    return r
 
 
 def evaluate(tree, point):
     """The value of a read answer at a point, or None where it is undefined."""
     try:
         v = _walk(tree, point)
-    except (ZeroDivisionError, OverflowError, ValueError, KeyError):
+    except (ZeroDivisionError, OverflowError, ValueError, TypeError, KeyError, RecursionError):
         return None
     if isinstance(v, complex) or v != v:
         return None
@@ -387,7 +414,8 @@ def _show(node):
         if name == "sqrt":
             return "√" + (args[0] if _prec(node.args[0]) == 5 and not isinstance(node.args[0], ast.Call) else f"({args[0]})")
         if name == "fact":
-            return (args[0] if _prec(node.args[0]) == 5 else f"({args[0]})") + "!"
+            plain = _prec(node.args[0]) == 5 and not (isinstance(node.args[0], ast.Call) and node.args[0].func.id == "sqrt")
+            return (args[0] if plain else f"({args[0]})") + "!"
         if name == "binom":
             return f"C({args[0]}, {args[1]})"
         return f"{name}({', '.join(args)})"
@@ -395,7 +423,8 @@ def _show(node):
     p = PREC[op]
     left, right = _show(node.left), _show(node.right)
     fact_base = op is ast.Pow and isinstance(node.left, ast.Call) and node.left.func.id == "fact"
-    if _prec(node.left) < p or (op is ast.Pow and _prec(node.left) <= p) or fact_base:
+    div_factor = op is ast.Mult and isinstance(node.left, ast.BinOp) and isinstance(node.left.op, ast.Div)
+    if _prec(node.left) < p or (op is ast.Pow and _prec(node.left) <= p) or fact_base or div_factor:
         left = f"({left})"
     if op is ast.Pow:
         compact = right.replace(" ", "").replace("−", "-")

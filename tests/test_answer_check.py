@@ -101,6 +101,46 @@ class Comparing(unittest.TestCase):
         self.assertIsNone(matches_wrong("2^(n+1)-2", wrong, N))
 
 
+
+class ReviewFixes(unittest.TestCase):
+    def test_complex_intermediate_is_undefined(self):
+        for g in ["sqrt((-1)^(1/2))", "ln((-1)^(1/2))", "((-1)^(1/3))!", "binom((-1)^0.5,1)", "abs((-8)^(1/3))"]:
+            self.assertEqual(check(g, "2", {}), "wrong", g)
+        self.assertEqual(check("sqrt(x^(1/3))", "1", {"x": "-1..1"}), "wrong")
+
+    def test_very_deep_input(self):
+        for g in ["+".join(["1"] * 1500), "-" * 1500 + "1", "(" * 400 + "1" + ")" * 400]:
+            with self.assertRaisesRegex(AnswerError, "^can't read: the answer is too long$"):
+                check(g, "1", {})
+
+    def test_integer_points_are_distinct(self):
+        self.assertEqual(sorted({p["n"] for p in points("2^(n+1)-2", {"n": "int 1..4"})}), [1, 2, 3, 4])
+        self.assertEqual(len({p["n"] for p in points("2^n", N)}), 6)
+        self.assertEqual(check("n^2+n", "2^(n+1)-2", {"n": "int 1..4"}), "wrong")
+        with self.assertRaisesRegex(AnswerError, "^n: the range int 1..3 has fewer than 4 values$"):
+            parse_ranges({"n": "int 1..3"})
+
+    def test_backticks_are_ignored(self):
+        self.assertEqual(check("`1/3`", "1/3", {}), "correct")
+        self.assertEqual(check("2`^n", "2^n", N), "correct")
+
+    def test_function_without_brackets(self):
+        for g, x, v in [("ln 2", "ln(2)", {}), ("ln2", "ln(2)", {}), ("sqrt2", "sqrt(2)", {}), ("exp n", "exp(n)", N),
+                        ("log2 n", "log2(n)", N), ("log2 8", "3", {}), ("2ln n", "2ln(n)", N)]:
+            self.assertEqual(check(g, x, v), "correct", g)
+        with self.assertRaisesRegex(AnswerError, "^can't read: put brackets after binom: binom\\(n, k\\)$"):
+            read("binom 5", N)
+
+    def test_double_factorial_refused(self):
+        with self.assertRaisesRegex(AnswerError, "double factorial"):
+            read("(2n-1)!!", N)
+
+    def test_display_brackets_what_the_reading_groups(self):
+        self.assertEqual(display("n/2(n+1)", N), "(n/2)(n + 1)")
+        self.assertEqual(display("1/2(n+1)", N), "(1/2)(n + 1)")
+        self.assertEqual(display("√n!", N), "(√n)!")
+
+
 class Showing(unittest.TestCase):
     def test_display(self):
         self.assertEqual(display("2^(n+1)-2", N), "2ⁿ⁺¹ − 2")

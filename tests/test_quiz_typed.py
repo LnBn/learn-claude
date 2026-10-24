@@ -92,6 +92,12 @@ class TypedQuiz(unittest.TestCase):
         self.assertIn("User answered incorrectly.", text)
         self.assertIn("could not be read: can't read: unclosed bracket", text)
 
+    def test_empty_answer_is_dont_know(self):
+        self.ui = [{"action": "accept", "typed": ""}]
+        text = text_of(quiz_server.run_quiz(dict(ARGS), "toolu_1"))
+        self.assertIn("User answered \"I don't know\"", text)
+        self.assertNotIn("``", self.note.read_text())
+
     def test_reask_after_question(self):
         self.ui = [{"action": "ask", "question": "Is n fixed?"}, {"action": "accept", "typed": "2^(n+1)-2"}]
         quiz_server.run_quiz(dict(ARGS), "toolu_1")
