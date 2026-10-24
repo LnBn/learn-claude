@@ -34,7 +34,8 @@ TECH_DIR = os.path.join(VAULT, "techniques")
 INDEX = os.path.join(TECH_DIR, "Techniques.md")
 START = "%% problems: written by technique.py sync; edits inside are replaced %%"
 END = "%% /problems %%"
-TAG_RE = re.compile(r"^\*Techniques: (.+)\*$")
+TAG_RE = re.compile(r"^\*{0,2}\s*Techniques?\s*:\s*\*{0,2}\s*(.*)$", re.I)  # lenient: the model's variants count
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
 LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 SESSION_RE = re.compile(r"^## Session — (\d{4}-\d{2}-\d{2})")
 NUM_RE = re.compile(r"([A-Z]?\d+(?:\.\d+)*)\s")
@@ -62,16 +63,20 @@ def load_techniques():
     for p in sorted(glob.glob(os.path.join(glob.escape(TECH_DIR), "*.md"))):
         if os.path.abspath(p) == os.path.abspath(INDEX):
             continue
-        with open(p, encoding="utf-8") as f:
-            out[os.path.splitext(os.path.basename(p))[0]] = {"path": p, "aliases": _aliases(f.read())}
+        try:
+            with open(p, encoding="utf-8") as f:
+                text = f.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        out[os.path.splitext(os.path.basename(p))[0]] = {"path": p, "aliases": _aliases(text)}
     return out
 
 
 def resolver(techs):
     """{lower-cased name or alias: canonical name}."""
-    res = {}
+    res = {name.lower(): name for name in techs}  # a note's own name always wins over another note's alias
     for name, t in techs.items():
-        for key in [name] + t["aliases"]:
+        for key in t["aliases"]:
             res.setdefault(key.lower(), name)
     return res
 
@@ -96,6 +101,34 @@ def long_label(anchor):
     return f"§{anchor}" if NUM_RE.match(anchor + " ") else anchor
 
 
+def fenced(lines):
+    """[bool] per line: inside a fenced code block (the fence lines included)."""
+    out, fence = [], None
+    for ln in lines:
+        m = FENCE_RE.match(ln)
+        if fence is None and m:
+            fence = m.group(1)
+            out.append(True)
+        elif fence is not None:
+            out.append(True)
+            if ln.strip().startswith(fence):
+                fence = None
+        else:
+            out.append(False)
+    return out
+
+
+def tag_targets(line):
+    """The link targets of a tag line, or None for any other line."""
+    s = line.strip()
+    while s.startswith(">"):
+        s = s[1:].strip()
+    m = TAG_RE.match(s)
+    if not m or "[[" not in m.group(1):
+        return None
+    return [target(link) for link in LINK_RE.findall(m.group(1)) if target(link)]
+
+
 def scanned_notes():
     for root, dirs, files in os.walk(VAULT):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS
@@ -108,7 +141,12 @@ def scanned_notes():
 def note_sections(lines):
     """[(heading line index, anchor, [section lines], session date)] for each ### section."""
     out, cur, date = [], None, None
+    code = fenced(lines)
     for i, ln in enumerate(lines):
+        if code[i]:
+            if cur is not None:
+                cur[2].append("")  # code is not read: no headings, tags or quizzes inside it
+            continue
         m = SESSION_RE.match(ln)
         if m:
             date = m.group(1)
@@ -124,9 +162,7 @@ def note_sections(lines):
 def section_tags(body):
     targets = []
     for ln in body:
-        m = TAG_RE.match(ln.strip())
-        if m:
-            targets += [target(link) for link in LINK_RE.findall(m.group(1)) if target(link)]
+        targets += tag_targets(ln) or []
     return list(dict.fromkeys(targets))
 
 
@@ -222,9 +258,10 @@ def render_block(entries):
 
 
 def with_block(text, block):
-    if START in text and END in text:
-        a, b = text.index(START), text.index(END) + len(END)
-        return text[:a] + block + text[b:]
+    a = text.find(START)
+    b = text.find(END, a) if a >= 0 else -1
+    if a >= 0 and b >= 0:
+        return text[:a] + block + text[b + len(END):]
     m = re.search(r"^## Problems[ \t]*\n", text, re.M)
     if m:
         return text[:m.end()] + "\n" + block + "\n" + text[m.end():]
@@ -306,10 +343,12 @@ def cmd_cue(a):
     techs = load_techniques()
     t = techs[resolve_or_die(a.name, resolver(techs))]
     lines = lesson.read(t["path"])
-    head = a.source.split("#", 1)[-1]
-    item = f'- "{a.text.strip()}" — [[{a.source}|{short_label(anchor_of(head))}]], {time.strftime("%Y-%m-%d")}'
-    if "**In your words:**" in lines:
-        k = lines.index("**In your words:**") + 1
+    stem, _, head = a.source.partition("#")
+    anchor = anchor_of(head)
+    item = f'- "{" ".join(a.text.split())}" — [[{stem}#{anchor}|{short_label(anchor)}]], {time.strftime("%Y-%m-%d")}'
+    header = next((i for i, ln in enumerate(lines) if ln.strip() == "**In your words:**"), None)
+    if header is not None:
+        k = header + 1
         while k < len(lines) and lines[k].startswith("- "):
             k += 1
         lines[k:k] = [item]
@@ -356,26 +395,34 @@ def cmd_sections(a):
 def cmd_tag(a):
     path = os.path.abspath(a.note)
     lines = lesson.read(path)
+    code = fenced(lines)
     want = anchor_of("### " + a.heading)
-    start = next((i for i, ln in enumerate(lines) if ln.startswith("### ") and anchor_of(ln) == want), None)
+    start = next((i for i, ln in enumerate(lines) if not code[i] and ln.startswith("### ") and anchor_of(ln) == want), None)
     if start is None:
         book.die(f"no section {a.heading!r} in {book.rel(path)}", 1)
     res = resolver(load_techniques())
+    for n in a.names:
+        if n.lower() not in res:
+            print(f'UNKNOWN: "{n}" has no note in techniques/')
     names = [res.get(n.lower(), n) for n in a.names]
-    nxt = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")), len(lines))
-    existing = next((i for i in range(start + 1, nxt) if TAG_RE.match(lines[i].strip())), None)
+    nxt = next((i for i in range(start + 1, len(lines)) if not code[i] and lines[i].startswith("### ")), len(lines))
+    existing = next((i for i in range(start + 1, nxt) if not code[i] and tag_targets(lines[i]) is not None), None)
     if existing is not None:
-        links = LINK_RE.findall(TAG_RE.match(lines[existing].strip()).group(1))
-        have = {res.get(target(l).lower(), target(l)).lower() for l in links}
+        links = tag_targets(lines[existing])
+        have = {res.get(l.lower(), l).lower() for l in links}
         links += [n for n in names if n.lower() not in have]
         lines[existing] = "*Techniques: " + " · ".join(f"[[{l}]]" for l in dict.fromkeys(links)) + "*"
     else:
-        end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith(("## ", "### "))), len(lines))
+        end = next((i for i in range(start + 1, len(lines)) if not code[i] and lines[i].startswith(("## ", "### "))),
+                   len(lines))
         k = end
-        while k > start + 1 and not lines[k - 1].strip():
-            k -= 1
+        while k > start + 1 and (not lines[k - 1].strip() or lines[k - 1].strip() == "---"):
+            k -= 1  # before the rule above a session header, which belongs to the next session
+        rest = lines[k:]
+        while rest and not rest[0].strip():
+            rest.pop(0)
         tag = "*Techniques: " + " · ".join(f"[[{n}]]" for n in dict.fromkeys(names)) + "*"
-        lines = lines[:k] + ["", tag] + ([""] + lines[end:] if end < len(lines) else [])
+        lines = lines[:k] + ["", tag] + ([""] + rest if rest else [])
     write_lines(path, lines)
     print(sync())
 

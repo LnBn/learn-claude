@@ -168,15 +168,22 @@ class SettingTheRound(InterviewBase):
     def test_check_technique_names(self):
         self.iv("new", "--length", "short")
         p = problems(2)
-        p["problems"][0]["techniques"] = ["Symetry"]
+        p["problems"][0]["techniques"] = ["Reflection principle"]
         self.write_problems(p)
-        self.assertIn('p1: technique "Symetry" has no note in techniques/', self.iv("check").stdout)
+        r = self.iv("check")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # no note yet: written after the round
+        self.assertIn("NEW TECHNIQUES (write their notes after the round): Reflection principle", r.stdout)
+        self.assertFalse((self.vault / "techniques" / "Reflection principle.md").exists())
+        self.iv("abandon")
+        self.iv("new", "--length", "short")
         p["problems"][0]["techniques"] = []
-        self.write_problems(p)
+        self.write_problems(p, n=2)
         self.assertIn("p1: techniques is empty", self.iv("check").stdout)
         p["problems"][0]["techniques"] = ["symmetry argument"]
-        self.write_problems(p)
-        self.assertEqual(self.iv("check").returncode, 0)
+        self.write_problems(p, n=2)
+        r = self.iv("check")
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("NEW TECHNIQUES", r.stdout)
 
     def test_check_passes(self):
         self.iv("new", "--length", "short")

@@ -271,5 +271,92 @@ class Mirror(TechniqueBase):
         self.assertFalse((self.vault / "techniques").exists())
 
 
+
+class ReviewFixes(TechniqueBase):
+    def test_fenced_code_is_not_read(self):
+        self.tech("Symmetry")
+        p = self.vault / "Other Notes" / "design.md"
+        p.parent.mkdir()
+        p.write_text("### Real\n\n```markdown\n### 2.4.1 Fake\n\n*Techniques: [[Symmetry]]*\n```\n\n~~~\n*Techniques: [[Nope]]*\n~~~\n")
+        self.tq("sync")
+        self.assertNotIn("design#", self.read("Symmetry"))
+        self.assertNotIn("Nope", (self.vault / "techniques" / "Techniques.md").read_text())
+
+    def test_tag_skips_headings_inside_fences(self):
+        self.tech("Symmetry")
+        note = self.vault / "lessons" / "code.md"
+        note.parent.mkdir()
+        note.write_text("### 1.1 Code\n\n```python\n### not a heading\nx = 1\n```\n\nAfter.\n\n### 1.2 Next\n\nText.\n")
+        self.tq("tag", "lessons/code.md", "1.1 Code", "Symmetry")
+        self.assertIn("```\n\nAfter.\n\n*Techniques: [[Symmetry]]*\n\n### 1.2 Next", note.read_text())
+        out = self.tq("sections", "lessons/code.md").stdout
+        self.assertNotIn("not a heading", out)
+
+    def test_tag_goes_before_the_rule_above_a_session_header(self):
+        self.tech("Symmetry")
+        note = self.cdir / "gb-ch02.md"
+        t = note.read_text().replace("*Techniques: [[symmetry argument|by symmetry]] · [[Pigeonhole]]*\n", "")
+        note.write_text(t.replace("\n## Session — 2026-10-09", "\n---\n\n## Session — 2026-10-09"))
+        self.tq("tag", "courses/gb/gb-ch02.md", "2.4.2 Wise men", "Symmetry")
+        self.assertIn("> body\n\n*Techniques: [[Symmetry]]*\n\n---\n\n## Session — 2026-10-09", note.read_text())
+
+    def test_names_win_over_aliases(self):
+        self.tech("Conditioning", aliases=["first-step analysis"])
+        self.tech("First-step analysis")
+        note = self.cdir / "gb-ch02.md"
+        note.write_text(note.read_text().replace("[[Pigeonhole principle]]", "[[First-step analysis]]"))
+        self.tq("sync")
+        self.assertIn("§2.6.1 Handshakes", self.read("First-step analysis"))
+        self.assertNotIn("§2.6.1", self.read("Conditioning"))
+
+    def test_lenient_tag_lines(self):
+        self.tech("Symmetry")
+        lines = ["**Techniques:** [[Symmetry]]", "*Techniques: [[Symmetry]]", "*Techniques: [[Symmetry]]*.",
+                 "> *Techniques: [[Symmetry]]*", "*Technique: [[Symmetry]]*", "*Techniques: [[Symmetry]], [[Symmetry]]*"]
+        body = "".join(f"### 9.{i} S{i}\n\n{ln}\n\n" for i, ln in enumerate(lines))
+        (self.vault / "lessons").mkdir()
+        (self.vault / "lessons" / "loose.md").write_text(body)
+        self.tq("sync")
+        sym = self.read("Symmetry")
+        for i in range(len(lines)):
+            self.assertIn(f"[[loose#9.{i} S{i}|", sym)
+
+    def test_prose_mentioning_techniques_is_not_a_tag(self):
+        self.tech("Symmetry")
+        (self.vault / "lessons").mkdir()
+        (self.vault / "lessons" / "prose.md").write_text("### A\n\nTechniques: symmetry is one of them.\n")
+        self.tq("sync")
+        self.assertNotIn("prose#", self.read("Symmetry"))
+
+    def test_swapped_markers_do_not_grow_the_note(self):
+        p = self.vault / "techniques" / "Symmetry.md"
+        p.parent.mkdir()
+        p.write_text(f"# Symmetry\n\n{technique.END}\nmiddle\n{technique.START}\nold\n{technique.END}\n")
+        self.tq("sync")
+        first = p.read_text()
+        self.tq("sync")
+        self.assertEqual(p.read_text(), first)
+        self.assertIn("middle", first)
+
+    def test_cue_cleans_text_and_header_and_links_by_anchor(self):
+        self.tech("Symmetry", body="**In your words:** \n- \"old\" — x, 2026-10-01\n")
+        self.tq("cue", "Symmetry", "two piles\nthat swap", "--source", "pml1-ch01#1.2.1 Classification: the setup")
+        t = self.read("Symmetry")
+        self.assertEqual(t.count("**In your words:**"), 1)
+        self.assertIn('- "two piles that swap" — [[pml1-ch01#1.2.1 Classification the setup|§1.2.1]], ', t)
+
+    def test_unreadable_note_is_skipped(self):
+        self.tech("Symmetry")
+        (self.vault / "techniques" / "Bad.md").write_bytes(b"\xff\xfe\x00bad")
+        r = self.tq("sync")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("1 notes", r.stdout)
+
+    def test_tag_warns_about_unknown_names(self):
+        self.tech("Symmetry")
+        out = self.tq("tag", "courses/gb/gb-ch02.md", "2.4.1 Coin piles", "Symetry").stdout
+        self.assertIn('UNKNOWN: "Symetry" has no note in techniques/', out)
+
+
 if __name__ == "__main__":
     unittest.main()

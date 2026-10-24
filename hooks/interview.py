@@ -212,11 +212,8 @@ def problem_errors(c, length, probs):
             errors.append(f"{pid}: units is empty")
         errors += [f"{pid}: unit {u} is not finished" for u in units if u not in finished]
         names = pr.get("techniques")
-        if not isinstance(names, list) or not names:
+        if not isinstance(names, list) or not names or not all(str(t).strip() for t in names):
             errors.append(f"{pid}: techniques is empty")
-        else:
-            known = technique.resolver(technique.load_techniques())
-            errors += [f'{pid}: technique "{t}" has no note in techniques/' for t in names if str(t).lower() not in known]
         hints = pr.get("hints")
         if not isinstance(hints, list) or len(hints) != 3 or not all(str(h).strip() for h in hints):
             errors.append(f"{pid}: needs exactly 3 hints")
@@ -248,6 +245,10 @@ def cmd_check(a):
     st["status"] = "ready"
     save(c, n, st)
     print(f"🗒 interview ready: {len(probs)} problems")
+    known = technique.resolver(technique.load_techniques())
+    new = list(dict.fromkeys(str(t) for pr in probs for t in pr["techniques"] if str(t).lower() not in known))
+    if new:  # a note written now would show the learner the round's tricks before it starts
+        print(f"NEW TECHNIQUES (write their notes after the round): {', '.join(new)}")
 
 
 def tmux(*args):
@@ -564,7 +565,10 @@ def cmd_finish(a):
     write_frontmatter(note, {"status": "finished", "solved": f"{solved}/{len(st['problems'])}"})
     st.update({"status": "finished", "solved": solved})
     save(c, n, st)
-    technique.sync()  # the round's problems join their technique notes
+    try:
+        technique.sync()  # the round's problems join their technique notes
+    except Exception:
+        pass  # a broken technique note must not stop the round from finishing
     clear_pointer()
     clear_status_bar()
     print(f"🗒 interview finished: {solved}/{len(st['problems'])} solved")

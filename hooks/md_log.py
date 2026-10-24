@@ -456,7 +456,7 @@ def append(text):
             f.write(prefix + text.strip("\n") + "\n")
     except Exception:
         return
-    if "*Techniques:" in text:  # a section was tagged: its technique notes and the index list it now
+    if "[[" in text and re.search(r"Techniques?\s*:", text, re.I):  # a section was tagged: the notes list it now
         try:
             import technique
             technique.sync()
