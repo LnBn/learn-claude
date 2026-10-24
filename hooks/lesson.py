@@ -348,6 +348,14 @@ def summary(path, notes=None):
     if misses:
         print()
         print("\n".join(misses))
+    try:
+        import interview  # imports this module; only needed here
+        misses = interview.interview_misses(path)
+    except Exception:
+        misses = []
+    if misses:
+        print()
+        print("\n".join(misses))
 
 
 def list_checkpoints(path):

@@ -451,6 +451,105 @@ def cmd_abandon(a):
     print(f"🗒 interview abandoned: {book.rel(paths(c, n)['note'])}")
 
 
+# ---------------------------------------------------------------- the scorecard
+
+def marks_errors(st, marks):
+    if not isinstance(marks, dict) or not isinstance(marks.get("problems"), dict):
+        return ["marks: the file must have a \"problems\" object"]
+    given = {pr["id"] for pr in st["problems"] if pr["outcome"] != "not reached"}
+    errors = [f"marks: no feedback for {pid}" for pid in sorted(given) if not str(marks["problems"].get(pid) or "").strip()]
+    errors += [f"marks: {pid} was not reached" for pid in sorted(marks["problems"]) if pid not in given]
+    return errors
+
+
+def scorecard(st, probs, marks):
+    import exam  # for section_label; imports lesson and book, already loaded
+    rows = ["### Scorecard", "", "| | Outcome | Time | Hints | Follow-up | Technique |", "|---|---|---|---|---|---|"]
+    for i, (pr, spec) in enumerate(zip(st["problems"], probs), 1):
+        if pr["outcome"] == "not reached":
+            rows.append(f"| Problem {i} | not reached | — | — | — | {spec['technique']} |")
+            continue
+        hints = hints_before(pr, main_correct_at(pr)) if main_correct_at(pr) is not None else len(pr["hints"])
+        rows.append(f"| Problem {i} | {pr['outcome']} | {mmss(pr['end'] - pr['start'])} | {hints} | "
+                    f"{pr['followup']} | {spec['technique']} |")
+    out = ["\n".join(rows)]
+    for i, pr in enumerate(st["problems"], 1):
+        if pr["id"] in marks["problems"]:
+            out.append(f"**Problem {i}:** {marks['problems'][pr['id']]}")
+    comm = marks.get("communication") or {}
+    if comm:
+        out.append("**How you explained:** " + "; ".join(f"{k} — {v}" for k, v in comm.items()))
+    if marks.get("work_on"):
+        out.append("**Work on:** " + " ".join(marks["work_on"]))
+    if marks.get("revisit"):
+        out.append("**Revisit:** " + "; ".join(f"[[{target}|{exam.section_label(target)}]] — {why}"
+                                               for target, why in marks["revisit"].items()))
+    for i, (pr, spec) in enumerate(zip(st["problems"], probs), 1):
+        if pr["outcome"] == "not reached":
+            continue
+        fu = spec["followup"]
+        body = [spec["statement"], "", spec["solution"], "", f"**Follow-up:** {fu['statement']}", "",
+                fu.get("solution") or ""]
+        quoted = "\n".join(("> " + ln) if ln else ">" for ln in "\n".join(body).strip().split("\n"))
+        out.append(f"> [!example]- Problem {i} — solution\n{quoted}")
+    return "\n\n".join(out) + "\n"
+
+
+def cmd_finish(a):
+    c = book.find_course(None)
+    n, st = current_round(c, ("ended",))
+    marks = book.load_json(a.marks, None)
+    errors = marks_errors(st, marks)
+    if errors:
+        book.die("\n".join(errors), 1)
+    note = paths(c, n)["note"]
+    text = open(note, encoding="utf-8").read() if os.path.exists(note) else ""
+    with open(note, "w", encoding="utf-8") as f:
+        f.write(text.rstrip("\n") + "\n\n" + scorecard(st, load_problems(c, n), marks))
+    solved = sum(pr["outcome"] == "solved" for pr in st["problems"])  # unaided; hinted solves are in the table
+    write_frontmatter(note, {"status": "finished", "solved": f"{solved}/{len(st['problems'])}"})
+    st.update({"status": "finished", "solved": solved})
+    save(c, n, st)
+    clear_status_bar()
+    print(f"🗒 interview finished: {solved}/{len(st['problems'])} solved")
+
+
+def cmd_list(a):
+    c = book.find_course(None)
+    for n, st in rounds(c):
+        line = f"{c.slug}-interview-{n}  {st.get('set', '')}  {st.get('length', '')}  {st.get('status', '')}"
+        if st.get("status") == "finished":
+            line += f"  {st.get('solved', 0)}/{len(st.get('problems', []))} solved"
+        print(line)
+
+
+def interview_misses(note):
+    """Lines for the resume brief: the problems not solved unaided in the newest finished round of the note's
+    course, on units of this note or the chapter before it."""
+    import figures
+    cdir = figures.course_of(note)
+    if not cdir:
+        return []
+    c = book.Course(cdir)
+    done = [(n, st) for n, st in rounds(c) if st.get("status") == "finished"]
+    if not done:
+        return []
+    n, st = done[-1]
+    probs = load_problems(c, n) or []
+    sources = {os.path.abspath(s) for s in lesson.review_sources(note)}
+    out = []
+    for i, (pr, spec) in enumerate(zip(st["problems"], probs), 1):
+        unit = c.by_id.get((spec.get("units") or [""])[0])
+        if pr["outcome"] not in ("hinted", "unsolved") or not unit:
+            continue
+        if os.path.abspath(c.note(unit["chapter"])) not in sources:
+            continue
+        text = re.sub(r"\s+", " ", spec["statement"])
+        out.append(f"  - Problem {i} {pr['outcome']} §{unit['id']} — {spec['technique']}: "
+                   f"{text[:90]}{'…' if len(text) > 90 else ''}")
+    return [f"INTERVIEW MISSES ({c.slug}-interview-{n}): re-probe these first"] + out if out else []
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="interview.py", description="Mock interviews on the current course.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -469,10 +568,14 @@ def main(argv=None):
     s = sub.add_parser("next")
     s.add_argument("--gave-up", action="store_true")
     sub.add_parser("stop")
+    s = sub.add_parser("finish")
+    s.add_argument("--marks", required=True)
     sub.add_parser("abandon")
+    sub.add_parser("list")
     a = p.parse_args(argv)
     {"new": cmd_new, "check": cmd_check, "start": cmd_start, "hook": cmd_hook, "clock": cmd_clock, "hint": cmd_hint,
-     "answer": cmd_answer, "next": cmd_next, "stop": cmd_stop, "abandon": cmd_abandon}[a.cmd](a)
+     "answer": cmd_answer, "next": cmd_next, "stop": cmd_stop, "finish": cmd_finish, "abandon": cmd_abandon,
+     "list": cmd_list}[a.cmd](a)
 
 
 if __name__ == "__main__":

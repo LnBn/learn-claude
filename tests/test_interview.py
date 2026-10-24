@@ -78,6 +78,31 @@ class InterviewBase(unittest.TestCase):
         r = self.iv("check")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def shift(self, seconds, n=1):
+        """Move every recorded time `seconds` into the past, as if that much time had gone by."""
+        st = self.state(n)
+        if st.get("started"):
+            st["started"] -= seconds
+        for pr in st.get("problems", []):
+            for key in ("start", "end"):
+                if pr.get(key):
+                    pr[key] -= seconds
+            for ev in pr.get("hints", []) + pr.get("answers", []):
+                ev["t"] -= seconds
+        self.state_path(n).write_text(json.dumps(st), encoding="utf-8")
+
+    def hook(self, session):
+        return self.iv("hook", stdin=json.dumps({"session_id": session, "hook_event_name": "UserPromptSubmit",
+                                                 "prompt": "x"}))
+
+    def fake_tmux(self):
+        d = Path(tempfile.mkdtemp(prefix="fake-tmux-"))
+        log = d / "calls.log"
+        script = d / "tmux"
+        script.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        return {"PATH": f"{d}:{os.environ['PATH']}", "TMUX": "x"}, log
+
 
 class SettingTheRound(InterviewBase):
     def test_new_prints_paths_budget_units(self):
@@ -153,31 +178,6 @@ class SettingTheRound(InterviewBase):
 
 
 class RunningRound(InterviewBase):
-    def shift(self, seconds, n=1):
-        """Move every recorded time `seconds` into the past, as if that much time had gone by."""
-        st = self.state(n)
-        if st.get("started"):
-            st["started"] -= seconds
-        for pr in st.get("problems", []):
-            for key in ("start", "end"):
-                if pr.get(key):
-                    pr[key] -= seconds
-            for ev in pr.get("hints", []) + pr.get("answers", []):
-                ev["t"] -= seconds
-        self.state_path(n).write_text(json.dumps(st), encoding="utf-8")
-
-    def hook(self, session):
-        return self.iv("hook", stdin=json.dumps({"session_id": session, "hook_event_name": "UserPromptSubmit",
-                                                 "prompt": "x"}))
-
-    def fake_tmux(self):
-        d = Path(tempfile.mkdtemp(prefix="fake-tmux-"))
-        log = d / "calls.log"
-        script = d / "tmux"
-        script.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
-        script.chmod(script.stat().st_mode | stat.S_IEXEC)
-        return {"PATH": f"{d}:{os.environ['PATH']}", "TMUX": "x"}, log
-
     def test_start_and_hook_line(self):
         self.ready_round(3)
         self.assertIn("PROBLEM 1: Problem 1 statement", self.iv("start", "--session", "s1").stdout)
@@ -331,6 +331,91 @@ class RunningRound(InterviewBase):
         self.iv("new", "--length", "short")
         r = self.iv("start", "--session", "s1")
         self.assertNotEqual(r.returncode, 0)
+
+
+
+MARKS = {"problems": {"p1": "Clear.", "p2": "Needed a push."},
+         "communication": {"structure": "good", "assumptions": "stated", "sanity checks": "none", "clarity": "fine"},
+         "work_on": ["Check small cases."], "revisit": {"gb-ch02#2.3 Bayes' rule": "the update step"}}
+
+
+class Scorecard(InterviewBase):
+    def ended_round(self):
+        """Problem 1 solved in 6:12, problem 2 solved after a hint, problem 3 not reached."""
+        self.ready_round(3)
+        self.iv("start", "--session", "s1")
+        self.shift(372)
+        self.iv("answer", "21")
+        self.iv("next")
+        self.iv("hint")
+        self.iv("answer", "n+1")
+        self.iv("stop")
+
+    def write_marks(self, marks):
+        (self.vault / MARKS_PATH).write_text(json.dumps(marks), encoding="utf-8")
+
+    def test_finish_writes_scorecard(self):
+        env, log = self.fake_tmux()
+        self.ended_round()
+        self.write_marks(MARKS)
+        r = self.iv("finish", "--marks", MARKS_PATH, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("🗒 interview finished: 1/3 solved", r.stdout)
+        note = (self.vault / NOTE.format(n=1)).read_text()
+        self.assertIn("### Scorecard", note)
+        self.assertIn("| Problem 1 | solved | 6:12 | 0 | not asked | technique 1 |", note)
+        self.assertIn("| Problem 2 | hinted | 0:00 | 1 | not asked | technique 2 |", note)
+        self.assertIn("| Problem 3 | not reached | — | — | — | technique 3 |", note)
+        self.assertIn("**How you explained:** structure — good; assumptions — stated; sanity checks — none; "
+                      "clarity — fine", note)
+        self.assertIn("**Work on:** Check small cases.", note)
+        self.assertIn("**Revisit:** [[gb-ch02#2.3 Bayes' rule|§2.3]] — the update step", note)
+        self.assertIn("> [!example]- Problem 1 — solution", note)
+        self.assertIn("> Problem 1 statement: what is it?", note)
+        self.assertIn("> **Follow-up:** Follow-up 1?", note)
+        self.assertNotIn("Problem 3 — solution", note)
+        self.assertIn("status: finished", note)
+        self.assertIn("solved: 1/3", note)
+        self.assertNotIn("status: running", note)
+        self.assertEqual(self.state()["status"], "finished")
+        self.assertIn("set-option -u status-right", log.read_text())
+
+    def test_finish_refuses_incomplete_marks(self):
+        self.ended_round()
+        self.write_marks({**MARKS, "problems": {"p1": "x"}})
+        r = self.iv("finish", "--marks", MARKS_PATH)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("marks: no feedback for p2", r.stderr)
+        self.write_marks({**MARKS, "problems": {**MARKS["problems"], "p3": "x"}})
+        self.assertIn("marks: p3 was not reached", self.iv("finish", "--marks", MARKS_PATH).stderr)
+        self.assertEqual(self.state()["status"], "ended")
+
+    def test_finish_needs_an_ended_round(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.write_marks(MARKS)
+        self.assertNotEqual(self.iv("finish", "--marks", MARKS_PATH).returncode, 0)
+
+    def test_list(self):
+        self.ended_round()
+        self.write_marks(MARKS)
+        self.iv("finish", "--marks", MARKS_PATH)
+        out = self.iv("list").stdout
+        self.assertRegex(out, r"gb-interview-1  \d{4}-\d{2}-\d{2}  standard  finished  1/3 solved")
+
+    def test_misses_in_resume_brief(self):
+        self.ended_round()
+        self.write_marks(MARKS)
+        self.iv("finish", "--marks", MARKS_PATH)
+        out = run(self.vault, "lesson.py", "summary", "courses/gb/gb-ch02.md").stdout
+        self.assertIn("INTERVIEW MISSES (gb-interview-1): re-probe these first", out)
+        self.assertIn("  - Problem 2 hinted §2.3 — technique 2: Problem 2 statement: what is it?", out)
+        self.assertNotIn("Problem 1", out.split("INTERVIEW MISSES")[1])
+
+    def test_no_misses_from_an_unfinished_round(self):
+        self.ended_round()
+        out = run(self.vault, "lesson.py", "summary", "courses/gb/gb-ch02.md").stdout
+        self.assertNotIn("INTERVIEW MISSES", out)
 
 
 if __name__ == "__main__":
