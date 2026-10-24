@@ -418,5 +418,84 @@ class Scorecard(InterviewBase):
         self.assertNotIn("INTERVIEW MISSES", out)
 
 
+
+class ReviewFixes(InterviewBase):
+    def test_round_survives_a_course_switch(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        other = make_course(self.vault, "other")  # also makes "other" the course used last
+        pointer = self.vault / ".claude" / "md-log-state" / "course.json"
+        before = pointer.read_text()
+        self.assertIn("INTERVIEW: problem 1 of 2", self.hook("s1").stdout)
+        self.assertEqual(pointer.read_text(), before)  # the hook and the clock only read
+        self.assertTrue(self.iv("clock").stdout.startswith("P1/2 "))
+        self.assertEqual(pointer.read_text(), before)
+        self.assertEqual(self.iv("answer", "21").stdout.split("\n")[0], "CORRECT")
+        r = self.iv("new", "--length", "short")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("OPEN: courses/gb/interviews/gb-interview-1.md (running)", r.stdout)
+        self.assertFalse((other / ".interviews").exists())
+
+    def test_hook_and_clock_silent_after_finish_or_abandon(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("abandon")
+        self.assertEqual(self.hook("s1").stdout, "")
+        self.assertEqual(self.iv("clock").stdout, "")
+
+    def test_clock_counts_down_to_the_round_end(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.shift(1200)  # problem 1 overran to 20:00
+        self.iv("next")
+        self.assertEqual(self.iv("clock").stdout.strip(), "P2/2 0:00/4:00")
+        self.shift(240)
+        self.assertEqual(self.iv("clock").stdout.strip(), "P2/2 TIME UP")
+
+    def test_followup_flag_wins_over_nudge_flags(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("answer", "21")
+        self.shift(370)
+        self.assertTrue(self.hook("s1").stdout.strip().endswith("· FOLLOW-UP"))
+        self.shift(200)
+        self.assertTrue(self.hook("s1").stdout.strip().endswith("· FOLLOW-UP"))
+        self.shift(200)
+        self.assertTrue(self.hook("s1").stdout.strip().endswith("· TIME UP"))
+
+    def test_hint_during_followup_has_no_prepared_nudge(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("answer", "21")
+        out = self.iv("hint").stdout
+        self.assertIn("HINT 1 recorded, on the follow-up: there are no prepared nudges for it; give one in your own words.", out)
+        self.assertNotIn("gentle", out)
+
+    def test_answer_zero_passes_check(self):
+        self.iv("new", "--length", "short")
+        data = problems(2)
+        data["problems"][0]["answer"] = 0
+        self.write_problems(data)
+        r = self.iv("check")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_work_on_items_are_separate(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("stop")
+        marks = {"problems": {"p1": "x"}, "work_on": ["Set up first", "Check small cases"]}
+        (self.vault / MARKS_PATH).write_text(json.dumps(marks))
+        self.iv("finish", "--marks", MARKS_PATH)
+        self.assertIn("**Work on:** Set up first; Check small cases", (self.vault / NOTE.format(n=1)).read_text())
+
+    def test_abandon_marks_the_note(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("abandon")
+        note = (self.vault / NOTE.format(n=1)).read_text()
+        self.assertIn("status: abandoned", note)
+        self.assertNotIn("status: running", note)
+
+
 if __name__ == "__main__":
     unittest.main()

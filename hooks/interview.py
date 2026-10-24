@@ -39,6 +39,8 @@ LENGTHS = {"short": 2, "standard": 3, "long": 4}
 PER_PROBLEM = 720  # seconds
 OPEN = ("set", "ready", "running", "ended")
 KEY_IDEA_RE = re.compile(r"^> \[!summary\][-+]? Key idea", re.I)
+# the round that is open, whatever course is current: a course switched mid-round must not lose it
+ROUND_POINTER = os.path.join(CLAUDE_DIR, "md-log-state", "interview.json")
 
 
 # ---------------------------------------------------------------- paths and state
@@ -63,6 +65,31 @@ def rounds(c):
 
 def open_round(c):
     return next(((n, st) for n, st in reversed(rounds(c)) if st.get("status") in OPEN), None)
+
+
+def pointed_course():
+    """The course of the round the pointer names, while that round is open; None otherwise. Reads only."""
+    ptr = book.load_json(ROUND_POINTER, None)
+    if not isinstance(ptr, dict) or not os.path.exists(os.path.join(str(ptr.get("course")), ".course", "book.json")):
+        return None
+    c = book.Course(ptr["course"])
+    return c if open_round(c) else None
+
+
+def round_course():
+    """The course whose round the commands act on: the open round's, else the current course."""
+    return pointed_course() or book.find_course(None)
+
+
+def point_at(c, n):
+    book.save_json(ROUND_POINTER, {"course": c.dir, "number": n})
+
+
+def clear_pointer():
+    try:
+        os.remove(ROUND_POINTER)
+    except OSError:
+        pass
 
 
 def load(c, n):
@@ -115,6 +142,11 @@ def unit_link(c, u):
 # ---------------------------------------------------------------- commands
 
 def cmd_new(a):
+    pc = pointed_course()
+    if pc:
+        n, st = open_round(pc)
+        print(f"OPEN: {book.rel(paths(pc, n)['note'])} ({st.get('status')})")
+        book.die("a round is open: finish it, or drop it with: interview.py abandon", 1)
     c = book.find_course(None)
     op = open_round(c)
     if op:
@@ -147,7 +179,7 @@ def _check_answer(where, spec):
         return [f"{where}: variables must be an object from name to range"]
     try:
         answer_check.parse_ranges(variables)
-        answer_check.read(str(spec.get("answer") or ""), variables)
+        answer_check.read(str(spec.get("answer", "")), variables)
         need = min(3, len(answer_check.points(str(spec["answer"]), variables)))
         if answer_check.defined_points(str(spec["answer"]), variables) < need:
             return [f"{where}: answer is undefined at most points of the ranges"]
@@ -196,7 +228,7 @@ def current_round(c, statuses):
 
 
 def cmd_check(a):
-    c = book.find_course(None)
+    c = round_course()
     n, st = current_round(c, ("set", "ready"))
     probs = load_problems(c, n)
     if probs is None:
@@ -259,12 +291,12 @@ def flag(st, t):
         return "ROUND TIME UP"
     if used >= PER_PROBLEM:
         return "TIME UP"
+    if main_correct_at(pr) is not None:  # the follow-up phase: the nudge flags are for the main problem
+        return "FOLLOW-UP" if followup_result(pr) != "solved" else ""
     if used >= 0.75 * PER_PROBLEM:
         return "TIME NEARLY UP"
     if used >= 0.5 * PER_PROBLEM and not pr["hints"]:
         return "NUDGE IF STUCK"
-    if main_correct_at(pr) is not None and followup_result(pr) != "solved":
-        return "FOLLOW-UP"
     return ""
 
 
@@ -279,18 +311,18 @@ def hook_line(st, t):
 def clock_line(st, t):
     pr = st["problems"][st["current"]]
     used = t - pr["start"]
+    limit = min(PER_PROBLEM, st["started"] + round_seconds(st) - pr["start"])  # the round may end first
     head = f"P{st['current'] + 1}/{len(st['problems'])}"
-    return f"{head} TIME UP" if used >= PER_PROBLEM else f"{head} {mmss(used)}/{mmss(PER_PROBLEM)}"
+    return f"{head} TIME UP" if used >= limit else f"{head} {mmss(used)}/{mmss(round(limit))}"
 
 
 def running(quiet=False):
     """(course, n, state, problems) of the running round; with quiet, None instead of an error."""
-    try:
-        c = book.find_course(None)
-    except SystemExit:
+    c = pointed_course()
+    if c is None:
         if quiet:
             return None
-        raise
+        c = book.find_course(None)
     op = open_round(c)
     if not op or op[1].get("status") != "running":
         if quiet:
@@ -316,7 +348,7 @@ def write_frontmatter(path, fields):
 
 
 def cmd_start(a):
-    c = book.find_course(None)
+    c = round_course()
     n, st = current_round(c, ("ready",))
     probs = load_problems(c, n)
     t = time.time()
@@ -325,6 +357,7 @@ def cmd_start(a):
     st["problems"][0]["start"] = t
     st.update({"status": "running", "session": a.session, "started": t, "current": 0})
     save(c, n, st)
+    point_at(c, n)
     write_frontmatter(paths(c, n)["note"], {"interview": c.slug, "number": n, "date": time.strftime("%Y-%m-%d"),
                                             "length": st["length"], "status": "running"})
     tmux("set-option", "status-right", f'#(python3 "{os.path.abspath(__file__)}" clock)')
@@ -363,6 +396,9 @@ def cmd_hint(a):
     k = len(pr["hints"])
     if a.error:
         print(f"ERROR POINTED OUT, recorded as hint {k}.")
+        return
+    if main_correct_at(pr) is not None:
+        print(f"HINT {k} recorded, on the follow-up: there are no prepared nudges for it; give one in your own words.")
         return
     used = sum(1 for h in pr["hints"] if h["kind"] == "nudge")
     prepared = probs[st["current"]]["hints"]
@@ -443,10 +479,13 @@ def cmd_stop(a):
 
 
 def cmd_abandon(a):
-    c = book.find_course(None)
+    c = round_course()
     n, st = current_round(c, OPEN)
     st["status"] = "abandoned"
     save(c, n, st)
+    if os.path.exists(paths(c, n)["note"]):
+        write_frontmatter(paths(c, n)["note"], {"status": "abandoned"})
+    clear_pointer()
     clear_status_bar()
     print(f"🗒 interview abandoned: {book.rel(paths(c, n)['note'])}")
 
@@ -480,7 +519,7 @@ def scorecard(st, probs, marks):
     if comm:
         out.append("**How you explained:** " + "; ".join(f"{k} — {v}" for k, v in comm.items()))
     if marks.get("work_on"):
-        out.append("**Work on:** " + " ".join(marks["work_on"]))
+        out.append("**Work on:** " + "; ".join(marks["work_on"]))
     if marks.get("revisit"):
         out.append("**Revisit:** " + "; ".join(f"[[{target}|{exam.section_label(target)}]] — {why}"
                                                for target, why in marks["revisit"].items()))
@@ -496,7 +535,7 @@ def scorecard(st, probs, marks):
 
 
 def cmd_finish(a):
-    c = book.find_course(None)
+    c = round_course()
     n, st = current_round(c, ("ended",))
     marks = book.load_json(a.marks, None)
     errors = marks_errors(st, marks)
@@ -510,6 +549,7 @@ def cmd_finish(a):
     write_frontmatter(note, {"status": "finished", "solved": f"{solved}/{len(st['problems'])}"})
     st.update({"status": "finished", "solved": solved})
     save(c, n, st)
+    clear_pointer()
     clear_status_bar()
     print(f"🗒 interview finished: {solved}/{len(st['problems'])} solved")
 
