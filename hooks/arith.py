@@ -18,8 +18,11 @@ import argparse
 import json
 import os
 import random
+import shlex
 import statistics
+import subprocess
 import sys
+import time
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from fractions import Fraction
 
@@ -232,7 +235,133 @@ def summary(sprint, history):
             f"BEST: {best} · LAST 5 AVERAGE: {avg}\n{slowest}")
 
 
+# ---------------------------------------------------------------- the sprint
+
+def deadline_left(start, seconds, now):
+    """Seconds left by wall clock; a laptop that slept past the end has none."""
+    return max(0.0, start + seconds - now)
+
+
+def play(stdscr, mode, seconds):
+    import curses
+    curses.curs_set(1)
+    curses.use_default_colors()
+    try:
+        curses.init_pair(1, curses.COLOR_CYAN, -1)
+        curses.init_pair(2, curses.COLOR_GREEN, -1)
+        curses.init_pair(3, curses.COLOR_RED, -1)
+    except Exception:
+        pass
+    history = load_history()
+    weak = weak_kinds(history) if mode == "weak" else None
+    rng = random.Random()
+    stdscr.timeout(200)  # redraw the clock while waiting for keys
+    q = generate(mode, rng, weak)
+    start = shown = time.time()
+    typed, flash, score, skipped, done = "", "", 0, 0, []
+    stopped = None
+
+    def draw(left):
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        head = f"ARITHMETIC · {mode}"
+        right = f"score {score} · {_mmss(left)}"
+        try:
+            stdscr.addstr(0, 2, head, curses.A_BOLD | curses.color_pair(1))
+            stdscr.addstr(0, max(2, w - len(right) - 2), right, curses.A_BOLD)
+            line = f"{q['text']} {'≈' if q['estimate'] else '='} {typed}"
+            stdscr.addstr(h // 2 - 1, max(2, (w - len(line)) // 2), line, curses.A_BOLD)
+            if flash:
+                stdscr.addstr(h // 2 + 1, max(2, (w - len(flash)) // 2), flash, curses.color_pair(3))
+            keys = "type the answer" + (" · Enter submit" if q["estimate"] else "") + " · Tab skip · Esc stop"
+            stdscr.addstr(h - 1, 2, keys[:w - 3], curses.A_DIM)
+            stdscr.move(h // 2 - 1, min(w - 2, max(2, (w - len(line)) // 2) + len(line)))
+        except curses.error:
+            pass
+        stdscr.refresh()
+
+    def advance(correct):
+        nonlocal q, typed, flash, shown, score, skipped
+        if correct:
+            done.append({"kind": q["kind"], "ms": int((time.time() - shown) * 1000)})
+            score += 1
+        else:
+            skipped += 1
+        q, typed, flash, shown = generate(mode, rng, weak), "", "", time.time()
+
+    while True:
+        left = deadline_left(start, seconds, time.time())
+        if left <= 0:
+            break
+        draw(left)
+        try:
+            ch = stdscr.get_wch()
+        except curses.error:
+            continue
+        if ch == "\x1b":
+            stopped = int(time.time() - start)
+            break
+        if ch in ("\t",):
+            advance(False)
+        elif ch in ("\n", "\r") or ch == curses.KEY_ENTER:
+            if q["estimate"]:
+                if accepts(typed, q, enter=True):
+                    advance(True)
+                elif typed:
+                    flash = "not within 2%"
+        elif ch in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+            typed, flash = typed[:-1], ""
+        elif isinstance(ch, str) and ch in "0123456789.-" and len(typed) < 12:
+            typed, flash = typed + ch, ""
+            if not q["estimate"] and accepts(typed, q):
+                advance(True)
+
+    sprint = {"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M"), "mode": mode, "seconds": seconds,
+              "complete": stopped is None, "score": score, "skipped": skipped, "questions": done}
+    if stopped is not None:
+        sprint["stopped"] = stopped
+    save_sprint(sprint)  # before the end screen, so a closed popup loses nothing
+    stdscr.timeout(-1)
+    curses.curs_set(0)
+    stdscr.erase()
+    lines = summary(sprint, load_history()).split("\n") + ["", "press any key"]
+    for i, ln in enumerate(lines):
+        try:
+            stdscr.addstr(1 + i, 2, ln, curses.A_BOLD if i == 0 else 0)
+        except curses.error:
+            pass
+    stdscr.refresh()
+    stdscr.get_wch()
+
+
+def popup_command(mode, seconds, height):
+    inner = " ".join(shlex.quote(x) for x in (sys.executable, os.path.abspath(__file__), "play", mode,
+                                                  "--seconds", str(seconds)))
+    return ["tmux", "display-popup", "-E", "-w", "70", "-h", height, "-T", " arith ", inner]
+
+
 # ---------------------------------------------------------------- commands
+
+def cmd_play(a):
+    import curses
+    os.environ.setdefault("ESCDELAY", "25")
+    curses.wrapper(play, a.mode, a.seconds)
+
+
+def cmd_run(a):
+    if not os.environ.get("TMUX"):
+        print(f'NO TMUX: run "python3 .claude/hooks/arith.py play {a.mode}" in another terminal, then /arith last')
+        return
+    before = len(load_history()["sprints"])
+    proc = subprocess.run(popup_command(a.mode, a.seconds, "14"), capture_output=True, text=True)
+    if proc.returncode != 0 and "too large" in (proc.stderr or ""):
+        subprocess.run(popup_command(a.mode, a.seconds, "90%"), capture_output=True, text=True)
+    h = load_history()
+    if len(h["sprints"]) <= before:
+        print("NO SPRINT RECORDED")
+        return
+    print(summary(h["sprints"][-1], h))
+
 
 def cmd_last(a):
     h = load_history()
@@ -260,13 +389,17 @@ def cmd_kinds(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="arith.py", description="Timed mental arithmetic sprints.")
     sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "play"):
+        s = sub.add_parser(name)
+        s.add_argument("mode", nargs="?", default="core", choices=MODES)
+        s.add_argument("--seconds", type=int, default=120)
     sub.add_parser("last")
     s = sub.add_parser("history")
     s.add_argument("mode", nargs="?", choices=MODES)
     s = sub.add_parser("kinds")
     s.add_argument("mode", nargs="?", choices=CONCRETE)
     a = p.parse_args(argv)
-    {"last": cmd_last, "history": cmd_history, "kinds": cmd_kinds}[a.cmd](a)
+    {"run": cmd_run, "play": cmd_play, "last": cmd_last, "history": cmd_history, "kinds": cmd_kinds}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,11 @@
 import json
+import os
 import random
+import stat
+import tempfile
 import unittest
 from collections import Counter
+from pathlib import Path
 
 from tests._vault import make_vault, run
 import arith  # noqa: E402  (the repo copy: pure functions only, nothing that touches a vault)
@@ -204,6 +208,53 @@ class Commands(unittest.TestCase):
         r = run(self.vault, "arith.py", "last")
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.hist.read_text(), "{bad")
+
+
+
+class Popup(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(self)
+
+    def fake_tmux(self):
+        d = Path(tempfile.mkdtemp(prefix="fake-tmux-"))
+        log = d / "calls.log"
+        hist = self.vault / "practice" / ".arith.json"
+        sprint_json = json.dumps({"sprints": [sprint("core", 12, seconds=10, questions=[("× 7", 1500)])]})
+        script = d / "tmux"
+        script.write_text("#!/bin/sh\n"
+                          f'echo "$@" >> "{log}"\n'
+                          'case "$*" in *"-h 14 "*) echo "height too large" >&2; exit 1;; esac\n'
+                          f'mkdir -p "{hist.parent}"\n'
+                          f"printf '%s' '{sprint_json}' > \"{hist}\"\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        return {"PATH": f"{d}:{os.environ['PATH']}", "TMUX": "x"}, log
+
+    def test_deadline(self):
+        self.assertEqual(arith.deadline_left(100.0, 120, 150.0), 70.0)
+        self.assertEqual(arith.deadline_left(100.0, 120, 900.0), 0.0)
+
+    def test_run_outside_tmux(self):
+        r = run(self.vault, "arith.py", "run", "core", env={"TMUX": ""})
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), 'NO TMUX: run "python3 .claude/hooks/arith.py play core" in another terminal, '
+                                           'then /arith last')
+
+    def test_run_retries_a_tall_popup_and_prints_the_summary(self):
+        env, log = self.fake_tmux()
+        r = run(self.vault, "arith.py", "run", "core", "--seconds", "10", env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ARITHMETIC: core · 10 s · score 12", r.stdout)
+        calls = log.read_text()
+        self.assertIn("display-popup -E -w 70 -h 14 ", calls)
+        self.assertIn("-h 90% ", calls)
+        self.assertIn("arith.py play core --seconds 10", calls)
+
+    def test_run_with_nothing_recorded(self):
+        env, log = self.fake_tmux()
+        script = Path(env["PATH"].split(":")[0]) / "tmux"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        r = run(self.vault, "arith.py", "run", "core", env=env)
+        self.assertIn("NO SPRINT RECORDED", r.stdout)
 
 
 if __name__ == "__main__":
