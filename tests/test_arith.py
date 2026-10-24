@@ -151,8 +151,8 @@ class History(unittest.TestCase):
                                 + [("+ carry", 1000)] * 12)]}
         rng = random.Random(3)
         w = arith.weak_kinds(h)
-        share = sum(arith.generate("weak", rng, w)["kind"] in w for _ in range(2000)) / 2000
-        self.assertTrue(0.6 < share < 0.85, share)
+        share = sum(arith.generate("weak", rng, w)["kind"] in w for _ in range(4000)) / 4000
+        self.assertTrue(0.35 < share < 0.55, share)   # 3 ranked kinds fill 3 of the 5 weak slots: about 0.7 × 3/5
 
     def test_weak_without_history(self):
         self.assertEqual(arith.weak_kinds({"sprints": []}), [])
@@ -170,6 +170,24 @@ class History(unittest.TestCase):
     def test_summary_first_sprint(self):
         new = sprint("core", 20, questions=[("× 7", 2000)])
         self.assertEqual(arith.summary(new, {"sprints": []}).split("\n")[1], "BEST: — · LAST 5 AVERAGE: —")
+
+    def test_weak_fills_unranked_slots_uniformly(self):
+        h = {"sprints": [sprint("powers", 0, questions=[("cube", 3000)] * 12)]}
+        w = arith.weak_kinds(h)
+        self.assertEqual(w, ["cube"])
+        rng = random.Random(5)
+        share = sum(arith.generate("weak", rng, w)["kind"] == "cube" for _ in range(4000)) / 4000
+        self.assertTrue(0.1 < share < 0.25, share)    # 0.7 / 5 from its slot, plus what uniform draws give it
+
+    def test_summary_compares_same_length_only(self):
+        h = {"sprints": [sprint("core", 50, seconds=300), sprint("core", 10, seconds=30), sprint("core", 33)]}
+        new = sprint("core", 35)
+        self.assertEqual(arith.summary(new, h).split("\n")[1], "BEST: 33 · LAST 5 AVERAGE: 33.0")
+
+    def test_summary_uses_position_not_equality(self):
+        a, b = sprint("core", 0), sprint("core", 0)
+        h = {"sprints": [a, b]}
+        self.assertEqual(arith.summary(h["sprints"][-1], h).split("\n")[1], "BEST: 0 · LAST 5 AVERAGE: 0.0")
 
     def test_partial_summary(self):
         s = sprint("core", 9, complete=False)
@@ -195,7 +213,7 @@ class Commands(unittest.TestCase):
         self.assertEqual(last.returncode, 0, last.stderr)
         self.assertIn("ARITHMETIC: fractions", last.stdout)
         hist = run(self.vault, "arith.py", "history", "core").stdout
-        self.assertIn("core: 30 34 · best 34 · average 32.0", hist)
+        self.assertIn("core 120 s: 30 34 · best 34 · average 32.0", hist)
         kinds = run(self.vault, "arith.py", "kinds").stdout
         self.assertLess(kinds.index("× 7"), kinds.index("× 3"))
         self.assertIn("× 7 2.5 s", kinds)
@@ -248,6 +266,34 @@ class Popup(unittest.TestCase):
         self.assertIn("display-popup -E -w 70 -h 14 ", calls)
         self.assertIn("-h 90% ", calls)
         self.assertIn("arith.py play core --seconds 10", calls)
+
+    def test_narrow_terminal_retries_width_too(self):
+        env, log = self.fake_tmux()
+        script = Path(env["PATH"].split(":")[0]) / "tmux"
+        script.write_text(script.read_text().replace('*"-h 14 "*) echo "height too large"', '*"-w 70 "*) echo "width too large"'))
+        r = run(self.vault, "arith.py", "run", "core", env=env)
+        self.assertIn("ARITHMETIC: core", r.stdout)
+        self.assertIn("-w 90% -h 90% ", log.read_text())
+
+    def test_popup_failure_is_reported(self):
+        env, log = self.fake_tmux()
+        script = Path(env["PATH"].split(":")[0]) / "tmux"
+        script.write_text("#!/bin/sh\necho 'unknown command: display-popup' >&2\nexit 1\n")
+        r = run(self.vault, "arith.py", "run", "core", env=env)
+        self.assertEqual(r.stdout.strip(), "POPUP FAILED: unknown command: display-popup")
+
+    def test_seconds_bounds(self):
+        for bad in ("0", "5", "600"):
+            self.assertNotEqual(run(self.vault, "arith.py", "run", "core", "--seconds", bad, env={"TMUX": ""}).returncode, 0)
+        self.assertEqual(run(self.vault, "arith.py", "run", "core", "--seconds", "480", env={"TMUX": ""}).returncode, 0)
+
+    def test_play_with_corrupt_history_says_why(self):
+        h = self.vault / "practice" / ".arith.json"
+        h.parent.mkdir()
+        h.write_text("{bad")
+        r = run(self.vault, "arith.py", "play", "core")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("cannot be read", r.stderr)
 
     def test_run_with_nothing_recorded(self):
         env, log = self.fake_tmux()

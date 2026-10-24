@@ -434,7 +434,7 @@ A drill needs at least four technique notes; `/techniques backfill` makes them f
 ```
 /arith               # core, 120 seconds
 /arith fractions     # one mode
-/arith weak 60       # a mode and a length in seconds
+/arith weak 60       # a mode and a length in seconds (10–480)
 /arith history       # your last scores per mode
 ```
 
@@ -449,7 +449,7 @@ A drill needs at least four technique notes; `/techniques backfill` makes them f
 
 Type the answer: a correct one moves on at once, with no Enter, and a wrong one waits until you fix it. Estimates are submitted with Enter. Tab skips a question; Esc stops early, and a stopped sprint does not count towards your best or your average.
 
-The end screen shows your score, your best and your last-five average in that mode, and the three kinds of question that took you longest this time (for example `× 7` or `− borrow`, a subtraction that needs a borrow). Every answer's time is kept, so `weak` mode can draw mostly from the kinds you are slowest at, each compared with the other kinds of its own mode. The teacher writes a short summary into the day's practice note, with a tip when one kind stands out.
+The end screen shows your score, your best and your last-five average in that mode and length (a 60-second sprint is compared only with other 60-second sprints), and the three kinds of question that took you longest this time (for example `× 7` or `− borrow`, a subtraction that needs a borrow). Every answer's time is kept, so `weak` mode can draw mostly from the kinds you are slowest at, each compared with the other kinds of its own mode. The teacher writes a short summary into the day's practice note, with a tip when one kind stands out.
 
 The popup needs tmux. Without it, run `python3 .claude/hooks/arith.py play <mode>` in another terminal, then `/arith last`.
 

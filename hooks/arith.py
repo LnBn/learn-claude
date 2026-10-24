@@ -135,7 +135,9 @@ def of_kind(kind, rng):
 def generate(mode, rng, weak_kinds=None):
     if mode == "weak":
         if weak_kinds and rng.random() < WEAK_SHARE:
-            return of_kind(rng.choice(weak_kinds), rng)
+            slot = rng.randrange(WEAK_KINDS)  # a slot no ranked kind fills is drawn uniformly below
+            if slot < len(weak_kinds):
+                return of_kind(weak_kinds[slot], rng)
         mode = "mixed"
     if mode == "mixed":
         mode = rng.choice(CONCRETE)
@@ -218,8 +220,9 @@ def _mmss(seconds):
 
 def summary(sprint, history):
     sprints = history["sprints"]
-    if sprint in sprints:  # compare with the sprints before this one
-        sprints = sprints[:sprints.index(sprint)]
+    at = next((i for i, x in enumerate(sprints) if x is sprint), None)
+    if at is not None:  # compare with the sprints before this one
+        sprints = sprints[:at]
     mode = sprint["mode"]
     times = {}
     for q in sprint.get("questions", []):
@@ -228,7 +231,8 @@ def summary(sprint, history):
     slowest = "SLOWEST: " + (" · ".join(f"{k} {ms / 1000:.1f} s" for ms, k in slow) if slow else "—")
     if not sprint.get("complete"):
         return f"ARITHMETIC: {mode} · stopped at {_mmss(sprint.get('stopped', 0))} · score {sprint['score']}\n{slowest}"
-    prior = [sp["score"] for sp in sprints if sp["mode"] == mode and sp.get("complete")]
+    prior = [sp["score"] for sp in sprints  # only sprints of the same mode and length compare
+             if sp["mode"] == mode and sp.get("seconds") == sprint["seconds"] and sp.get("complete")]
     best = str(max(prior)) if prior else "—"
     avg = f"{statistics.mean(prior[-5:]):.1f}" if prior else "—"
     return (f"ARITHMETIC: {mode} · {sprint['seconds']} s · score {sprint['score']} ({sprint.get('skipped', 0)} skipped)\n"
@@ -298,6 +302,8 @@ def play(stdscr, mode, seconds):
             ch = stdscr.get_wch()
         except curses.error:
             continue
+        if deadline_left(start, seconds, time.time()) <= 0:
+            break  # a key pressed after 0:00 does not count
         if ch == "\x1b":
             stopped = int(time.time() - start)
             break
@@ -321,29 +327,33 @@ def play(stdscr, mode, seconds):
     if stopped is not None:
         sprint["stopped"] = stopped
     save_sprint(sprint)  # before the end screen, so a closed popup loses nothing
-    stdscr.timeout(-1)
     curses.curs_set(0)
     stdscr.erase()
-    lines = summary(sprint, load_history()).split("\n") + ["", "press any key"]
+    lines = summary(sprint, history).split("\n") + ["", "press any key"]
     for i, ln in enumerate(lines):
         try:
             stdscr.addstr(1 + i, 2, ln, curses.A_BOLD if i == 0 else 0)
         except curses.error:
             pass
     stdscr.refresh()
+    curses.flushinp()
+    curses.napms(1000)  # the learner is usually mid-answer at 0:00: keys typed now must not close this screen
+    curses.flushinp()
+    stdscr.timeout(-1)
     stdscr.get_wch()
 
 
-def popup_command(mode, seconds, height):
+def popup_command(mode, seconds, height, width="70"):
     inner = " ".join(shlex.quote(x) for x in (sys.executable, os.path.abspath(__file__), "play", mode,
                                                   "--seconds", str(seconds)))
-    return ["tmux", "display-popup", "-E", "-w", "70", "-h", height, "-T", " arith ", inner]
+    return ["tmux", "display-popup", "-E", "-w", width, "-h", height, "-T", " arith ", inner]
 
 
 # ---------------------------------------------------------------- commands
 
 def cmd_play(a):
     import curses
+    load_history()  # a corrupt file is refused here, where the message can still be read
     os.environ.setdefault("ESCDELAY", "25")
     curses.wrapper(play, a.mode, a.seconds)
 
@@ -354,8 +364,11 @@ def cmd_run(a):
         return
     before = len(load_history()["sprints"])
     proc = subprocess.run(popup_command(a.mode, a.seconds, "14"), capture_output=True, text=True)
-    if proc.returncode != 0 and "too large" in (proc.stderr or ""):
-        subprocess.run(popup_command(a.mode, a.seconds, "90%"), capture_output=True, text=True)
+    if proc.returncode != 0 and "too large" in (proc.stderr or ""):  # a short or narrow pane
+        proc = subprocess.run(popup_command(a.mode, a.seconds, "90%", "90%"), capture_output=True, text=True)
+    if proc.returncode != 0 and (proc.stderr or "").strip():
+        print(f"POPUP FAILED: {proc.stderr.strip()}")
+        return
     h = load_history()
     if len(h["sprints"]) <= before:
         print("NO SPRINT RECORDED")
@@ -374,9 +387,12 @@ def cmd_last(a):
 def cmd_history(a):
     h = load_history()
     for mode in ([a.mode] if a.mode else MODES):
-        scores = [sp["score"] for sp in h["sprints"] if sp["mode"] == mode and sp.get("complete")][-10:]
-        if scores:
-            print(f"{mode}: {' '.join(map(str, scores))} · best {max(scores)} · average {statistics.mean(scores):.1f}")
+        lengths = sorted({sp.get("seconds") for sp in h["sprints"] if sp["mode"] == mode and sp.get("complete")})
+        for secs in lengths:
+            scores = [sp["score"] for sp in h["sprints"]
+                      if sp["mode"] == mode and sp.get("seconds") == secs and sp.get("complete")][-10:]
+            print(f"{mode} {secs} s: {' '.join(map(str, scores))} · best {max(scores)} · "
+                  f"average {statistics.mean(scores):.1f}")
 
 
 def cmd_kinds(a):
@@ -386,13 +402,20 @@ def cmd_kinds(a):
             print(f"{k} {speeds[k] / 1000:.1f} s")
 
 
+def seconds_arg(text):
+    n = int(text)
+    if not 10 <= n <= 480:
+        raise argparse.ArgumentTypeError("a sprint is 10 to 480 seconds")
+    return n
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="arith.py", description="Timed mental arithmetic sprints.")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("run", "play"):
         s = sub.add_parser(name)
         s.add_argument("mode", nargs="?", default="core", choices=MODES)
-        s.add_argument("--seconds", type=int, default=120)
+        s.add_argument("--seconds", type=seconds_arg, default=120)
     sub.add_parser("last")
     s = sub.add_parser("history")
     s.add_argument("mode", nargs="?", choices=MODES)
