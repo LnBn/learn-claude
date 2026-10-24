@@ -281,6 +281,16 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **When `sync` runs.** From `md_log.append`, after it writes text containing `*Techniques:` to a note: a separate `Stop` hook entry could run in parallel with the mirror and read the note before the tag line is in it. Also from `interview.py finish`, from `technique.py tag`, `cue` and `list`, and by hand. The cue question's answer is added with `technique.py cue`, under `**In your words:**`.
 
+## Practice
+
+`hooks/practice.py` keeps review cards and drills; `skills/review/SKILL.md` and `skills/drill/SKILL.md` drive them.
+
+**Cards come from a scan, not from registration.** `practice.py scan` finds every miss in what already exists: graded quiz blocks marked `✗` or `?` in lesson and review notes (not in `practice/`, `techniques/`, `exams/`, `interviews/`, hidden folders or fenced code), the `misses` of graded exam schemes, `hinted` or `unsolved` problems of finished interview rounds, and drill slots with either part wrong. Each miss has a stable key (`quiz:<stem>#<anchor>#<sha1 of the title>`, `exam:<paper>#<qid>`, `interview:<round>#p<i>`, `drill:<id>#<slot>`); a key once seen is never added again. A quiz card carries its section's techniques (from the tag lines), an exam card its question's section and that section's techniques. Cards live in `<vault>/practice/.cards.json`; a corrupt file stops the scan instead of being overwritten.
+
+**Scheduling.** Intervals 1, 3, 7, 16, 35 days: right moves a card one step (retired after the last), wrong sends it to step 0, due tomorrow. On the first scan every miss found is spread over the next 14 days, oldest first; later misses are due the day after they happened, or today. `lesson.py summary` runs the scan and prints `REVIEW DUE` when cards are due, and the teach skill mentions it in the `Resume` question.
+
+**Drills.** `drill` draws techniques with weight `1 + 2(1 − pass rate) + 2(1 − recognition rate)` (pass rate from `technique.record`, recognition from earlier drills, 0.5 without data), without replacement while techniques remain, then replaces the last weak draws until at least two slots are strong (top half by pass rate). The draw is seeded by the drill id (`<date>-<k>`). Each slot gets three other technique names as the recognition question's wrong options. The model writes `practice/.drills/<id>.problems.json`; `drill-check` validates it with `answer_check`; `drill-result` records both parts once per slot. `technique.sync` reads the drills (`technique.drill_rates`, a lazy import, since `practice` imports `technique`) for the `**Drills:**` line of each note and the index's `Recognised` column.
+
 ## Coding practice
 
 A code task is three files the teacher writes: a task note, a starter file the learner edits, and a hidden tests module. `coding.py` does what must be exact; `coding_runner.py` runs one case. The `code` skill is the teacher's procedure.

@@ -115,9 +115,9 @@ class Sync(TechniqueBase):
         self.tq("sync")
         idx = (self.vault / "techniques" / "Techniques.md").read_text()
         rows = [ln for ln in idx.splitlines() if ln.startswith("| [[")]
-        self.assertEqual(rows, ["| [[Symmetry]] | 3 | 2 | 1 | 2026-10-09 |",
-                                "| [[Pigeonhole principle]] | 2 | 1 | 0 | 2026-10-09 |",
-                                "| [[Induction]] | 0 | 0 | 0 | — |"])
+        self.assertEqual(rows, ["| [[Symmetry]] | 3 | 2 | 1 | — | 2026-10-09 |",
+                                "| [[Pigeonhole principle]] | 2 | 1 | 0 | — | 2026-10-09 |",
+                                "| [[Induction]] | 0 | 0 | 0 | — | — |"])
         self.assertNotIn("[[Techniques]]", idx)
 
     def test_interview_problems(self):
@@ -356,6 +356,28 @@ class ReviewFixes(TechniqueBase):
         self.tech("Symmetry")
         out = self.tq("tag", "courses/gb/gb-ch02.md", "2.4.1 Coin piles", "Symetry").stdout
         self.assertIn('UNKNOWN: "Symetry" has no note in techniques/', out)
+
+
+
+class DrillRecords(TechniqueBase):
+    def test_drill_line_and_recognised_column(self):
+        self.tech("Symmetry")
+        d = self.vault / "practice" / ".drills"
+        d.mkdir(parents=True)
+        (d / "2026-10-24-1.json").write_text(json.dumps({"id": "2026-10-24-1", "date": "2026-10-24", "slots": [
+            {"slot": 1, "technique": "Symmetry", "wrong": ["A", "B", "C"], "recognised": "right", "solved": "wrong"},
+            {"slot": 2, "technique": "Symmetry", "wrong": ["A", "B", "C"], "recognised": "wrong", "picked": "A",
+             "solved": "right"}]}))
+        self.tq("sync")
+        self.assertRegex(self.read("Symmetry"), r"\*\*Record:\*\* .*\n\*\*Drills:\*\* recognised 1/2 · solved 1/2\n")
+        idx = (self.vault / "techniques" / "Techniques.md").read_text()
+        self.assertIn("| Technique | Problems | ✓ | ✗ | Recognised | Last seen |", idx)
+        self.assertRegex(idx, r"\| \[\[Symmetry\]\] \| \d+ \| \d+ \| \d+ \| 1/2 \| ")
+
+    def test_no_drills_no_line(self):
+        self.tech("Symmetry")
+        self.tq("sync")
+        self.assertNotIn("**Drills:**", self.read("Symmetry"))
 
 
 if __name__ == "__main__":

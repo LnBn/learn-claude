@@ -16,7 +16,7 @@ It is a port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn), t
 
 Everything runs locally except the model calls, which go through your Claude Code login. No API key is needed.
 
-**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Interviews](#interviews) · [Technique notes](#technique-notes) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
+**Contents:** [Quick start](#quick-start) · [How a lesson runs](#how-a-lesson-runs) · [Quizzes](#quizzes) · [Stopping and resuming](#stopping-and-resuming) · [Following a textbook](#following-a-textbook) · [Exams](#exams) · [Interviews](#interviews) · [Technique notes](#technique-notes) · [Practice](#practice) · [Coding practice](#coding-practice) · [The lesson note](#the-lesson-note) · [Commands](#commands) · [Repository layout](#repository-layout) · [Customising](#customising) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
@@ -275,6 +275,7 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/exams/` | Exam papers, one per attempt: `<name>-ch02-exam-1.md`. |
 | `courses/<name>/interviews/` | Mock interviews, one note per round: `<name>-interview-1.md`. |
 | `techniques/` | Technique notes, shared by every course, and their index `Techniques.md`. |
+| `practice/` | One note per day of review and drills; hidden: the review cards and the drills. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
 | `courses/<name>/.exams/` | Hidden: each exam's marking scheme, and your answers as submitted. |
 | `courses/<name>/.interviews/` | Hidden: each round's problems, clock record and marks. |
@@ -400,6 +401,35 @@ The first time a technique comes up, the teacher writes its note and asks you on
 ```
 
 The backfill proposes the tags for every finished section in one table, for you to approve or correct, then writes them into the lesson notes. Interview problems are tagged when a round is set.
+
+## Practice
+
+Two commands bring back what you have learned, in forms you have not seen.
+
+### Review
+
+Every question you have missed becomes a card: a lesson quiz you got wrong or answered "I don't know", a recall-check question, an exam question that lost marks, an interview problem you needed hints for, a drill problem. `/review` asks the cards that are due, up to 10 at a time, oldest first.
+
+- **Each card is a new question**, not the one you missed: the same idea in a different setting, or the same setting with one thing changed. Where the card came from is shown only after you answer.
+- **Spacing.** A card first comes back the day after you missed it. Each time you get it right, the gap grows: 1, 3, 7, 16, then 35 days, after which it retires. A wrong answer brings it back the next day.
+- **Your history counts.** The first time cards are made, every miss already in your notes becomes one, spread over the next two weeks so that no single day is a pile.
+
+When you resume a lesson and cards are due, the opening question says how many. Review never starts unless you ask for it.
+
+### Drill
+
+`/drill` (or `/drill 12`) sets new problems mixed across all your technique notes, with nothing to say which technique each one is about. For each:
+
+1. **Which technique does this problem need?** Pick from four of your technique names.
+2. **Solve it**, with a typed answer.
+
+The two are scored separately, so you can see whether you missed the trick or the working. Techniques where your record is weak come up more often, and a couple of strong ones are always mixed in, so you cannot assume every problem is a hard one. At the end you get `Recognised 6/8 · solved 5/8` and any techniques you mistook for others. Missed problems become review cards, and your recognition rate shows on each technique note and in the index.
+
+A drill needs at least four technique notes; `/techniques backfill` makes them from the chapters you have done.
+
+### The practice note
+
+Each day's review and drills are in `practice/YYYY-MM-DD.md`, with the quizzes as in a lesson.
 
 ## Coding practice
 
@@ -550,6 +580,8 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/techniques backfill [course]` | Tag the finished sections of a course with their techniques, once. |
 | `/techniques list` | Every technique note, with its aliases and your record. |
 | `/techniques sync` | Rebuild the technique notes' problem lists and the index. |
+| `/review` | Ask the review cards that are due, each as a new variant. |
+| `/drill [n]` | Mixed, unlabelled problems: name the technique, then solve it (8 by default). |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
 | `/code submit` | Run the hidden tests on the newest unfinished problem (or the one you name). Typing `submit` does the same, unless an exam paper is out. |
