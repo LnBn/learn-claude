@@ -7,12 +7,17 @@ quiz_popup — the learner-facing quiz UI, run inside `tmux display-popup`.
 spec:   {"question", "details", "options": [{"index","label","description"}],
          "multiSelect": bool, "dontKnow": "I don't know",
          "correctIndices": [..], "explanation": str}   # revealed only after answering
+typed:  {"mode": "typed", "question", "details", "figure", "explanation", "dontKnow",
+         "answer", "variables", "exact", "wrongAnswers", "answerDisplay"}   # graded with answer_check.py
 result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str}
+        or, typed, {"action":"accept","typed":str,"dontKnow":bool,"note":str}
         or {"action":"ask","question":str}     # learner wants an answer BEFORE choosing
         or {"action":"cancel"}
 
 Keys: ↑/↓ or j/k move · 1-9 jump · Space toggle (multi) · Enter submit
       Tab edit note · ? ask the teacher first · f view the figure · PgUp/PgDn scroll · Esc cancel
+Typed: the field takes every printable key but ?; ←/→ Home/End Backspace Delete edit; a line under it
+       shows how the answer reads; Enter submits only a readable answer · ↓ I don't know · Ctrl-F figure
 LaTeX in the question/options/explanation is shown as Unicode (latex_text.py).
 """
 import curses
@@ -30,6 +35,7 @@ except Exception:  # pragma: no cover
     def render_math(t):
         return t
 
+import answer_check  # noqa: E402  (typed answers: the preview line and the feedback's grade)
 
 BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 
@@ -105,6 +111,232 @@ def open_figure(path):
         pass
 
 
+def typed_status(text, spec):
+    """(whether Enter may submit, the line shown under the answer field)."""
+    if not text.strip():
+        return False, ""
+    try:
+        shown = answer_check.display(text, spec.get("variables") or {})
+    except answer_check.AnswerError as exc:
+        return False, str(exc)
+    if spec.get("exact") and answer_check.is_decimal(text):
+        return False, "give the exact form, not a decimal"
+    return True, f"reads as: {shown}"
+
+
+def typed_grade(text, spec):
+    """(correct, index of the matched wrong answer or None) — the server marks again; this is for the feedback."""
+    variables = spec.get("variables") or {}
+    try:
+        if answer_check.check(text, spec["answer"], variables, spec.get("exact", False)) == "correct":
+            return True, None
+    except answer_check.AnswerError:
+        return False, None
+    return False, answer_check.matches_wrong(text, spec.get("wrongAnswers") or [], variables, spec.get("exact", False))
+
+
+def main_typed(stdscr, spec, out_path):
+    """The typed-answer quiz: an answer field with a live preview, then the feedback screen."""
+    question = render_math(spec["question"])
+    details = render_math(spec.get("details") or "")
+    explanation = render_math(spec.get("explanation") or "")
+    figure = spec.get("figure") or ""
+    shown_answer = spec.get("answerDisplay") or spec["answer"]
+    variables = spec.get("variables") or {}
+    text, pos = "", 0
+    on_dk = False  # focus on the "I don't know" row instead of the field
+    note, editing_note = "", False
+    asking, question_text = False, ""
+    scroll, free_scroll = 0, False
+
+    def write(result):
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False)
+
+    def show_feedback(result):
+        curses.curs_set(0)
+        wrong = spec.get("wrongAnswers") or []
+        while True:
+            stdscr.erase()
+            h, w = stdscr.getmaxyx()
+            width = max(20, w - 4)
+            rows = []
+            if result.get("dontKnow"):
+                rows.append(("No guess made.", curses.A_BOLD | curses.color_pair(2)))
+                rows.append((f"Correct answer: {shown_answer}", 0))
+            else:
+                typed = result["typed"]
+                correct, matched = typed_grade(typed, spec)
+                try:
+                    mine = answer_check.display(typed, variables)
+                except answer_check.AnswerError:
+                    mine = typed
+                if correct:
+                    rows.append(("✓ Correct.", curses.A_BOLD | curses.color_pair(3)))
+                    rows.append((f"Your answer: {mine}", 0))
+                    if answer_check.is_decimal(typed):
+                        rows.append((f"Exact value: {shown_answer}", 0))
+                else:
+                    rows.append(("✗ Incorrect.", curses.A_BOLD | curses.color_pair(4)))
+                    rows.append((f"Your answer: {mine}", 0))
+                    rows.append((f"Correct answer: {shown_answer}", 0))
+                    if matched is not None:
+                        rows.append(("", 0))
+                        rows.append(("Common mistake", curses.A_BOLD | curses.color_pair(2)))
+                        for ln in wrap_keep_bold(render_math(wrong[matched].get("why", "")), width):
+                            rows.append((ln, 0))
+            if explanation:
+                rows.append(("", 0))
+                for para in explanation.split("\n"):
+                    for ln in wrap_keep_bold(para, width):
+                        rows.append((ln, 0))
+            rows.append(("", 0))
+            rows.append(("Ctrl-F view the figure · any other key to continue" if figure else "press any key to continue",
+                         curses.A_DIM))
+            for r, (line, attr) in enumerate(rows[:h]):
+                addline(stdscr, r, 2, line, attr, w - 3)
+            stdscr.refresh()
+            ch = stdscr.get_wch()
+            if figure and ch == "\x06":
+                open_figure(figure)
+            elif ch != curses.KEY_RESIZE:
+                return
+
+    def finish(result):
+        show_feedback(result)
+        write(result)
+
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        width = max(20, w - 4)
+        ok, status = typed_status(text, spec)
+        lines = [("QUIZ", curses.A_BOLD | curses.color_pair(1)), ("", 0)]
+        for para in question.split("\n"):
+            for ln in wrap_keep_bold(para, width):
+                lines.append((ln, 0))
+        if details:
+            lines.append(("", 0))
+            for ln in wrap_keep_bold(details, width):
+                lines.append((ln, curses.A_DIM))
+        if figure:
+            lines.append(("", 0))
+            lines.append((f"Figure: {os.path.basename(figure)} — press **Ctrl-F** to view", curses.color_pair(1)))
+        lines.append(("", 0))
+        label = "Answer: "
+        room = max(5, width - len(label) - 1)
+        start = max(0, pos - room)
+        field_row = len(lines)
+        field_attr = curses.A_BOLD if not (on_dk or editing_note or asking) else 0
+        lines.append((label + text[start:start + room], field_attr))
+        lines.append((" " * len(label) + status, curses.A_DIM if ok else curses.color_pair(4)))
+        lines.append(("", 0))
+        dk_row = len(lines)
+        lines.append(("   " + spec.get("dontKnow", "I don't know"), curses.A_REVERSE if on_dk else curses.A_DIM))
+        lines.append(("", 0))
+        lines.append(("Note with your answer: " + (note if note else "(Tab to type)"),
+                      curses.A_REVERSE if editing_note else curses.A_DIM))
+        if asking:
+            for ln in textwrap.wrap("Ask the teacher first: " + question_text, width) or ["Ask the teacher first: "]:
+                lines.append((ln, curses.A_REVERSE))
+        lines.append(("", 0))
+        help_txt = "Enter submit · ↓ I don't know · Tab note · ? ask first" + (" · Ctrl-F figure" if figure else "") + " · Esc cancel"
+        if on_dk:
+            help_txt = "Enter: I don't know · ↑ back to the answer · Esc cancel"
+        if editing_note:
+            help_txt = "type your note · Tab/Enter back to the answer · Esc cancel"
+        if asking:
+            help_txt = "type your question · Enter send (quiz re-asked after the answer) · Esc back"
+        lines.append((help_txt, curses.A_DIM))
+
+        target = dk_row if on_dk else field_row
+        if not free_scroll:
+            if target < scroll:
+                scroll = target
+            if target >= scroll + h - 1:
+                scroll = target - h + 2
+        scroll = max(0, min(scroll, max(0, len(lines) - h)))
+        free_scroll = False
+        for row, (line, attr) in enumerate(lines[scroll:scroll + h]):
+            addline(stdscr, row, 2, line, attr, w - 3)
+        in_field = not (on_dk or editing_note or asking) and scroll <= field_row < scroll + h
+        try:
+            curses.curs_set(1 if in_field else 0)
+            if in_field:
+                stdscr.move(field_row - scroll, min(w - 2, 2 + len(label) + pos - start))
+        except curses.error:
+            pass
+        stdscr.refresh()
+
+        ch = stdscr.get_wch()
+        key = ord(ch) if isinstance(ch, str) and len(ch) == 1 and not ch.isprintable() else ch
+        if asking:
+            if key == 27:
+                asking = False
+            elif key in (10, 13, curses.KEY_ENTER):
+                if question_text.strip():
+                    write({"action": "ask", "question": question_text.strip()})
+                    return
+                asking = False
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                question_text = question_text[:-1]
+            elif isinstance(ch, str) and ch.isprintable():
+                question_text += ch
+            continue
+        if editing_note:
+            if key == 27:
+                write({"action": "cancel"})
+                return
+            if key in (9, 10, 13, curses.KEY_ENTER):
+                editing_note = False
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                note = note[:-1]
+            elif isinstance(ch, str) and ch.isprintable():
+                note += ch
+            continue
+        if key == 27:
+            write({"action": "cancel"})
+            return
+        if key == curses.KEY_PPAGE:
+            scroll -= max(1, h - 2)
+            free_scroll = True
+        elif key == curses.KEY_NPAGE:
+            scroll += max(1, h - 2)
+            free_scroll = True
+        elif key in (curses.KEY_UP, curses.KEY_DOWN):
+            on_dk = key == curses.KEY_DOWN
+        elif key == 9:
+            editing_note = True
+        elif ch == "?":
+            asking = True
+        elif key == 6:
+            if figure:
+                open_figure(figure)
+        elif key in (10, 13, curses.KEY_ENTER):
+            if on_dk:
+                finish({"action": "accept", "typed": "", "dontKnow": True, "note": note.strip()})
+                return
+            if ok:
+                finish({"action": "accept", "typed": text.strip(), "dontKnow": False, "note": note.strip()})
+                return
+        elif key == curses.KEY_LEFT:
+            pos = max(0, pos - 1)
+        elif key == curses.KEY_RIGHT:
+            pos = min(len(text), pos + 1)
+        elif key in (curses.KEY_HOME, 1):
+            pos = 0
+        elif key in (curses.KEY_END, 5):
+            pos = len(text)
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            if pos > 0:
+                text, pos = text[:pos - 1] + text[pos:], pos - 1
+        elif key == curses.KEY_DC:
+            text = text[:pos] + text[pos + 1:]
+        elif isinstance(ch, str) and ch.isprintable():
+            on_dk = False
+            text, pos = text[:pos] + ch + text[pos:], pos + 1
+
+
 def main(stdscr, spec, out_path):
     curses.curs_set(0)
     curses.use_default_colors()
@@ -115,6 +347,8 @@ def main(stdscr, spec, out_path):
         curses.init_pair(4, curses.COLOR_RED, -1)
     except Exception:
         pass
+    if spec.get("mode") == "typed":
+        return main_typed(stdscr, spec, out_path)
     options = spec["options"]
     multi = bool(spec.get("multiSelect"))
     dk_label = spec.get("dontKnow", "I don't know")

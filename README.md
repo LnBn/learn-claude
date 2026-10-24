@@ -117,6 +117,33 @@ Quizzes open in a popup over the terminal.
 - After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
 - Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²)). The note keeps the real LaTeX.
 
+### Typed answers
+
+When the answer to a question is a number or a formula, there are no options: you type it.
+
+```
+Answer: 2(2^n - 1)
+        reads as: 2(2ⁿ − 1)
+```
+
+- **What you can type:** numbers and fractions (`7/12`, `0.518`), `+ - * / ^`, brackets, implicit multiplication (`2n`, `2(n+1)`, `np`), `n!`, `sqrt`, `ln`, `log2`, `log10`, `exp`, `abs`, `binom(n,k)` or `C(n,k)`, `pi`, `e`, `inf`. Unicode works too: `π √ × · − ∞`.
+- **Any equivalent form counts.** `2^(n+1)-2`, `2*2^n-2` and `2(2^n-1)` are all marked right: the answer is compared with the correct one at several values of the variables.
+- **Decimals** count if they match the exact value to three significant figures: `0.333` for $1/3$, not `0.33`. A question that asks for the exact form says so, and refuses a decimal.
+- **The line under the field** shows how your answer reads, or what is wrong with it (`can't read: unclosed bracket`). Enter only submits an answer that can be read.
+- If your answer is one of the common mistakes the teacher anticipated, the feedback names the mistake.
+
+The keys differ from multiple choice, because letters go into the field:
+
+| Key | Action |
+|---|---|
+| ← → Home End Backspace Delete | edit the answer |
+| Enter | submit |
+| ↓ then Enter | "I don't know" |
+| Tab | type a note that is sent with your answer |
+| `?` | ask the teacher first |
+| Ctrl-F | open the figure |
+| Esc | cancel the quiz |
+
 ### Quizzes in the note
 
 While you answer, the quiz is in the note as an open box with the question and the options, so a long question can be read there too. Once you answer, it becomes one box, folded, at the place it was asked. Its line shows the result and the question, so the note reads as text with a row of short quiz lines in it. Click the line to open the question, the options, your answer and the explanation.

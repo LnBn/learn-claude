@@ -7,7 +7,7 @@ description: Teach the learner anything so it actually locks in and is understoo
 
 **Tools in this harness** (the names used throughout this skill):
 
-- **`quiz`** = the **`quiz` tool from the quiz MCP server** (listed as `mcp__quiz__quiz`). You pass the options, the correct answer (by option `value`) and the explanation; the tool shows the learner a form, grades their pick the instant they make it, shows them the feedback, and returns the outcome to you. Only if that tool is not available in this session, fall back to the **Quiz protocol** at the end of this file.
+- **`quiz`** = the **`quiz` tool from the quiz MCP server** (listed as `mcp__quiz__quiz`). You pass the options, the correct answer (by option `value`) and the explanation; the tool shows the learner a form, grades their pick the instant they make it, shows them the feedback, and returns the outcome to you. For a number or a formula it takes a typed answer instead of options (see Phase 3, step 4). Only if that tool is not available in this session, fall back to the **Quiz protocol** at the end of this file.
 - **`ask_user_question`** = the built-in **AskUserQuestion** tool (preferences, decisions, direction — anything with no right answer). Never use header `Quiz` on it.
 - **`researcher`** = the `researcher` subagent, dispatched with the **Agent** tool (`subagent_type: "researcher"`). It has no memory of this conversation — put the full question in the prompt.
 - **Visuals** — load the `visualize` skill and dispatch `mermaid-maker` / `svg-maker` the same way.
@@ -89,6 +89,8 @@ The tool already tells you to keep options even. That rule isn't enough on its o
 4. **No asymmetric bolding.** Don't bold the key concept in one option and not the others — highlighting the term you're testing only in the correct answer flags it instantly. Either bold nothing, or bold the parallel term in every option.
 
 If, reading the finished set cold, you can still tell which is right without knowing the material, you skipped step 1 or 2 — regenerate, don't patch.
+
+A typed quiz has no options, but its `wrongAnswers` are built the same way: each is the result of one specific wrong move, with a `why` that names the move.
 
 ### Phase 0 — Open the lesson (written text, before any question)
 
@@ -180,6 +182,8 @@ For **every node**, in this order:
 
    The explanation says what carried over from the worked example and what changed. That sentence is the edge the question exists to build.
 
+   **When the result is a number or a formula, the Apply is a typed quiz**, so the learner cannot work backwards from options. Call `quiz` with `answer` instead of `options` and `correctAnswer`: the answer as an expression (`2^(n+1)-2`, `1/3`), every variable with its range in `variables` (`{"n": "int 1..12", "p": "0..1"}`; an integer range needs at least four values, and a wider one tells formulas apart better), `answerLatex` for the note, and two or three `wrongAnswers`, the results of the common wrong moves, each with its `why`. The learner may type any equivalent form, and a decimal that matches to three significant figures counts; set `exact` only when the exact form is what is being tested. When the result is a claim, a choice of method or a conclusion, the Apply stays multiple choice. The Check is always multiple choice.
+
    For a programming topic, the Apply may be a code task instead: a function the learner writes in a file, judged by hidden tests on `submit`. Follow the `code` skill's **In a lesson** section. Its outcome is the Apply's: `passed` or `helped` passes it; `shown` misses it (re-teach, then a variant task).
 
 5. **Respond to the outcome.**
@@ -227,7 +231,7 @@ A lesson often spans several sessions. The lesson's markdown log is the state, n
    - Run `python3 .claude/hooks/lesson.py review "<note>"`. It prints the review note (`<slug>-review.md` for a whole course, `<stem> — Review.md` beside any other lesson) and the section headings of the notes you may test, as wikilinks.
    - Link it: `python3 .claude/hooks/md_log.py link "<review note>" --session ${CLAUDE_SESSION_ID} --from-now`.
    - Open with the heading `### Before <the next node or unit>` and one line naming the sections the questions test, using the printed links: `Questions on [[pml1-ch01#1.2 Supervised learning|§1.2]] and …`.
-   - Then 2 to 4 `quiz` questions over the confirmed nodes, each a new problem rather than a quiz the learner has answered before: a repeated question tests memory of that question. Take first anything listed as shaky or missed, in the brief's quiz outcomes, under `EARLIER RECALL CHECKS` or under `EXAM MISSES`, then the nodes the next step depends on. Anything that fails is re-established (motivate, establish, connect, check) in the review note before you move on.
+   - Then 2 to 4 `quiz` questions over the confirmed nodes, each a new problem rather than a quiz the learner has answered before: a repeated question tests memory of that question. A question whose answer is a value or a formula is a typed quiz, as in Phase 3. Take first anything listed as shaky or missed, in the brief's quiz outcomes, under `EARLIER RECALL CHECKS` or under `EXAM MISSES`, then the nodes the next step depends on. Anything that fails is re-established (motivate, establish, connect, check) in the review note before you move on.
    - End that reply with `Say **ready** to go on to <the next node or unit>.` and nothing after it. If the next node is one the learner already read (step 3), end instead with its re-entry, which then needs no heading of its own. Do not link the lesson note back in the same reply: the last prose of a reply reaches the note only when the reply ends, so it would be lost from the review note.
    - When they say ready, link the lesson note again (`md_log.py link "<note>" --session ${CLAUDE_SESSION_ID} --from-now`), then go to step 3. After a re-entry, that is the node's check.
 3. **Pick up at the checkpoint's Next.** Re-present the dependency map only if it changed.

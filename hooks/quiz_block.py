@@ -98,6 +98,8 @@ def _outcome(r):
         return "warning", "⊘ Unavailable: ", [r.get("message", "")]
     if status == "asked":
         return "note", "Asked first: ", [f"Your question: {r.get('learnerQuestion', '')}"]
+    if r.get("mode") == "typed":
+        return _typed_outcome(r)
     by_index = {o["index"]: o["label"] for o in r["options"]}
     correct = ", ".join(f"{i}. {by_index[i]}" for i in r["correctIndices"])
     if r.get("dontKnow"):
@@ -106,6 +108,22 @@ def _outcome(r):
     if r.get("correct"):
         return "success", "✓ ", [f"Selected: {selected}"]
     return "failure", "✗ ", [f"Selected: {selected}\nCorrect answer: {correct}"]
+
+
+def _typed_outcome(r):
+    """(kind, title prefix, outcome paragraphs) for an answered typed-answer quiz."""
+    latex = (r.get("answerLatex") or "").strip()
+    answer = f"${latex}$" if latex else f"`{r.get('answer', '')}`"
+    if r.get("dontKnow"):
+        return "info", "? ", [f"Correct answer: {answer}"]
+    typed = "Your answer: `" + str(r.get("typed") or "").replace("`", "") + "`"
+    if r.get("correct"):
+        return "success", "✓ ", [typed + (f"\nExact value: {answer}" if r.get("decimal") else "")]
+    lines = [f"{typed}\nCorrect answer: {answer}"]
+    wrong = r.get("wrongAnswers") or []
+    if isinstance(r.get("matchedWrong"), int) and 0 <= r["matchedWrong"] < len(wrong):
+        lines.append(f"Common mistake: {wrong[r['matchedWrong']].get('why', '')}")
+    return "failure", "✗ ", lines
 
 
 def render(r):
@@ -119,7 +137,8 @@ def render(r):
     parts.append(details)
     if r.get("figure") and not figures.mentions(question + " " + details):
         parts.append(f"![[{os.path.basename(r['figure'])}|500]]")  # a book figure the text names is placed by figures.py
-    parts.append("\n".join(f"{o['index']}. {o['label']}" for o in r["options"]))
+    if r.get("mode") != "typed":
+        parts.append("\n".join(f"{o['index']}. {o['label']}" for o in r["options"]))
     if r.get("multiSelect"):
         parts.append("(select all that apply)")
     parts += outcome
