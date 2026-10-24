@@ -69,6 +69,7 @@
       "Edit(techniques/**)",
       "Bash(python3 .claude/hooks/practice.py *)",
       "Write(practice/**)",
+      "Bash(python3 .claude/hooks/arith.py *)",
       "Write(/tmp/learn-code-*)",
       "Bash(mkdir -p /tmp/learn-book*)",
       "Write(/tmp/learn-book/**)",

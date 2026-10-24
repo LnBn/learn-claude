@@ -427,9 +427,35 @@ The two are scored separately, so you can see whether you missed the trick or th
 
 A drill needs at least four technique notes; `/techniques backfill` makes them from the chapters you have done.
 
+### Mental arithmetic
+
+`/arith` runs a timed sprint in a popup over the terminal, like the Zetamac test that trading firms use as a screen.
+
+```
+/arith               # core, 120 seconds
+/arith fractions     # one mode
+/arith weak 60       # a mode and a length in seconds
+/arith history       # your last scores per mode
+```
+
+| Mode | Questions |
+|---|---|
+| `core` | + − × ÷ with Zetamac's default ranges (2–100, and 2–12 × 2–100) |
+| `fractions` | fractions as decimals (3/8 → 0.375; repeating decimals to 4 places) and percentages (15% of 240) |
+| `powers` | squares 11–30, powers of 2 up to 2²⁰, cubes up to 12 |
+| `estimate` | 2–3-digit × and ÷; anything within 2% counts |
+| `mixed` | all of the above |
+| `weak` | mostly the kinds of question you are slowest at |
+
+Type the answer: a correct one moves on at once, with no Enter, and a wrong one waits until you fix it. Estimates are submitted with Enter. Tab skips a question; Esc stops early, and a stopped sprint does not count towards your best or your average.
+
+The end screen shows your score, your best and your last-five average in that mode, and the three kinds of question that took you longest this time (for example `× 7` or `− borrow`, a subtraction that needs a borrow). Every answer's time is kept, so `weak` mode can draw mostly from the kinds you are slowest at, each compared with the other kinds of its own mode. The teacher writes a short summary into the day's practice note, with a tip when one kind stands out.
+
+The popup needs tmux. Without it, run `python3 .claude/hooks/arith.py play <mode>` in another terminal, then `/arith last`.
+
 ### The practice note
 
-Each day's review and drills are in `practice/YYYY-MM-DD.md`, with the quizzes as in a lesson.
+Each day's review, drills and arithmetic summaries are in `practice/YYYY-MM-DD.md`, with the quizzes as in a lesson.
 
 ## Coding practice
 
@@ -582,6 +608,8 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/techniques sync` | Rebuild the technique notes' problem lists and the index. |
 | `/review` | Ask the review cards that are due, each as a new variant. |
 | `/drill [n]` | Mixed, unlabelled problems: name the technique, then solve it (8 by default). |
+| `/arith [mode] [seconds]` | A timed mental arithmetic sprint (core by default, 120 s). |
+| `/arith last`, `/arith history [mode]` | The last sprint's summary; recent scores per mode. |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
 | `/code submit` | Run the hidden tests on the newest unfinished problem (or the one you name). Typing `submit` does the same, unless an exam paper is out. |
