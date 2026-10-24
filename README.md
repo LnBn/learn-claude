@@ -91,7 +91,7 @@ Every lesson has the same four phases. Their size changes with the topic; their 
    |---|---|
    | Read | A complete written exposition: why this node now, the fact or derivation, how it hangs off earlier nodes, a worked example. It ends with a `Key idea` callout of one to three sentences. The teacher stops. Read it in the note, then type `ready`. |
    | Check | One quiz that a close reading answers. |
-   | Apply | One quiz that needs reasoning, a calculation or running code. |
+   | Apply | One quiz that needs reasoning, a calculation or running code. It is usually a problem you have not seen worked: the example's setting with one crucial change, or a new setting that needs the same trick. |
 
    A failed apply is re-taught, with a fresh question, before anything is built on it.
 
@@ -270,7 +270,7 @@ The teacher asks how long it should be: short (about 20 minutes), standard (abou
 2. **Short answers.** Write under the **Answer:** line.
 3. **Problems.** A derivation, a computation or an explanation, also under **Answer:**.
 
-Each question shows its marks. An answer can be as long as you like, with LaTeX, headings, or an embedded photo of handwritten work. The paper only tests what the chapter's lessons taught. If you take an exam on a chapter you have not finished, the paper says which sections it leaves out.
+Each question shows its marks. An answer can be as long as you like, with LaTeX, headings, or an embedded photo of handwritten work. The paper only tests what the chapter's lessons taught, but not with the lessons' own examples: most problems change a crucial detail of a worked example, or ask for the same trick in a new setting. If you take an exam on a chapter you have not finished, the paper says which sections it leaves out.
 
 Nothing is graded until you hand in the whole paper. Type `submit` (or `/exam submit`) in Claude Code when you are done. The paper is graded as you handed it in. To change an answer after that, take the paper back with `/exam reopen <paper>` before it is graded, and submit it again.
 
