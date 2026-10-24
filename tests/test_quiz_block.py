@@ -419,5 +419,46 @@ class Convert(unittest.TestCase):
         self.assertEqual((vault / "pi.md").read_text(), PI_NOTE)
 
 
+
+TYPED = {"mode": "typed", "status": "answered", "question": "Expected tosses to get $n$ heads in a row?",
+         "details": "", "answer": "2^(n+1)-2", "answerLatex": "2^{n+1}-2", "variables": {"n": "int 1..12"},
+         "exact": False, "wrongAnswers": [{"answer": "2^n", "why": "Counted only the last run."}],
+         "explanation": "Condition on the first tail.", "typed": "2^n", "decimal": False,
+         "correct": False, "dontKnow": False, "matchedWrong": 0, "note": ""}
+
+
+class TypedRender(unittest.TestCase):
+    def test_incorrect_with_common_mistake(self):
+        out = quiz_block.render(TYPED)
+        self.assertTrue(out.startswith("> [!failure|quiz]- ✗ Expected tosses to get $n$ heads in a row?"))
+        self.assertIn("> Your answer: `2^n`\n> Correct answer: $2^{n+1}-2$", out)
+        self.assertIn("> Common mistake: Counted only the last run.", out)
+        self.assertEqual(quiz_block.parse(out.split("\n"))["outcome"], "✗")
+
+    def test_correct_decimal_shows_exact_value(self):
+        r = {**TYPED, "answer": "1/3", "answerLatex": "\\frac{1}{3}", "typed": "0.333", "decimal": True,
+             "correct": True, "matchedWrong": None, "variables": {}, "wrongAnswers": []}
+        out = quiz_block.render(r)
+        self.assertIn("> Your answer: `0.333`\n> Exact value: $\\frac{1}{3}$", out)
+        self.assertNotIn("Exact value", quiz_block.render({**r, "typed": "1/3", "decimal": False}))
+
+    def test_dont_know(self):
+        out = quiz_block.render({**TYPED, "typed": "", "dontKnow": True, "matchedWrong": None})
+        self.assertTrue(out.startswith("> [!info|quiz]- ? "))
+        self.assertIn("> Correct answer: $2^{n+1}-2$", out)
+
+    def test_answer_without_latex(self):
+        self.assertIn("Correct answer: `2^(n+1)-2`", quiz_block.render({**TYPED, "answerLatex": ""}))
+
+    def test_backtick_removed(self):
+        self.assertIn("Your answer: `2^n`", quiz_block.render({**TYPED, "typed": "2`^n"}))
+
+    def test_pending_leaks_nothing(self):
+        out = quiz_block.render({**TYPED, "status": "pending"})
+        self.assertTrue(out.startswith("> [!question|quiz]+ "))
+        for leak in ["2^{n+1}", "2^n", "Counted", "Condition", "Correct answer"]:
+            self.assertNotIn(leak, out)
+
+
 if __name__ == "__main__":
     unittest.main()
