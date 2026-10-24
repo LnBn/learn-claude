@@ -290,13 +290,113 @@ def cmd_list(a):
         print(f"UNKNOWN: {name}")
 
 
+def resolve_or_die(name, res):
+    canon = res.get(name.lower())
+    if canon is None:
+        book.die(f"no technique note for {name!r} in techniques/: write the note first", 1)
+    return canon
+
+
+def write_lines(path, lines):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip("\n") + "\n")
+
+
+def cmd_cue(a):
+    techs = load_techniques()
+    t = techs[resolve_or_die(a.name, resolver(techs))]
+    lines = lesson.read(t["path"])
+    head = a.source.split("#", 1)[-1]
+    item = f'- "{a.text.strip()}" — [[{a.source}|{short_label(anchor_of(head))}]], {time.strftime("%Y-%m-%d")}'
+    if "**In your words:**" in lines:
+        k = lines.index("**In your words:**") + 1
+        while k < len(lines) and lines[k].startswith("- "):
+            k += 1
+        lines[k:k] = [item]
+    else:
+        reach = next((i for i, ln in enumerate(lines) if ln.strip() == "## Reach for it when"), None)
+        if reach is None:
+            lines += ["", "**In your words:**", item]
+        else:
+            last, k = reach, reach + 1  # after the last item of the cues list
+            while k < len(lines) and (not lines[k].strip() or lines[k].startswith("- ")):
+                if lines[k].startswith("- "):
+                    last = k
+                k += 1
+            lines[last + 1:last + 1] = ["", "**In your words:**", item]
+    write_lines(t["path"], lines)
+    print(f"🗒 cue added to [[{os.path.splitext(os.path.basename(t['path']))[0]}]]")
+    sync()
+
+
+def key_ideas(body):
+    out, cur = [], None
+    for ln in body:
+        if re.match(r"^> \[!summary\][-+]? Key idea", ln):
+            cur = []
+            out.append(cur)
+        elif cur is not None and ln.startswith(">"):
+            cur.append(ln.lstrip(">").strip())
+        else:
+            cur = None
+    return [" ".join(x for x in parts if x) for parts in out if any(parts)]
+
+
+def cmd_sections(a):
+    lines = lesson.read(os.path.abspath(a.note))
+    for i, _, body, _ in note_sections(lines):
+        print(lines[i])
+        for idea in key_ideas(body):
+            print(f"  key idea: {idea}")
+        tags = section_tags(body)
+        if tags:
+            print(f"  tags: {', '.join(tags)}")
+
+
+def cmd_tag(a):
+    path = os.path.abspath(a.note)
+    lines = lesson.read(path)
+    want = anchor_of("### " + a.heading)
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("### ") and anchor_of(ln) == want), None)
+    if start is None:
+        book.die(f"no section {a.heading!r} in {book.rel(path)}", 1)
+    res = resolver(load_techniques())
+    names = [res.get(n.lower(), n) for n in a.names]
+    nxt = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")), len(lines))
+    existing = next((i for i in range(start + 1, nxt) if TAG_RE.match(lines[i].strip())), None)
+    if existing is not None:
+        links = LINK_RE.findall(TAG_RE.match(lines[existing].strip()).group(1))
+        have = {res.get(target(l).lower(), target(l)).lower() for l in links}
+        links += [n for n in names if n.lower() not in have]
+        lines[existing] = "*Techniques: " + " · ".join(f"[[{l}]]" for l in dict.fromkeys(links)) + "*"
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith(("## ", "### "))), len(lines))
+        k = end
+        while k > start + 1 and not lines[k - 1].strip():
+            k -= 1
+        tag = "*Techniques: " + " · ".join(f"[[{n}]]" for n in dict.fromkeys(names)) + "*"
+        lines = lines[:k] + ["", tag] + ([""] + lines[end:] if end < len(lines) else [])
+    write_lines(path, lines)
+    print(sync())
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="technique.py", description="Technique notes.")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     sub.add_parser("sync")
+    s = sub.add_parser("cue")
+    s.add_argument("name")
+    s.add_argument("text")
+    s.add_argument("--source", required=True)
+    s = sub.add_parser("sections")
+    s.add_argument("note")
+    s = sub.add_parser("tag")
+    s.add_argument("note")
+    s.add_argument("heading")
+    s.add_argument("names", nargs="+")
     a = p.parse_args(argv)
-    {"list": cmd_list, "sync": cmd_sync}[a.cmd](a)
+    {"list": cmd_list, "sync": cmd_sync, "cue": cmd_cue, "sections": cmd_sections, "tag": cmd_tag}[a.cmd](a)
 
 
 if __name__ == "__main__":

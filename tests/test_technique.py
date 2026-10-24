@@ -177,5 +177,64 @@ class Sync(TechniqueBase):
         self.assertIn("0 notes", r.stdout)
 
 
+
+class Commands(TechniqueBase):
+    def test_cue_appends_under_in_your_words(self):
+        self.tech("Symmetry", aliases=["symmetry argument"],
+                  body="**In your words:**\n- \"old\" — [[gb-ch02#2.4.1 Coin piles|§2.4.1]], 2026-10-01\n\n## Traps\n")
+        r = self.tq("cue", "symmetry argument", "Two piles that could be swapped", "--source", "gb-ch02#2.4.2 Wise men")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(self.read("Symmetry"),
+                         r'- "old" — .*\n- "Two piles that could be swapped" — \[\[gb-ch02#2.4.2 Wise men\|§2.4.2\]\], '
+                         r'\d{4}-\d{2}-\d{2}\n\n## Traps')
+
+    def test_cue_creates_the_line(self):
+        self.tech("Symmetry")
+        self.tq("cue", "Symmetry", "x", "--source", "gb-ch02#2.4.1 Coin piles")
+        self.assertIn('- a cue\n\n**In your words:**\n- "x" — [[gb-ch02#2.4.1 Coin piles|§2.4.1]], ', self.read("Symmetry"))
+
+    def test_cue_refuses_unknown(self):
+        r = self.tq("cue", "Nope", "x", "--source", "a#b")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no technique note", r.stderr)
+
+    def test_sections(self):
+        note = self.cdir / "gb-ch02.md"
+        note.write_text(note.read_text().replace("Text.\n", "Text.\n\n> [!summary] Key idea\n> Swap the piles.\n", 1))
+        out = self.tq("sections", "courses/gb/gb-ch02.md").stdout
+        self.assertIn("### 2.4.1 Coin piles\n  key idea: Swap the piles.\n  tags: Symmetry", out)
+        self.assertIn("### 2.4.2 Wise men\n  tags: symmetry argument, Pigeonhole", out)
+
+    def test_tag_places_line_before_session_header(self):
+        self.tech("Symmetry")
+        note = self.cdir / "gb-ch02.md"
+        note.write_text(note.read_text().replace("*Techniques: [[symmetry argument|by symmetry]] · [[Pigeonhole]]*\n", ""))
+        r = self.tq("tag", "courses/gb/gb-ch02.md", "2.4.2 Wise men", "Symmetry")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("> body\n\n*Techniques: [[Symmetry]]*\n\n## Session — 2026-10-09", note.read_text())
+
+    def test_tag_merges_into_existing_line(self):
+        self.tech("Symmetry")
+        self.tech("Linearity of expectation")
+        self.tq("tag", "courses/gb/gb-ch02.md", "2.4.1 Coin piles", "Linearity of expectation", "Symmetry")
+        t = (self.cdir / "gb-ch02.md").read_text()
+        self.assertIn("*Techniques: [[Symmetry]] · [[Linearity of expectation]]*", t)
+        self.assertEqual(t.count("*Techniques:"), 4)
+
+    def test_tag_writes_canonical_names_at_note_end_and_syncs(self):
+        self.tech("Symmetry", aliases=["by symmetry"])
+        note = self.cdir / "gb-ch02.md"
+        note.write_text(note.read_text() + "\n### 2.6.2 Have we met before?\n\nText.\n")
+        self.tq("tag", "courses/gb/gb-ch02.md", "2.6.2 Have we met before?", "by symmetry")
+        self.assertTrue(note.read_text().endswith("Text.\n\n*Techniques: [[Symmetry]]*\n"))
+        self.assertIn("§2.6.2 Have we met before", self.read("Symmetry"))
+
+    def test_tag_unknown_section(self):
+        self.tech("Symmetry")
+        r = self.tq("tag", "courses/gb/gb-ch02.md", "9.9 Nothing", "Symmetry")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no section", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
