@@ -18,14 +18,16 @@ def make_vault(test: unittest.TestCase | None = None) -> Path:
     vault = Path(tempfile.mkdtemp(prefix="learn-vault-"))
     (vault / ".claude").mkdir()
     shutil.copytree(REPO / "hooks", vault / ".claude" / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(REPO / "mcp", vault / ".claude" / "mcp", ignore=shutil.ignore_patterns("__pycache__"))
     (vault / ".claude" / "md-log-state").mkdir()
     if test is not None:
         test.addCleanup(shutil.rmtree, vault, True)
     return vault
 
 
-def run(vault: Path, script: str, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
-    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(vault / "config")}
+def run(vault: Path, script: str, *args: str, stdin: str | None = None,
+        env: dict | None = None) -> subprocess.CompletedProcess:
+    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(vault / "config"), **(env or {})}
     return subprocess.run([sys.executable, str(vault / ".claude" / "hooks" / script), *args], cwd=vault,
                           input=stdin, capture_output=True, text=True, env=env, timeout=60)
 

@@ -255,6 +255,20 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **Feeding back.** `lesson.py summary` imports `exam.exam_misses`. It lists the questions that lost marks in the newest graded exam on the note and, in a course, on the chapter before it. The recall check asks those first. `book.py done` prints an `EXAM:` line when a chapter or the course is complete, and the teacher offers `/exam` in one sentence.
 
+## Interviews
+
+`hooks/interview.py` runs a mock interview on the current course; `skills/interview/SKILL.md` is the interviewer. The model writes the problems and plays the interviewer; the script owns everything that must be exact.
+
+**Files.** `courses/<slug>/interviews/<slug>-interview-<n>.md` is the note (the mirrored conversation, then the scorecard). The hidden `.interviews/` folder holds the problem file the model writes (`<name>.json`), the script's record (`<name>.state.json`: status, session, start time, and per problem its start and end, hints, answers and outcome) and the marks (`<name>.marks.json`). `figures.course_of` treats `interviews/` like `exams/`, so section links and figures resolve in the note. `start` writes `md-log-state/interview.json` (`{"course", "number"}`), and every command finds the open round through it before falling back to the current course, so a course switched mid-round (`book.py use`) does not lose the round; `finish` and `abandon` remove it. The hook and the clock read only that file, never `book.find_course`, which would rewrite the course pointer once a second.
+
+**Statuses.** `set` (after `new`) → `ready` (after `check`) → `running` (after `start`) → `ended` (after the last `next`, or `stop`) → `finished` (after `finish`); `abandoned` from any open status. One round per course is open at a time.
+
+**The clock.** Time is wall-clock, recorded as Unix times in the state. A `UserPromptSubmit` hook (`interview.py hook`, registered in `settings.json` after `md_log.py`) prints one line when a round is running *in that session*: `INTERVIEW: problem 2 of 3 · 9:40 of 12:00 · hints 1 · round 21:15 of 36:00 · TIME NEARLY UP`. Claude Code adds it to the model's context, so the model never keeps time. The flag is the first of `ROUND TIME UP`, `TIME UP`, then, once the main answer is correct, `FOLLOW-UP`; before that, `TIME NEARLY UP` (75%) or `NUDGE IF STUCK` (50%, no hint yet). The status-bar clock counts against the problem's 12 minutes or the round's end, whichever comes first. The hook never fails: any error prints nothing. Inside tmux, `start` sets the session's `status-right` to `#(python3 …/interview.py clock)` and `status-interval` to 1; `finish` and `abandon` unset both (`set-option -u`), which restores the learner's own setting.
+
+**Outcomes are computed, not chosen.** `answer` checks a final answer with `answer_check.check` and records it. `next` and `stop` derive the outcome: `solved` (a correct main answer with no hint before it), `hinted`, `unsolved`, `not reached`; the follow-up is `solved`, `unsolved` or `not asked`. Hints given during the follow-up do not count against the main answer.
+
+**Feeding back.** `lesson.py summary` imports `interview.interview_misses` after the exam misses: the problems not solved unaided in the newest finished round, whose first unit belongs to the note being resumed or the chapter before it.
+
 ## Coding practice
 
 A code task is three files the teacher writes: a task note, a starter file the learner edits, and a hidden tests module. `coding.py` does what must be exact; `coding_runner.py` runs one case. The `code` skill is the teacher's procedure.
