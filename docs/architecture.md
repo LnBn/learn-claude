@@ -291,6 +291,16 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **Drills.** `drill` draws techniques with weight `1 + 2(1 − pass rate) + 2(1 − recognition rate)` (pass rate from `technique.record`, recognition from earlier drills, 0.5 without data), without replacement while techniques remain, then replaces the last weak draws until at least two slots are strong (top half by pass rate). The draw is seeded by the drill id (`<date>-<k>`). Each slot gets three other technique names as the recognition question's wrong options. The model writes `practice/.drills/<id>.problems.json`; `drill-check` validates it with `answer_check`; `drill-result` records both parts once per slot. `technique.sync` reads the drills (`technique.drill_rates`, a lazy import, since `practice` imports `technique`) for the `**Drills:**` line of each note and the index's `Recognised` column.
 
+## Mental arithmetic
+
+`hooks/arith.py` runs timed sprints; `skills/arith/SKILL.md` starts one and reports it.
+
+**Why outside the model.** The skill is speed, so a model round trip per question is out. `arith.py run` opens `arith.py play` in `tmux display-popup -E -w 70 -h 14` (retrying at `-h 90%` when tmux says the pane is too short) and blocks until it closes; the skill calls it with a 600-second Bash timeout. `play` is a curses loop that generates questions, checks each keypress with `accepts`, keeps time by wall clock (`deadline_left`, so a laptop that slept past the end records nothing more), and saves the sprint before its end screen.
+
+**Questions.** Generators per mode, with Zetamac's default ranges for `core` (subtraction and division as reversed addition and multiplication), fractions to 4 places (half up) and percentages with at most one decimal, powers, and estimates. An exact answer advances when the typed value equals it at full precision (`0.37` never advances for `0.375`); an estimate advances on Enter within 2%. Each question has a kind (`× 7`, `− borrow`, `/16`, `square 2x`, `≈ ÷`, …).
+
+**History and weak mode.** `<vault>/practice/.arith.json` keeps every sprint with each correct answer's kind and time. A kind's speed is the median of its last 50 answers, ranked from 10. `weak` draws 70% from the five kinds slowest relative to the median of their own mode's kinds and 30% uniformly. Stopped sprints are kept but excluded from best and average. Arithmetic does not make review cards.
+
 ## Coding practice
 
 A code task is three files the teacher writes: a task note, a starter file the learner edits, and a hidden tests module. `coding.py` does what must be exact; `coding_runner.py` runs one case. The `code` skill is the teacher's procedure.
