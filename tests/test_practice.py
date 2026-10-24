@@ -154,6 +154,16 @@ class Cards(PracticeBase):
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.cards_path.read_text(), "{not json")
 
+    def test_review_due_in_brief(self):
+        self.pr("scan")
+        out = run(self.vault, "lesson.py", "summary", "courses/gb/gb-ch02.md").stdout
+        self.assertNotIn("REVIEW DUE", out)
+        data = json.loads(self.cards_path.read_text())
+        data["cards"][0]["due"] = date.today().isoformat()
+        self.cards_path.write_text(json.dumps(data))
+        out = run(self.vault, "lesson.py", "summary", "courses/gb/gb-ch02.md").stdout
+        self.assertIn("REVIEW DUE: 1 cards — /review asks them", out)
+
     def test_stats(self):
         self.pr("scan")
         self.assertRegex(self.pr("stats").stdout, r"active 5 · retired 0 · due today 0\nnext 7 days: (\d+ ){6}\d+")

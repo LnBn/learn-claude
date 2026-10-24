@@ -356,6 +356,15 @@ def summary(path, notes=None):
     if misses:
         print()
         print("\n".join(misses))
+    try:
+        import practice  # imports this module; only needed here
+        practice.scan()
+        due = len(practice.due_cards())
+    except (Exception, SystemExit):
+        due = 0
+    if due:
+        print()
+        print(f"REVIEW DUE: {due} cards — /review asks them")
 
 
 def list_checkpoints(path):

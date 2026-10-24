@@ -248,10 +248,21 @@ def entry_line(e):
     return f"- [[{e['stem']}#Problem {e['i']}|{e['slug']} interview {e['number']}, problem {e['i']}]] — {e['outcome']}"
 
 
-def render_block(entries):
+def drill_rates():
+    """{technique: (recognised right, total, solved right, total)} from practice drills; {} without them."""
+    try:
+        import practice  # imports this module, so only here
+        return practice.drill_rates()
+    except (Exception, SystemExit):
+        return {}
+
+
+def render_block(entries, drills=None):
     p, m = record(entries)
     k = len(entries)
     lines = [START, f"**Record:** {p} ✓ · {m} ✗ — {k} problem{'' if k == 1 else 's'}"]
+    if drills:
+        lines.append(f"**Drills:** recognised {drills[0]}/{drills[1]} · solved {drills[2]}/{drills[3]}")
     if entries:
         lines += [""] + [entry_line(e) for e in entries]
     return "\n".join(lines + [END])
@@ -268,15 +279,17 @@ def with_block(text, block):
     return text.rstrip("\n") + "\n\n## Problems\n\n" + block + "\n"
 
 
-def render_index(techs, entries, unknown):
+def render_index(techs, entries, unknown, drills=None):
     def key(name):
         p, m = record(entries[name])
         return (p + m == 0, p / (p + m) if p + m else 0, -m, name.lower())
-    rows = ["# Techniques", "", "| Technique | Problems | ✓ | ✗ | Last seen |", "|---|---|---|---|---|"]
+    drills = drills or {}
+    rows = ["# Techniques", "", "| Technique | Problems | ✓ | ✗ | Recognised | Last seen |", "|---|---|---|---|---|---|"]
     for name in sorted(techs, key=key):
         p, m = record(entries[name])
         dates = [e["date"] for e in entries[name] if e.get("date")]
-        rows.append(f"| [[{name}]] | {len(entries[name])} | {p} | {m} | {max(dates) if dates else '—'} |")
+        rec = f"{drills[name][0]}/{drills[name][1]}" if name in drills else "—"
+        rows.append(f"| [[{name}]] | {len(entries[name])} | {p} | {m} | {rec} | {max(dates) if dates else '—'} |")
     text = "\n".join(rows) + "\n"
     if unknown:
         parts = [f"[[{name}]] in " + ", ".join(f"[[{stem}#{anchor}|{short_label(anchor)}]]" for stem, anchor in where)
@@ -302,11 +315,12 @@ def write_if_changed(path, text):
 
 def sync():
     techs, entries, unknown, tagged = collect()
+    drills = drill_rates()
     for name, t in techs.items():
         with open(t["path"], encoding="utf-8") as f:
             text = f.read()
-        write_if_changed(t["path"], with_block(text, render_block(entries[name])))
-    write_if_changed(INDEX, render_index(techs, entries, unknown))
+        write_if_changed(t["path"], with_block(text, render_block(entries[name], drills.get(name))))
+    write_if_changed(INDEX, render_index(techs, entries, unknown, drills))
     return f"🗒 techniques: {len(techs)} notes, {tagged} tagged problems, {len(unknown)} unknown"
 
 
