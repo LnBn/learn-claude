@@ -2,9 +2,9 @@
 
 A tutor that runs inside [Claude Code](https://code.claude.com) and writes its lessons into your Obsidian vault.
 
-I wanted to work through textbooks with a teacher that checks I have understood each step before it moves on, and that leaves behind notes I would actually reread. This is that teacher. It runs on a normal Claude subscription, so you don't need an API key.
+Point it at a topic or a textbook. It teaches one idea at a time, checks that you have understood each one before it moves on, and leaves behind notes that read like a textbook chapter. It runs on a normal Claude subscription, so you don't need an API key.
 
-It started as a port of Eero Alvar's [learn](https://github.com/amosblomqvist/learn), the system from the video [How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU), from the [pi](https://github.com/earendil-works/pi) coding agent to Claude Code. The way it teaches comes from there. I added the quiz popup, the notes, the textbook courses, the exams and the practice modes.
+learn-claude is a Claude Code port of Eero Alvar's [learn](https://github.com/amosblomqvist/learn), which was built for the [pi](https://github.com/earendil-works/pi) coding agent and is shown in the video [How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU). The core of it is Eero's: the teaching method, the graded quiz popup, the lesson written into a markdown note, and the subagents that check facts and draw diagrams. This version reworks those pieces for Claude Code and adds textbook courses, typed answers, exams, mock interviews, technique notes and the practice modes.
 
 ![A lesson: probe what you know, plan a route to the goal, then read, check and apply one idea at a time; a missed apply question is re-taught](docs/img/lesson-loop.png)
 
@@ -12,13 +12,19 @@ It started as a port of Eero Alvar's [learn](https://github.com/amosblomqvist/le
 
 You ask to learn something, say `teach me how TCP achieves reliability`. The teacher first asks a few quick questions to find where your knowledge runs out. Then it proposes a plan: a small map that starts from things you already know and ends at the thing you want. Once you agree to the plan, it teaches one idea at a time.
 
-Each idea gets a short written section in your note, ending with a short key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second makes you use the idea on a problem you haven't seen worked through.
+Each idea gets a short section in your note, ending with a one- or two-sentence key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second, the apply question, is where the method shows. It is not just the worked example again. It changes one thing, sometimes only the numbers, so that the recipe from the section no longer works on its own, and only knowing *why* the recipe works gets you the answer.
 
-Here is a real example from my notes, on the bridge-and-torch puzzle from Xinfeng Zhou's *A Practical Guide to Quantitative Finance Interviews*. The section ended with this key idea:
+Here is one section from a course on Xinfeng Zhou's *A Practical Guide to Quantitative Finance Interviews*. It teaches a classic puzzle:
 
-> Every crossing is paid for by its slowest member, so pair the two slowest people and pay for them once. Two fast people cross first, so that a fast person is on each side to bring the torch back. For four people with times 10, 5, 2, 1 this gives 17 minutes, against 19 for escorting each person with the fastest.
+> Four people must cross a bridge at night. The bridge holds two people at a time, and they have one torch, which must be carried on every crossing. A pair walks at the slower person's pace. The four take 10, 5, 2 and 1 minutes. What is the shortest time to get everyone across?
 
-I got the check question right. The apply question changed the times to 6, 5, 4 and 1 minutes. I answered 13, and the answer is 17. With these times it is cheaper to escort the two slowest, and I had priced that correctly, but I forgot that the last two people still have to cross. The teacher did not move on. It showed me when each strategy wins and what each one leaves to do, gave me a new version with five people, and went to the next section only after I got that one right.
+The obvious plan is to let the fastest person walk each of the others over and bring the torch back each time: 10 + 1 + 5 + 1 + 2 = 19 minutes. The section shows a 17-minute plan, in which the 10- and 5-minute people cross together (1 and 2 cross, 1 returns, 10 and 5 cross, 2 returns, 1 and 2 cross: 2 + 1 + 10 + 2 + 2), and ends with this key idea:
+
+> Every crossing is paid for by its slowest member, so pair the two slowest people and pay for them once. Two fast people cross first, so that a fast person is on each side to bring the torch back.
+
+The apply question keeps the bridge and changes the times to 6, 5, 4 and 1. Follow the key idea and you get 19 minutes. The obvious plan, which the section just beat, now wins with 17. Pairing the two slowest saves one walk by the second-slowest person and one return by the fastest, 5 + 1 = 6 minutes, but it makes the second-fastest person cross the bridge two extra times. With the first times that costs 2 + 2 = 4 minutes; with the new ones it costs 4 + 4 = 8. So pairing wins by 2 minutes the first time and loses by 2 the second. If you memorised "pair the two slowest", you answer 19. If you know why it worked, you weigh the saving against the cost and answer 17.
+
+If you answer 19, the teacher does not move on. It re-teaches the part you missed (when pairing pays, and why) and sets a fresh question before it builds anything on the idea.
 
 In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams are embedded, and each quiz folds into a single line (✓ or ✗ and the question) that you can click open to see your answer and the explanation.
 
@@ -91,13 +97,13 @@ The teacher is the Claude Code session itself, guided by a set of [skills](https
 
 ## Before you rely on it
 
-- The teaching method is written for one learner, me. Edit `skills/teach/SKILL.md` to fit how you learn.
+- The teaching method was written for one learner. Edit `skills/teach/SKILL.md` to fit how you learn.
 - The note mirror reads Claude Code's session transcript, whose format is internal and can change between releases. If the teacher's text stops appearing in your notes, the [guide](docs/guide.md#troubleshooting) shows how to rebuild a note.
 - Everything runs on your machine except the model calls and the researcher's web searches. The model calls use your Claude Code login and count towards your plan's usage. The researcher and diagram subagents run on Sonnet by default, which uses less of your plan.
-- I use it on Linux. It should work anywhere tmux runs, which on Windows means WSL, but I haven't tried that.
+- It is developed on Linux. It should work anywhere tmux runs, which on Windows means WSL, but that is untested.
 
 ## Credits
 
-The teaching method, the original skills and the agent prompts are [Eero Alvar's](https://github.com/amosblomqvist/learn). The port and everything added since are by Lachlan Burton, written with Claude.
+The teaching method, the quiz popup, the note mirror, the skills and the agent prompts come from [Eero Alvar's learn](https://github.com/amosblomqvist/learn). The port to Claude Code, the changes to those pieces, and the courses, exams, interviews, technique notes and practice modes are by Lachlan Burton, written with Claude.
 
 If something breaks or you have an idea, please open an issue.
