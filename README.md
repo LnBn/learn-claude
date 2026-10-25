@@ -12,19 +12,19 @@ learn-claude is a Claude Code port of Eero Alvar's [learn](https://github.com/am
 
 You ask to learn something, say `teach me how TCP achieves reliability`. The teacher first asks a few quick questions to find where your knowledge runs out. Then it proposes a plan: a small map that starts from things you already know and ends at the thing you want. Once you agree to the plan, it teaches one idea at a time.
 
-Each idea gets a short section in your note, ending with a one- or two-sentence key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second, the apply question, is where the method shows. It is not just the worked example again. It changes one thing, sometimes only the numbers, so that the recipe from the section no longer works on its own, and only knowing *why* the recipe works gets you the answer.
+Each idea gets a short section in your note, ending with a one- or two-sentence key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second, the apply question, is where the method shows. It is not just the worked example again. It changes one thing about it, so that the recipe from the section no longer works on its own, and only knowing *why* the recipe works gets you the answer.
 
-Here is one section from a course on Xinfeng Zhou's *A Practical Guide to Quantitative Finance Interviews*. It teaches a classic puzzle:
+Here is part of the first lesson of a course on Kevin Murphy's *Probabilistic Machine Learning: An Introduction*. The section argues that a classifier should output a probability, not just a label, and makes the case with a spam filter. Here is its example, shortened:
 
-> Four people must cross a bridge at night. The bridge holds two people at a time, and they have one torch, which must be carried on every crossing. A pair walks at the slower person's pace. The four take 10, 5, 2 and 1 minutes. What is the shortest time to get everyone across?
+> Deleting a real email costs 10 (you miss something important), and letting a spam through costs 1. The filter says an email is spam with probability $p$. Deleting has an expected cost of $10(1-p)$ and keeping has an expected cost of $p$, so you delete only when $p > 10/11 \approx 0.91$. At $p = 0.7$ the filter's best guess is "spam", yet the right action is to keep the email.
 
-The obvious plan is to let the fastest person walk each of the others over and bring the torch back each time: 10 + 1 + 5 + 1 + 2 = 19 minutes. The section shows a 17-minute plan, in which the 10- and 5-minute people cross together (1 and 2 cross, 1 returns, 10 and 5 cross, 2 returns, 1 and 2 cross: 2 + 1 + 10 + 2 + 2), and ends with this key idea:
+A filter that gave only the label would delete that email. In the section's words: uncertainty is information, and throwing it away gives worse decisions.
 
-> Every crossing is paid for by its slowest member, so pair the two slowest people and pay for them once. Two fast people cross first, so that a fast person is on each side to bring the torch back.
+The apply question moves the idea to a clinic. A model gives the probability $p$ that a patient has a disease. Treating a healthy patient costs 2, not treating a sick patient costs 18, and correct decisions cost 0. What is the threshold, and should you treat at $p = 0.15$?
 
-The apply question keeps the bridge and changes the times to 6, 5, 4 and 1. Follow the key idea and you get 19 minutes. The obvious plan, which the section just beat, now wins with 17. Pairing the two slowest saves one walk by the second-slowest person and one return by the fastest, 5 + 1 = 6 minutes, but it makes the second-fastest person cross the bridge two extra times. With the first times that costs 2 + 2 = 4 minutes; with the new ones it costs 4 + 4 = 8. So pairing wins by 2 minutes the first time and loses by 2 the second. If you memorised "pair the two slowest", you answer 19. If you know why it worked, you weigh the saving against the cost and answer 17.
+Putting the big cost on top again, as in the spam case, gives 18/20 = 0.9, which is wrong. In the spam case the expensive mistake was acting (deleting a real email), so the threshold was high. Here the expensive mistake is *not* acting, so the threshold is low. Treating costs $2(1-p)$ in expectation and not treating costs $18p$, so treat when $2(1-p) < 18p$, that is, when $p > 0.10$. At $p = 0.15$ you treat, even though the patient is most likely healthy. The quiz's other options are what a half-learned recipe produces: 0.9 attaches each cost to the wrong mistake, 0.5 ignores the costs, and 0.11 divides one cost by the other instead of by their sum.
 
-If you answer 19, the teacher does not move on. It re-teaches the part you missed (when pairing pays, and why) and sets a fresh question before it builds anything on the idea.
+If you pick one of those, the teacher does not move on. It re-teaches the part you missed and sets a fresh question before it builds anything on the idea.
 
 In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams are embedded, and each quiz folds into a single line (✓ or ✗ and the question) that you can click open to see your answer and the explanation.
 
