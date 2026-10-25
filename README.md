@@ -12,19 +12,7 @@ learn-claude is a Claude Code port of Eero Alvar's [learn](https://github.com/am
 
 You ask to learn something, say `teach me how TCP achieves reliability`. The teacher first asks a few quick questions to find where your knowledge runs out. Then it proposes a plan: a small map that starts from things you already know and ends at the thing you want. Once you agree to the plan, it teaches one idea at a time.
 
-Each idea gets a short section in your note, ending with a one- or two-sentence key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second, the apply question, is where the method shows. It is not just the worked example again. It changes one thing about it, so that the recipe from the section no longer works on its own, and only knowing *why* the recipe works gets you the answer.
-
-Here is part of the first lesson of a course on Kevin Murphy's *Probabilistic Machine Learning: An Introduction*. The section argues that a classifier should output a probability, not just a label, and makes the case with a spam filter. Here is its example, shortened:
-
-> Deleting a real email costs 10 (you miss something important), and letting a spam through costs 1. The filter says an email is spam with probability $p$. Deleting has an expected cost of $10(1-p)$ and keeping has an expected cost of $p$, so you delete only when $p > 10/11 \approx 0.91$. At $p = 0.7$ the filter's best guess is "spam", yet the right action is to keep the email.
-
-A filter that gave only the label would delete that email. In the section's words: uncertainty is information, and throwing it away gives worse decisions.
-
-The apply question moves the idea to a clinic. A model gives the probability $p$ that a patient has a disease. Treating a healthy patient costs 2, not treating a sick patient costs 18, and correct decisions cost 0. What is the threshold, and should you treat at $p = 0.15$?
-
-Putting the big cost on top again, as in the spam case, gives 18/20 = 0.9, which is wrong. In the spam case the expensive mistake was acting (deleting a real email), so the threshold was high. Here the expensive mistake is *not* acting, so the threshold is low. Treating costs $2(1-p)$ in expectation and not treating costs $18p$, so treat when $2(1-p) < 18p$, that is, when $p > 0.10$. At $p = 0.15$ you treat, even though the patient is most likely healthy. The quiz's other options are what a half-learned recipe produces: 0.9 attaches each cost to the wrong mistake, 0.5 ignores the costs, and 0.11 divides one cost by the other instead of by their sum.
-
-If you pick one of those, the teacher does not move on. It re-teaches the part you missed and sets a fresh question before it builds anything on the idea.
+Each idea gets a short section in your note, ending with a one- or two-sentence key idea. When you have read it, you type `ready`, and two quizzes pop up over the terminal. The first checks that you read carefully. The second asks you to apply the idea to a problem you haven't seen worked: usually the section's example with one thing changed, so that following the recipe is not enough and you need to know *why* it works. If you miss it, the teacher re-teaches that part and sets a fresh question before it builds anything on the idea.
 
 In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams are embedded, and each quiz folds into a single line (✓ or ✗ and the question) that you can click open to see your answer and the explanation.
 
