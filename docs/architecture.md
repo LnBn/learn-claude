@@ -1,6 +1,6 @@
 # Architecture
 
-How the pieces of learn-claude fit together, why they are built the way they are, and where the system is fragile. Read the [README](../README.md) first; this document is for changing the code.
+How the pieces of learn-claude fit together, why they are built the way they are, and where the system is fragile. Read the [README](../README.md) and the [user guide](guide.md) first; this document is for changing the code.
 
 **Contents:** [Components](#components) · [One lesson section, step by step](#one-lesson-section-step-by-step) · [The quiz tool](#the-quiz-tool) · [The note mirror](#the-note-mirror) · [Pause and resume](#pause-and-resume) · [Courses](#courses) · [Exams](#exams) · [Coding practice](#coding-practice) · [Visuals](#visuals) · [Obsidian side](#obsidian-side) · [State files](#state-files) · [Fragile parts](#fragile-parts) · [Testing](#testing)
 
