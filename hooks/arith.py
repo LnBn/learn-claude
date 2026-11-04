@@ -4,7 +4,7 @@ arith — timed mental arithmetic sprints (Zetamac-style) in a tmux popup.
 
 The sprint runs on its own, outside the model: questions are generated here, every keypress is checked here, and a
 correct answer advances at once. Each question has a kind (`× 7`, `− borrow`, `/16`, …) and its time is recorded,
-so `weak` mode can draw from the kinds the learner is slowest at. History: `<vault>/practice/.arith.json`.
+so `weak` mode can draw from the kinds the learner is slowest at (`dist-weak` for distribution kinds). History: `<vault>/practice/.arith.json`.
 
     arith.py run [mode] [--seconds 120]     open the popup (tmux), wait for it to close, print the summary
     arith.py play [mode] [--seconds 120]    the sprint itself, in the current terminal (the popup runs this)
@@ -12,10 +12,11 @@ so `weak` mode can draw from the kinds the learner is slowest at. History: `<vau
     arith.py history [mode]                 the last 10 complete sprints per mode, best and average
     arith.py kinds [mode]                   every ranked kind's median time, slowest first
 
-Modes: core (default), fractions, powers, estimate, mixed, weak.
+Modes: core (default), fractions, powers, estimate, mixed, weak; dist (distribution facts) and dist-weak.
 """
 import argparse
 import json
+import math
 import os
 import random
 import shlex
@@ -32,8 +33,9 @@ CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VAULT = os.path.dirname(CLAUDE_DIR)
 HISTORY = os.path.join(VAULT, "practice", ".arith.json")
 
-MODES = ("core", "fractions", "powers", "estimate", "mixed", "weak")
+MODES = ("core", "fractions", "powers", "estimate", "mixed", "weak", "dist", "dist-weak")
 CONCRETE = ("core", "fractions", "powers", "estimate")
+WEAK = {"weak": ("mixed", CONCRETE), "dist-weak": ("dist", ("dist",))}  # weak mode: (its 30% mode, its modes' kinds)
 DENOMINATORS = list(range(2, 13)) + [16, 20, 25, 40]
 PERCENTS = (5, 10, 12.5, 15, 20, 25, 30, 40, 75)
 TOLERANCE = 0.02
@@ -109,10 +111,273 @@ def estimate(rng):
     return _q(f"{a} ÷ {b}", repr(round(a / b, 6)), "≈ ÷", "estimate", estimate=True)
 
 
-GENERATORS = {"core": core, "fractions": fractions, "powers": powers, "estimate": estimate}
+# ---------------------------------------------------------------- distributions
+# A distribution fact plus a small calculation. Answers are exact Fractions, typed as an integer, a decimal or a
+# fraction. Rates for Expo and Gamma, a variance in N(μ, σ²); conventions that matter are stated in the question.
+
+F = Fraction
+RATES = tuple(map(F, ("1", "2", "3", "4", "5", "1/2", "1/3", "1/4")))
+PROBS = tuple(map(F, ("1/2", "1/3", "1/4", "1/5", "1/6", "1/10", "2/3", "3/4")))
+RHOS = tuple(map(F, ("1/2", "1/3", "1/4", "1/5", "2/3", "3/4", "3/5", "4/5", "-1/2", "-1/3", "-1/4")))
+TRIALS, FAILURES = "on {1,2,…}", "on {0,1,…}"  # Geom: trials up to and including the first success, or failures
+COIN_WAITS = {"H": 2, "HH": 6, "HT": 4, "HHH": 14, "HHT": 8, "HTH": 10, "HTT": 8}
+DIE_WAITS = {"a 6": 6, "a 5 or 6": 3, "an even number": 2, "two 6s in a row": 42}
+
+
+def _n(x):
+    """A number for question text: 3, 1/4, −2."""
+    return str(F(x)).replace("-", "−")
+
+
+def _d(text, answer, kind):
+    return _q(text, str(F(answer)), kind, "dist")
+
+
+def _ask(rng, setup, stats, kind):
+    """One of {label: answer} about the setup."""
+    label = rng.choice(list(stats))
+    return _d(f"{setup}. {label}", stats[label], kind)
+
+
+def _moments(mean, var):
+    return {"E[X]": mean, "Var(X)": var, "E[X²]": var + mean * mean}
+
+
+def d_bern(rng):
+    p = rng.choice(PROBS)
+    return _ask(rng, f"X ~ Bern({_n(p)})", _moments(p, p * (1 - p)), "Bern")
+
+
+def d_bin(rng):
+    p = rng.choice(PROBS)
+    n = p.denominator * rng.randint(1, 12 // p.denominator)
+    return _ask(rng, f"X ~ Bin({n}, {_n(p)})", _moments(n * p, n * p * (1 - p)), "Bin")
+
+
+def d_geom(rng):
+    p = rng.choice(PROBS)
+    trials = rng.random() < 0.5
+    mean = 1 / p if trials else (1 - p) / p
+    return _ask(rng, f"X ~ Geom({_n(p)}) {TRIALS if trials else FAILURES}", _moments(mean, (1 - p) / p ** 2), "Geom")
+
+
+def d_pois(rng):
+    lam = F(1, 2) if rng.random() < 0.1 else F(rng.randint(1, 10))
+    return _ask(rng, f"X ~ Pois({_n(lam)})", _moments(lam, lam), "Pois")
+
+
+def d_dunif(rng):
+    a = rng.randint(0, 1)
+    b = a + rng.randint(1, 11)
+    m = b - a + 1
+    return _ask(rng, f"X ~ DUnif{{{a},…,{b}}}", _moments(F(a + b, 2), F(m * m - 1, 12)), "DUnif")
+
+
+def d_unif(rng):
+    a = rng.randint(-2, 4)
+    b = a + rng.randint(1, 6)
+    return _ask(rng, f"X ~ Unif[{_n(a)}, {_n(b)}]", _moments(F(a + b, 2), F((b - a) ** 2, 12)), "Unif")
+
+
+def d_expo(rng):
+    lam = rng.choice(RATES)
+    return _ask(rng, f"X ~ Expo(λ={_n(lam)})", _moments(1 / lam, 1 / lam ** 2), "Expo")
+
+
+def d_gamma(rng):
+    a, lam = rng.randint(2, 5), rng.choice(RATES[:4] + RATES[5:6])
+    return _ask(rng, f"X ~ Gamma({a}, λ={_n(lam)})", _moments(a / lam, a / lam ** 2), "Gamma")
+
+
+def d_beta(rng):
+    a, b = rng.randint(1, 4), rng.randint(1, 4)
+    s = a + b
+    return _ask(rng, f"X ~ Beta({a}, {b})", _moments(F(a, s), F(a * b, s * s * (s + 1))), "Beta")
+
+
+def d_normal(rng):
+    if rng.random() < 0.6:
+        mu, var = rng.choice([m for m in range(-3, 6) if m]), rng.randint(1, 9)
+        return _d(f"X ~ N({_n(mu)}, {var}). E[X²]", mu * mu + var, "Normal")
+    var = rng.randint(1, 5)
+    return _ask(rng, f"X ~ N(0, {var})", {"E[X⁴]": 3 * var * var, "Var(X²)": 2 * var * var}, "Normal")
+
+
+def d_linear(rng):
+    v, a = rng.randint(1, 9), rng.choice([-5, -4, -3, -2, 2, 3, 4, 5])
+    b = rng.choice([x for x in range(-9, 10) if x])
+    return _d(f"Var(X) = {v}. Var({_n(a)}X {'+' if b > 0 else '−'} {abs(b)})", a * a * v, "Var(aX+b)")
+
+
+def d_pair(rng):
+    sx, sy, plus = rng.randint(1, 5), rng.randint(1, 5), rng.random() < 0.5
+    if rng.random() < 0.5:
+        c = F(rng.randint(1 - sx * sy, sx * sy - 1))
+        setup = f"Var(X) = {sx * sx}, Var(Y) = {sy * sy}, Cov = {_n(c)}"
+    else:
+        while True:
+            rho = rng.choice(RHOS)
+            c = rho * sx * sy
+            if (2 * c).denominator == 1:
+                break
+            sx, sy = rng.randint(1, 5), rng.randint(1, 5)
+        setup = f"SD(X) = {sx}, SD(Y) = {sy}, ρ = {_n(rho)}"
+    var = sx * sx + sy * sy + (2 if plus else -2) * c
+    return _d(f"{setup}. Var(X {'+' if plus else '−'} Y)", var, "Var(X±Y)")
+
+
+def d_iid(rng):
+    n, mu, v = rng.choice((2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 25, 100)), rng.randint(-2, 6), rng.randint(1, 9)
+    stats = {"E[sum]": n * mu, "Var(sum)": n * v, "Var(sample mean)": F(v, n)}
+    if n <= 10:
+        stats["E[sum²]"] = n * v + (n * mu) ** 2
+    return _ask(rng, f"{n} iid draws, mean {_n(mu)}, var {v}", stats, "iid sum")
+
+
+def d_order(rng):
+    a, w, n = rng.choice((0, 0, 0, 1, -1, 2)), rng.randint(1, 6), rng.randint(2, 6)
+    kth = lambda k: a + F(w * k, n + 1)  # noqa: E731  the k-th smallest of n: k/(n+1) of the way along
+    stats = {"E[min]": kth(1), "E[max]": kth(n), "E[max − min]": F(w * (n - 1), n + 1)}
+    if n % 2:
+        stats["E[median]"] = kth((n + 1) // 2)
+    if n >= 3:
+        stats["E[2nd smallest]"] = kth(2)
+    return _ask(rng, f"{n} iid Unif[{_n(a)}, {_n(a + w)}] draws", stats, "order stat")
+
+
+def d_cond(rng):
+    vx, vy = rng.randint(1, 9), rng.randint(1, 9)
+    mx, my = (rng.randint(-3, 3), rng.randint(-3, 3)) if rng.random() < 0.4 else (0, 0)
+    t = vx + vy
+    g = t // math.gcd(vx, t)  # s − E[X+Y] a multiple of g: E[X | X+Y = s] is an integer
+    d = g * rng.choice([m for m in range(-3, 4) if m and abs(g * m) <= 20])
+    s = mx + my + d
+    setup = f"X ~ N({_n(mx)}, {vx}), Y ~ N({_n(my)}, {vy}) indep"
+    return _ask(rng, setup, {f"E[X | X+Y={_n(s)}]": mx + F(vx * d, t), f"Var(X | X+Y={_n(s)})": F(vx * vy, t)},
+                "cond normal")
+
+
+def d_regress(rng):
+    rho = rng.choice(RHOS)
+    if rng.random() < 0.5:
+        x = rng.choice([v for v in range(-4, 5) if v])
+        return _ask(rng, f"Std bivariate normal, ρ = {_n(rho)}", {f"E[Y | X={_n(x)}]": rho * x,
+                                                                    f"Var(Y | X={_n(x)})": 1 - rho * rho}, "regression")
+    sx, sy = rng.randint(1, 4), rng.randint(1, 4)
+    x = sx * rng.choice([v for v in range(-3, 4) if v])
+    setup = f"X ~ N(0, {sx * sx}), Y ~ N(0, {sy * sy}) jointly, ρ = {_n(rho)}"
+    return _ask(rng, setup, {f"E[Y | X={_n(x)}]": rho * sy * F(x, sx), f"Var(Y | X={_n(x)})": sy * sy * (1 - rho * rho)},
+                "regression")
+
+
+def d_coins(rng):
+    if rng.random() < 0.6:
+        n = rng.randint(2, 100)
+        return _d(f"A: {n + 1} fair coins, B: {n}. P(A has more heads)", F(1, 2), "coins")
+    n = rng.randint(1, 3)
+    tie = F(math.comb(2 * n, n), 4 ** n)
+    return _ask(rng, f"A: {n} fair coins, B: {n}", {"P(A has more heads)": (1 - tie) / 2, "P(same # of heads)": tie},
+                "coins")
+
+
+def d_linearity(rng):
+    form = rng.randrange(4)
+    if form == 0:
+        return _d(f"Random permutation of {rng.randint(3, 8)}. E[# fixed points]", 1, "linearity")
+    if form == 3:
+        h, t = rng.randint(1, 6), rng.randint(1, 6)
+        return _d(f"{h} H and {t} T in random order. E[# runs]", 1 + F(2 * h * t, h + t), "linearity")
+    n = rng.randint(3, 12)
+    if form == 1:
+        return _d(f"{n} fair coin flips. E[# runs]", F(n + 1, 2), "linearity")
+    return _d(f"{n} fair coin flips. E[# overlapping HH]", F(n - 1, 4), "linearity")
+
+
+def d_memoryless(rng):
+    s = rng.randint(1, 10)
+    if rng.random() < 0.5:
+        lam = rng.choice(RATES[:4] + RATES[5:6])
+        return _ask(rng, f"X ~ Expo(λ={_n(lam)})", {f"E[X | X > {s}]": s + 1 / lam, f"Var(X | X > {s})": 1 / lam ** 2},
+                    "memoryless")
+    p = rng.choice(PROBS[:6])
+    if rng.random() < 0.5:
+        return _d(f"X ~ Geom({_n(p)}) {TRIALS}. E[X | X > {s}]", s + 1 / p, "memoryless")
+    p, t = rng.choice(PROBS[:3] + PROBS[6:]), rng.randint(1, 3)
+    return _d(f"X ~ Geom({_n(p)}) {TRIALS}. P(X > {s + t} | X > {s})", (1 - p) ** t, "memoryless")
+
+
+def d_wait(rng):
+    form = rng.randrange(3)
+    if form == 0:
+        pattern = rng.choice(list(COIN_WAITS))
+        flipped = pattern.translate(str.maketrans("HT", "TH")) if rng.random() < 0.5 else pattern
+        return _d(f"Fair coin. E[flips until {flipped}]", COIN_WAITS[pattern], "waiting time")
+    if form == 1:
+        target = rng.choice(list(DIE_WAITS))
+        return _d(f"Fair die. E[rolls until {target}]", DIE_WAITS[target], "waiting time")
+    n = rng.randint(2, 6)
+    return _d(f"{n} equally likely types. E[draws to see all]", n * sum(F(1, i) for i in range(1, n + 1)),
+              "waiting time")
+
+
+def _matrix(rows):
+    return "[" + ", ".join("[" + ", ".join(_n(x) for x in r) + "]" for r in rows) + "]"
+
+
+def d_matrix2(rng):
+    while True:
+        l1 = rng.randint(-2, 6)
+        l2 = l1 + rng.randint(1, 5)
+        a = rng.randint(-3, 7)
+        bc = -(a - l1) * (a - l2)  # tr = l1 + l2 and det = l1·l2
+        if bc == 0:
+            continue
+        b = rng.choice([x for x in range(-9, 10) if x and bc % x == 0])
+        c, d = bc // b, l1 + l2 - a
+        if abs(c) <= 9 and abs(d) <= 9:
+            break
+    stats = {"det(A)": l1 * l2, "larger eigenvalue": l2, "smaller eigenvalue": l1, "tr(A²)": l1 * l1 + l2 * l2}
+    if l1 * l2:
+        stats["tr(A⁻¹)"] = F(l1 + l2, l1 * l2)
+    return _ask(rng, f"A = {_matrix([[a, b], [c, d]])}", stats, "2×2 matrix")
+
+
+def d_triangular(rng):
+    form = rng.randrange(3)
+    if form == 0:
+        logs = rng.sample((0, 2, 3, 5), rng.randint(2, 3))
+        entries = ", ".join(f"ln {v}" if v else "0" for v in logs)
+        values = [v or 1 for v in logs]  # e^(ln v) = v, e^0 = 1
+        return _ask(rng, f"A = diag({entries})", {"tr(e^A)": sum(values), "det(e^A)": math.prod(values)},
+                    "triangular matrix")
+    diag = [rng.randint(1, 4) for _ in range(rng.randint(2, 3))]
+    stats = {"tr(A²)": sum(x * x for x in diag), "det(A⁻¹)": F(1, math.prod(diag))}
+    if form == 1:
+        stats.update({"tr(A⁻¹)": sum(F(1, x) for x in diag), "det(A³)": math.prod(diag) ** 3})
+        return _ask(rng, f"A = diag({', '.join(map(str, diag))})", stats, "triangular matrix")
+    n = len(diag)
+    rows = [[diag[i] if i == j else rng.randint(-5, 9) if j > i else 0 for j in range(n)] for i in range(n)]
+    stats.update({"det(A)": math.prod(diag), "largest eigenvalue": max(diag)})
+    return _ask(rng, f"A = {_matrix(rows)}", stats, "triangular matrix")
+
+
+DIST_KINDS = {"Bern": d_bern, "Bin": d_bin, "Geom": d_geom, "Pois": d_pois, "DUnif": d_dunif, "Unif": d_unif,
+              "Expo": d_expo, "Gamma": d_gamma, "Beta": d_beta, "Normal": d_normal, "Var(aX+b)": d_linear,
+              "Var(X±Y)": d_pair, "iid sum": d_iid, "order stat": d_order, "cond normal": d_cond,
+              "regression": d_regress, "coins": d_coins, "linearity": d_linearity, "memoryless": d_memoryless,
+              "waiting time": d_wait, "2×2 matrix": d_matrix2, "triangular matrix": d_triangular}
+
+
+def dist(rng):
+    return DIST_KINDS[rng.choice(list(DIST_KINDS))](rng)
+
+
+GENERATORS = {"core": core, "fractions": fractions, "powers": powers, "estimate": estimate, "dist": dist}
 
 
 def mode_of(kind):
+    if kind in DIST_KINDS:
+        return "dist"
     if kind.startswith("≈"):
         return "estimate"
     if kind[:1] in "+−×÷":
@@ -124,6 +389,8 @@ def mode_of(kind):
 
 def of_kind(kind, rng):
     """A question of this kind: drawn from its mode until the kind matches."""
+    if kind in DIST_KINDS:
+        return DIST_KINDS[kind](rng)
     gen = GENERATORS[mode_of(kind)]
     for _ in range(2000):
         q = gen(rng)
@@ -133,12 +400,12 @@ def of_kind(kind, rng):
 
 
 def generate(mode, rng, weak_kinds=None):
-    if mode == "weak":
+    if mode in WEAK:
         if weak_kinds and rng.random() < WEAK_SHARE:
             slot = rng.randrange(WEAK_KINDS)  # a slot no ranked kind fills is drawn uniformly below
             if slot < len(weak_kinds):
                 return of_kind(weak_kinds[slot], rng)
-        mode = "mixed"
+        mode = WEAK[mode][0]
     if mode == "mixed":
         mode = rng.choice(CONCRETE)
     return GENERATORS[mode](rng)
@@ -157,9 +424,34 @@ def _places(text):
     return len(text.split(".", 1)[1]) if "." in text else 0
 
 
+def _fraction(text):
+    try:
+        return F(text.strip())
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def accepts_fraction(typed, answer):
+    """A distribution answer: any integer, decimal or fraction equal to it, or a decimal of at least 4 places equal
+    to it rounded half up to those places (1/3: 0.3333)."""
+    v = _fraction(typed)
+    if v is None:
+        return False
+    true = F(answer)
+    if v == true:
+        return True
+    places = _places(typed.strip())
+    if "/" in typed or places < 4:
+        return False
+    rounded = (Decimal(true.numerator) / Decimal(true.denominator)).quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP)
+    return v == F(rounded)
+
+
 def accepts(typed, q, enter=False):
     """Whether the typed text answers the question: exact answers on any keypress (at full precision), estimates
     on Enter within 2%."""
+    if q.get("mode") == "dist":
+        return accepts_fraction(typed, q["answer"])
     v = _number(typed)
     if v is None or not typed.strip():
         return False
@@ -203,9 +495,10 @@ def kind_speeds(history):
     return {k: statistics.median(v[-SPEED_WINDOW:]) for k, v in times.items() if len(v) >= RANK_FLOOR}
 
 
-def weak_kinds(history):
-    """The five kinds slowest relative to the other kinds of their own mode."""
-    speeds = kind_speeds(history)
+def weak_kinds(history, mode="weak"):
+    """The five kinds slowest relative to the other kinds of their own mode, among the weak mode's modes (arithmetic
+    for `weak`, distributions for `dist-weak`)."""
+    speeds = {k: ms for k, ms in kind_speeds(history).items() if mode_of(k) in WEAK[mode][1]}
     by_mode = {}
     for k, ms in speeds.items():
         by_mode.setdefault(mode_of(k), []).append(ms)
@@ -257,7 +550,7 @@ def play(stdscr, mode, seconds):
     except Exception:
         pass
     history = load_history()
-    weak = weak_kinds(history) if mode == "weak" else None
+    weak = weak_kinds(history, mode) if mode in WEAK else None
     rng = random.Random()
     stdscr.timeout(200)  # redraw the clock while waiting for keys
     q = generate(mode, rng, weak)
@@ -291,7 +584,8 @@ def play(stdscr, mode, seconds):
             score += 1
         else:
             skipped += 1
-        q, typed, flash, shown = generate(mode, rng, weak), "", "", time.time()
+        was = f"{q['text']} = {q['answer']}" if not correct and q["mode"] == "dist" else ""  # learn it from a skip
+        q, typed, flash, shown = generate(mode, rng, weak), "", was, time.time()
 
     while True:
         left = deadline_left(start, seconds, time.time())
@@ -317,7 +611,7 @@ def play(stdscr, mode, seconds):
                     flash = "not within 2%"
         elif ch in (curses.KEY_BACKSPACE, "\x7f", "\b"):
             typed, flash = typed[:-1], ""
-        elif isinstance(ch, str) and ch in "0123456789.-" and len(typed) < 12:
+        elif isinstance(ch, str) and ch in "0123456789.-" + "/" * (q["mode"] == "dist") and len(typed) < 12:
             typed, flash = typed + ch, ""
             if not q["estimate"] and accepts(typed, q):
                 advance(True)
@@ -363,7 +657,8 @@ def cmd_run(a):
         print(f'NO TMUX: run "python3 .claude/hooks/arith.py play {a.mode}" in another terminal, then /arith last')
         return
     before = len(load_history()["sprints"])
-    proc = subprocess.run(popup_command(a.mode, a.seconds, "14"), capture_output=True, text=True)
+    width = "80" if a.mode in ("dist", "dist-weak") else "70"  # a distribution question is up to 60 characters
+    proc = subprocess.run(popup_command(a.mode, a.seconds, "14", width), capture_output=True, text=True)
     if proc.returncode != 0 and "too large" in (proc.stderr or ""):  # a short or narrow pane
         proc = subprocess.run(popup_command(a.mode, a.seconds, "90%", "90%"), capture_output=True, text=True)
     if proc.returncode != 0 and (proc.stderr or "").strip():
@@ -420,7 +715,7 @@ def main(argv=None):
     s = sub.add_parser("history")
     s.add_argument("mode", nargs="?", choices=MODES)
     s = sub.add_parser("kinds")
-    s.add_argument("mode", nargs="?", choices=CONCRETE)
+    s.add_argument("mode", nargs="?", choices=CONCRETE + ("dist",))
     a = p.parse_args(argv)
     {"run": cmd_run, "play": cmd_play, "last": cmd_last, "history": cmd_history, "kinds": cmd_kinds}[a.cmd](a)
 
