@@ -7,7 +7,7 @@ allowed-tools: Bash(python3 .claude/hooks/interview.py *), Bash(python3 .claude/
 
 Arguments: `$ARGUMENTS`
 
-A mock interview is a timed round of problems the learner has not seen, on the units they have finished in every course, or in the courses named with `--courses`. You write the problems and play the interviewer. `interview.py` does everything that must be exact: paths, validation, the topic mix, the clock, hints, answers, outcomes, the scores, the scorecard and the misses. During a round, every message from the learner arrives with a line from the hook, `INTERVIEW: problem 2 of 3 · 9:40 of 12:00 · hints 1 · round 21:15 of 36:00 · <FLAG>`: that line is the clock, and you never keep time yourself.
+A mock interview is a timed round of problems the learner has not seen, on the units they have finished in every course (in the programme's books while a programme is current), or in the courses named with `--courses`. You write the problems and play the interviewer. `interview.py` does everything that must be exact: paths, validation, the topic mix, the clock, hints, answers, outcomes, the scores, the scorecard and the misses. During a round, every message from the learner arrives with a line from the hook, `INTERVIEW: problem 2 of 3 · 9:40 of 12:00 · hints 1 · round 21:15 of 36:00 · <FLAG>`: that line is the clock, and you never keep time yourself.
 
 A firm profile sets the number of problems, the time, the mix of topics and the interviewer's style. `sig` and `mw` are live rounds, like any other. `sig-oa` and `mw-oa` are written tests: a paper the learner sits in Obsidian against the clock and hands in with `submit`. The script scores it (**A written test**).
 

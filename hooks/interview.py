@@ -40,6 +40,7 @@ import time
 
 import book
 import lesson
+import programme
 import technique
 
 CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -260,7 +261,9 @@ def scope(arg):
     if not courses:
         book.die("no course yet — create one with: book.py new <book.pdf>", 1)
     if not arg:
-        chosen = [c for c in courses if finished_units(c)]
+        members = {os.path.realpath(d) for d in programme.member_dirs()}  # a current programme scopes the round
+        pool = [c for c in courses if os.path.realpath(c.dir) in members] if members else courses
+        chosen = [c for c in pool if finished_units(c)]
         if not chosen:
             book.die("no finished unit yet: a round tests what the courses have covered", 1)
         return chosen

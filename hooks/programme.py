@@ -315,8 +315,12 @@ def describe(p, i, name, uid, heading="NEXT"):
         lines.append(f"PROGRAMME CHAPTER START: the chapter note is new and the chapter is reached through the "
                      f"programme. Open it with a short ### Overview of two or three sentences that links to "
                      f"{p.module_link(i)}, then teach the unit. No chapter-sized overview and no ready-or-probe choice.")
-    lines.append(f"RECORD: when every node of the unit has passed, run programme.py done {name}:{uid} "
-                 f"[--status shaky]; the next unit comes from its output, not from book.py.")
+    if c.mode() == "problems":
+        lines.append(f"PROGRAMME RECORD: record each problem with book.py attempt, as the RECORD line says. The last "
+                     f"one records the unit and prints the programme.py done command to run for the next unit.")
+    else:
+        lines.append(f"RECORD: when every node of the unit has passed, run programme.py done {name}:{uid} "
+                     f"[--status shaky]; the next unit comes from its output, not from book.py.")
     return "\n".join(lines)
 
 

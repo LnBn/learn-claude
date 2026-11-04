@@ -216,6 +216,31 @@ class ProgrammeTest(unittest.TestCase):
         self.assertIn("- [ ] bh §1.2 Supervised learning", text)
         self.assertEqual(text.count("# Quant revision\n"), 1)
 
+    # --- with problem courses and interviews
+
+    def test_problem_course_hands_the_next_unit_to_the_programme(self):
+        self.setup_two_modules()
+        st = self.state(self.bh)
+        st["mode"] = "problems"
+        (self.bh / ".course" / "state.json").write_text(json.dumps(st), encoding="utf-8")
+        out = self.pg("next").stdout
+        self.assertIn("PROGRAMME RECORD:", out)
+        self.assertNotIn("RECORD: when every node", out)
+        self.book("attempt", "1.1", "--result", "solved")
+        r = self.book("attempt", "1.1", "--transfer", "passed")
+        self.assertIn("PROGRAMME: record the unit in the programme with: programme.py done bh:1.1", r.stdout)
+        self.assertNotIn("NEXT:", r.stdout)
+
+    def test_interview_scope_defaults_to_the_programme(self):
+        other = make_course(self.vault, "pml1")
+        set_status(other, **{"1.1": ("done", "2026-10-01")})
+        set_status(self.bh, **{"1.1": ("done", "2026-10-01")})
+        self.pg("new", "quant", "--title", "Q")
+        self.pg("module", "Probability", "bh:1.1-1.2")
+        r = run(self.vault, "interview.py", "new", "--length", "short")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertNotIn("pml1", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

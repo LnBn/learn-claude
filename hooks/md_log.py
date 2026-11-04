@@ -497,7 +497,7 @@ ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sur
 # (/course next, /course study, /lesson resume and /exercise start or continue teaching. /exam sets or grades a
 # paper: the paper and its feedback are the record, so nothing of its replies goes into a note.)
 ADMIN_COMMANDS = {
-    "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions", "programme"},
+    "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions", "programme", "mode"},
     "lesson": {"pause", "status", "reset"},
     "md-log": None,    # None: every use of the command
     "md-unlog": None,
@@ -506,7 +506,7 @@ ADMIN_COMMANDS = {
 }
 # a command typed without its slash ("course next"): still a command, not something the learner said
 TYPED_COMMAND_RE = re.compile(
-    r"^\W*(?:(course)\s+(new|next|study|list|use|status|toc|select|assess|solutions)\b|"
+    r"^\W*(?:(course)\s+(new|next|study|list|use|status|toc|select|assess|solutions|mode)\b|"
     r"(lesson)\s+(pause|resume|status|reset)\b|(md-log|md-unlog)\b)", re.I)
 # "exam" alone or with one argument (submit, list, a chapter id, a note), and a prompt that is just "submit"
 TYPED_EXAM_RE = re.compile(r'^\W*exam(?:\s+(submit|list|[A-Z]|\d+|"[^"]+"|\S+\.md))?\W*$', re.I)
