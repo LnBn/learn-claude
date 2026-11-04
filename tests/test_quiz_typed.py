@@ -132,11 +132,15 @@ class TypedUI(unittest.TestCase):
 
         def request(method, params):
             sent.append(params)
-            return {"result": {"action": "accept", "content": {"answer": " 2^n ", "dk": False, "note": "hm"}}}
+            return {"result": {"action": "accept", "content": {"answer": " 2^n ", "dk": False, "note": "hm",
+                                                                "sure": "80% — fairly sure"}}}
         self.addCleanup(setattr, quiz_server, "request", quiz_server.request)
         quiz_server.request = request
         ui = quiz_server.ask_via_elicitation(self.RECORD, [], msg_details="", multi=False)
-        self.assertEqual(ui, {"action": "accept", "typed": "2^n", "dontKnow": False, "note": "hm"})
+        self.assertEqual(ui, {"action": "accept", "typed": "2^n", "dontKnow": False, "note": "hm",
+                              "confidence": "80% — fairly sure"})
+        self.assertEqual(quiz_server.confidence_of(ui, False), 80)
+        self.assertIn("How sure", sent[0]["requestedSchema"]["properties"]["sure"]["title"])
         props = sent[0]["requestedSchema"]["properties"]
         self.assertEqual(props["answer"]["type"], "string")
         self.assertNotIn("enum", props["answer"])

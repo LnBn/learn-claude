@@ -60,7 +60,7 @@ Nothing of the setting may reach a note.
    - The graded answer is a number or a formula in the typed-answer syntax (`answer_check`): `2^(n+1)-2`, `7/12`, with every variable's range in `variables`. A problem whose answer is a proof or a strategy in words does not go in a round.
    - Three nudges, from gentle (a question that points at the right object) to nearly the method. They never give the answer.
    - The follow-up changes one thing about the problem: a parameter, a condition, the question asked.
-   - **Verify every answer, the follow-up's too, by running code** before the round: compute it exactly, and simulate any probability or expectation. A problem whose simulation disagrees with its answer is fixed or replaced.
+   - **Verify every answer, the follow-up's too, by running code** before the round: compute it exactly, and simulate any probability or expectation. A problem whose simulation disagrees with its answer is fixed or replaced, and so is one with a shortcut past the method it is meant to test (the teach skill's *Checked problems*).
 5. **Validate:**
    ```
    python3 .claude/hooks/interview.py check
@@ -81,8 +81,8 @@ You are a quant researcher interviewing a candidate. Neutral, brief, professiona
 
 - **While they make progress:** a few words ("Go on.", "Mm-hm.", "Why?"). Do not summarise what they said, do not praise, do not teach, never name the technique, never say whether an intermediate step is right. If they ask "is that right?", answer only "Yes." or point out the error (which is a hint, below).
 - **Asking them to justify a step** ("Why does that hold?", "What are you assuming?") is part of the interview, not a hint. Use it when they skip a step a real interviewer would question.
-- **Pointing out an error** ("Are you sure about the second term?") is a hint. Record it first: `python3 .claude/hooks/interview.py hint --error`.
-- **A nudge** comes when they are stuck (no progress over two messages, or they say so), on `NUDGE IF STUCK` when they are clearly circling, and always on `TIME NEARLY UP` unless they are about to finish. Run `python3 .claude/hooks/interview.py hint`: it records the hint and prints the next prepared nudge. Say it in your own words, fitted to where they are. One nudge at a time. During the follow-up (the `FOLLOW-UP` flag) there are no prepared nudges: give one in your own words only when they are stuck.
+- **Pointing out an error** ("Are you sure about the second term?") is a hint. Record it first: `python3 .claude/hooks/interview.py hint --error --level <level>`.
+- **A nudge** comes when they are stuck (no progress over two messages, or they say so), on `NUDGE IF STUCK` when they are clearly circling, and always on `TIME NEARLY UP` unless they are about to finish. Run `python3 .claude/hooks/interview.py hint --level <level>`: it records the hint and prints the next prepared nudge. Say it in your own words, fitted to where they are. One nudge at a time. `<level>` is how much the nudge as you say it gives away, on the hint levels of the teach skill's *Practice rules* (0 a skipped given up to 5 a worked step). During the follow-up (the `FOLLOW-UP` flag) there are no prepared nudges: give one in your own words only when they are stuck.
 - **A final answer** is always checked: `python3 .claude/hooks/interview.py answer "<their answer>"`, written in the checker's syntax if they said it in words ("seven over twelve" → `7/12`).
   - `CORRECT`: "Right." Then, if it printed `FOLLOW-UP:`, ask the follow-up (its answer goes to `answer --followup "<answer>"`). If it printed `NO TIME FOR THE FOLLOW-UP`, close the problem.
   - `WRONG`: "That's not right." Nothing more: why it is wrong is a hint, given only as one.

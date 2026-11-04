@@ -92,6 +92,18 @@ If, reading the finished set cold, you can still tell which is right without kno
 
 A typed quiz has no options, but its `wrongAnswers` are built the same way: each is the result of one specific wrong move, with a `why` that names the move.
 
+### Reading confidence (applies to every `quiz` result)
+
+After each answer the learner says how sure they are: 20, 40, 60, 80 or 100%. The tool result gives it on a `Confidence:` line; "I don't know" has none. Read it against the verdict, because the same verdict means different things:
+
+- **Right and sure** (80% or more): solid. Move on.
+- **Right and unsure** (40% or less): fragile, or a lucky guess. Give it one reinforcing touch: a sentence on why the answer holds, or one more question on the same point. Do not celebrate it.
+- **Wrong and sure:** a committed misconception, the most valuable signal a quiz gives. Find its extent with a question or two around it, then re-teach around the wrong belief: name it, show where it breaks, and build the right one from what is established.
+- **Wrong and unsure:** a near-miss or an honest gap. A small correction is enough.
+- **At or below chance.** On a multiple-choice question, confidence at or below the chance of a blind guess (25% with four options) means they distrust their own pick. The `Confidence:` line says so. Treat the pick as a guess, whatever the verdict.
+
+60% sits between the two: read it with the reasoning they showed. The note keeps the confidence, and `/review` uses it: a right answer at 40% or less comes back once as a card, and a miss at 80% or more is asked before other misses.
+
 ### Phase 0 — Open the lesson (written text, before any question)
 
 Before the first quiz, write an opening the learner can read. Its size depends on what the request tells you:
@@ -120,8 +132,8 @@ You can't teach into the learner's zone of proximal development without knowing 
 **The edge is only located when it's bracketed.** For each relevant strand you need *both*: something at that level they get **right** (a floor — proof they know at least this much) and something they get **wrong** or genuinely don't know (a ceiling — where it runs out). The edge sits between them. One side alone tells you almost nothing.
 
 - **All-correct is not "done" — it means the questions were too easy.** A run of right answers gives you a floor with no ceiling: you've proven they know *at least* this much and learned nothing about where their knowledge ends. Do not advance. Escalate — go harder until something finally breaks. If they never miss, you never found the edge.
-- **Binary-search the edge.** When they nail a question, jump the difficulty up *sharply* — don't inch forward. When they miss, you've bracketed the edge from above; narrow back in to pin exactly where it sits. This finds the frontier fast, without a hundred timid questions.
-- **One wrong answer is not "done" either — and it is *not* a cue to start teaching.** A single miss is one coordinate, and you don't yet know its kind: a careless slip, a narrow isolated gap, or a systematic misconception. Probe *around* it to characterize it before concluding anything. Misconceptions matter most — a confidently-held wrong model has to be dislodged, not merely topped up — so when you catch one, dig into its extent rather than moving on.
+- **Open high, then binary-search the edge.** Open each strand near the hardest thing the goal needs, and let a miss walk the probe down. An adult reaching for advanced material almost always holds the basics, so a question at the bottom of a strand moves no edge and wastes the question. Size each jump by the verdict and the confidence together: after a right answer at 80% or more, jump the difficulty up *sharply*; after a hesitant right answer, step up gently and find what makes it shaky. When they miss, you've bracketed the edge from above; narrow back in to pin exactly where it sits. Never descend into territory already bracketed: below a floor this strand has shown, or below what a neighbouring strand has shown, since a strand that holds at height says its neighbours start high too. This finds the frontier fast, without a hundred timid questions.
+- **One wrong answer is not "done" either — and it is *not* a cue to start teaching.** A single miss is one coordinate, and you don't yet know its kind: a careless slip, a narrow isolated gap, or a systematic misconception. Probe *around* it to characterize it before concluding anything. Misconceptions matter most — a confidently-held wrong model has to be dislodged, not merely topped up — so when you catch one (a miss at 80% or more is the likeliest), dig into its extent rather than moving on.
 - **Map every strand the lesson rests on.** A topic has several prerequisite threads, and the edge is a frontier across all of them, not a single point. Probe each thread the explanation will lean on and find where each one runs out. Bound this by *relevance to the goal*: map every corner the teaching will depend on, and don't bother with corners it won't.
 
 Where possible, probe with questions that need a step of reasoning or a small calculation, not recognition of a term: an answer that can be intuited from vocabulary tells you little about understanding.
@@ -186,7 +198,7 @@ For **every node**, in this order:
 
    For a programming topic, the Apply may be a code task instead: a function the learner writes in a file, judged by hidden tests on `submit`. Follow the `code` skill's **In a lesson** section. Its outcome is the Apply's: `passed` or `helped` passes it; `shown` misses it (re-teach, then a variant task).
 
-5. **Respond to the outcome.**
+5. **Respond to the outcome**, read with its confidence (*Reading confidence*).
    - Check missed → they did not read closely, or the text was unclear. Point to the exact sentence, restate that part, re-check with a different question.
    - Apply missed → diagnose which move went wrong from the distractor they chose, re-teach *that* move in a short addendum to the exposition, then a fresh Apply variant. Do not proceed on a failed Apply.
    - "I don't know" → a genuine gap: re-teach, do not re-ask the same question.
@@ -298,18 +310,19 @@ When `book.py` prints `MODE: problems`, the book is a collection of problems wit
 
    Give nothing away: no method, no answer, no technique name, no "this is a classic", no wording that points to the solution. When the `SOLUTION` line says the solution is on the same pages, you have seen it: write the statement as the book poses it, not as the solution frames it. End the reply with one line, `Work on it here: say what you try, or ask for a hint.` The reply ends there.
 
-2. **Attempt.** The learner works in chat. Before your first reply to their work, solve the problem yourself: Read the pages on the `SOLUTION` line when they are printed apart, and check any number by running code. Then follow the `exercise` skill's hint ladder (rungs 1 to 4: orient, strategy, next step, check): one rung per reply, the smallest step that unsticks them, starting at the rung that fits where they are. After each reply that gives a rung, or that names a wrong step in their work, count the hint:
+2. **Attempt.** The learner works in chat. Before your first reply to their work, solve the problem yourself: Read the pages on the `SOLUTION` line when they are printed apart, and check any number by running code. Then help with the hint levels of *Practice rules*: one level per reply, the lowest that addresses the first point where their reasoning breaks. A reply that names a wrong step in their work is a hint too, at the level of what it gives away. After each hint, record it with its level:
    ```
-   python3 .claude/hooks/book.py attempt <number> --hint
+   python3 .claude/hooks/book.py attempt <number> --hint <level>
    ```
-   Confirming that work is right is not a hint. A hint that has a right answer may be a `quiz`, as in the exercise skill. The attempt ends when they reach a right answer with sound reasoning (if they give only the answer, ask for the reasoning first), or when they give up or ask for the solution. Record it, and write nothing about the call:
+   Confirming that work is right is not a hint, and neither is clarifying the statement. A hint that has a right answer may be a `quiz`, as in the exercise skill. The attempt ends when they reach a right answer with sound reasoning (if they give only the answer, ask for the reasoning first), or when they give up or ask for the solution. Record it, and write nothing about the call:
    ```
-   python3 .claude/hooks/book.py attempt <number> --result solved      # or: --result unsolved
+   python3 .claude/hooks/book.py attempt <number> --result solved
+   python3 .claude/hooks/book.py attempt <number> --result unsolved --miss <kind>
    ```
-   `solved` after any hint is recorded as solved with hints.
+   `solved` after any hint is recorded as solved with hints. `<kind>` is the kind of miss (*Practice rules*).
 
 3. **Reveal and debrief.** One written piece, which the learner reads in full:
-   - The outcome, in one line: `*Attempt: solved unaided.*`, `*Attempt: solved with 2 hints.*` or `*Attempt: not solved.*`
+   - The outcome, in one line, as the last `attempt` call printed it: `*Attempt: solved unaided.*`, `*Attempt: solved with hints (up to level 2).*` or `*Attempt: not solved.*`
    - **The book's solution**, condensed: its main line, every step that carries weight, the answer, in the book's notation. Where the learner's attempt went another way, say whether that way works and, if it does not, which step fails.
    - **The method**: the general move behind the solution, stated so that it applies beyond this problem, and **when to reach for it**: the features of the statement that point to it.
    - **Beyond the book**, when it helps: a faster route, a common trap, the follow-up an interviewer asks next. Mark it as not in the book.
@@ -317,17 +330,18 @@ When `book.py` prints `MODE: problems`, the book is a collection of problems wit
 
    End with `Say **ready** when you have read this.`
 
-4. **Transfer.** When they say ready: one apply `quiz`, as in Phase 3 step 4, on a fresh variant: the same setting with one crucial change, or a different setting that yields to the same method. A numerical answer is a typed quiz. A miss is handled as in Phase 3 step 5. Then record it:
+4. **Transfer.** When they say ready: one apply `quiz`, as in Phase 3 step 4, on a fresh variant: the same setting with one crucial change, or a different setting that yields to the same method. Check it for shortcuts first (*Practice rules*). A numerical answer is a typed quiz. A miss is handled as in Phase 3 step 5. Then record it:
    ```
-   python3 .claude/hooks/book.py attempt <number> --transfer passed   # or: --transfer missed
+   python3 .claude/hooks/book.py attempt <number> --transfer passed
+   python3 .claude/hooks/book.py attempt <number> --transfer missed --miss <kind>
    ```
    `missed` means the transfer was missed more than once, or is still failing when the learner stops.
 
 5. **Close the section** as in Phase 3 step 5: the techniques the problem used, a new technique's note and cue question, and the tag line last.
 
-The output of the last `attempt` call names the next problem: go on to it. In a programme, the unit's last `attempt` prints a `PROGRAMME:` line instead: run the `programme.py done` command it names and follow that output (*In a programme*, below). A problem that was not solved, needed two or more hints, or had its transfer missed makes the unit `shaky`. `book.py` records the unit itself when its last problem is recorded, so do not run `book.py done` in a problem course, except to skip a unit. Problems that needed a hint come back as review cards.
+The output of the last `attempt` call names the next problem: go on to it. In a programme, the unit's last `attempt` prints a `PROGRAMME:` line instead: run the `programme.py done` command it names and follow that output (*In a programme*, below). A problem that was not solved, needed a hint at level 3 or more, or had its transfer missed makes the unit `shaky`. `book.py` records the unit itself when its last problem is recorded, so do not run `book.py done` in a problem course, except to skip a unit. Problems that needed a hint come back as review cards.
 
-**Resuming inside a problem.** The `RECORD` line says where the problem stands. If the attempt is in progress, the statement is already in the note: point back to it as for an exposition that was never checked (*Resuming a lesson*, step 3), with one line on how far they got, and the hint count carries on. If the result is recorded but the transfer is not, the reveal is in the note: point back to it, and the transfer quiz follows `ready`.
+**Resuming inside a problem.** The `RECORD` line says where the problem stands. If the attempt is in progress, the statement is already in the note: point back to it as for an exposition that was never checked (*Resuming a lesson*, step 3), with one line on how far they got, and the hint record carries on. If the result is recorded but the transfer is not, the reveal is in the note: point back to it, and the transfer quiz follows `ready`.
 
 **Studying a problem again.** `/course study <unit or number>` on a unit already done runs its problems again, and the record keeps the earlier attempts. Head the new section `### <number> <title> (again)`.
 
@@ -345,6 +359,49 @@ A programme takes units from several books and groups them into topic modules (t
   - `PROGRAMME COMPLETE`.
 
   A `CHAPTER … COMPLETE` line with an `EXAM:` line may come first: end the reply with one sentence saying that `/exam <chapter>` sets an exam on that chapter of that book.
+
+## Practice rules
+
+These rules hold wherever the learner works a problem on their own: `/drill`, `/review`, `/interview`, `/exam`, `/exercise`, and the attempt and transfer of a problem book. Those skills point here.
+
+### Checked problems
+
+Every problem you write is solved, then checked for shortcuts, before the learner sees it: a drill problem, a review variant, an interview problem, an exam question, a transfer quiz. Solve it in full and run code on any number. Then look for a route that skips the target method: a symmetry that gives the answer at once, a special case that gives the number, options that can be ruled out by their form. A problem with such a route trains the shortcut instead of the method. Fix it or replace it.
+
+### Fresh surfaces
+
+A retry never reuses the setting of the problem it retries. Change the story, the objects and the numbers, and keep the method underneath. The same setting again tests memory of the problem, not the method.
+
+### Hint levels
+
+A hint is given at one of six levels, from least to most revealing:
+
+| Level | What it gives | Example |
+|---|---|---|
+| 0 | Points back at a given or a condition the learner skipped. | "Read the second condition again." |
+| 1 | Describes the kind of pattern in front of them, without naming a result. | "This is a sum of many small, nearly independent pieces." |
+| 2 | Narrows it to a family of methods. | "One of the limit theorems applies." |
+| 3 | Names the result or technique. | "Use the central limit theorem." |
+| 4 | Outlines the move. | "Standardise the sum, then read the tail off the normal." |
+| 5 | Works the step. | The step, written out. |
+
+- **One level per request.** Find the first point where their reasoning breaks. It is often earlier than where they feel stuck. Give the lowest level that addresses that point.
+- **Wrong method, carried out well:** they are stuck at choosing the method, not at the algebra. Nudge them to check the assumption behind the method they are using. Do not state the correction while they can still find it.
+- **A nudge that does not land** gets the next level, never the whole solution.
+- **Clarifying the problem is free.** What a word means, what is given, what is asked: answer it fully. It is not a hint.
+- **Record the highest level used**, with the command the skill names. Level 0 or 1 means the problem was about right; level 3 or more means it was beyond the edge. A problem-book problem that needed level 3 or more is shaky, and a drill problem that needed it is retested.
+
+### Kinds of miss
+
+Classify every miss in a drill, a review or a problem attempt, and record the kind with the miss:
+
+- `recall`: nothing came to mind ("I don't know" is usually this);
+- `method`: the wrong method was chosen;
+- `execution`: the right method, carried out wrongly;
+- `careless`: a slip they would catch on a second look;
+- `misconception`: the learner holds a wrong belief, and the answer follows from it.
+
+Decide from their work, the wrong answer they chose, and their confidence: a miss at 80% or more is often a misconception. Repair a misconception with small, targeted nudges: point at the belief, give them a case to test it on, and let them correct it. Do not re-teach the lesson. `/review` asks misconception cards first.
 
 ## Formatting — math renders as LaTeX
 

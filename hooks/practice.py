@@ -6,15 +6,24 @@ Misses are found by scanning what already exists: graded quiz blocks in lesson a
 schemes, finished interview rounds, drill results, and the problems of a problem course that needed hints or were
 not solved. Each becomes a card in `<vault>/practice/.cards.json`, which
 comes back after 1, 3, 7, 16 and 35 days as long as it is answered right, and after 1 day again when it is not.
+A lesson quiz answered right but at 40% confidence or less is a fragile card: it comes back once, after 3 days.
+Due cards come misconceptions first, then misses made at 80% confidence or more, then oldest due first.
 
     practice.py scan                          add cards for new misses; print how many were added
-    practice.py due [--limit 10]              scan, then the due cards, oldest due first
-    practice.py result <card> right|wrong     schedule the card
+    practice.py due [--limit 10]              scan, then the due cards in that order
+    practice.py result <card> right|wrong [--miss <kind>] [--confidence N]
+                                              schedule the card; a wrong answer names its kind of miss
     practice.py stats                         active, retired, due today, and the next 7 days' due counts
     practice.py drill [--n 8]                 create a drill and print its slots
     practice.py drill-check <id>              validate the drill's problem file
     practice.py drill-result <id> <slot> --recognised right|wrong [--picked <Name>] --solved right|wrong
-    practice.py drill-summary <id>            recognised and solved counts, and the confusions
+                             [--miss <kind>] [--hint <level>] [--confidence N]
+    practice.py drill-retests <id>            the slots to retest: misses, and problems that needed hint level 3+
+    practice.py drill-retest <id> <slot> right|wrong [--miss <kind>]
+    practice.py drill-summary <id>            recognised, solved and retest counts, the kinds of miss, the confusions
+
+Kinds of miss: recall (nothing came to mind), method (the wrong method), execution (the right method, carried out
+wrongly), careless, misconception (a wrong belief).
 """
 import argparse
 import glob
@@ -43,6 +52,12 @@ SPREAD_DAYS = 14
 SKIP_DIRS = {"exams", "interviews"}
 TOP_SKIP = {"techniques", "practice"}
 MIN_TECHNIQUES = 4  # the recognition question has four options
+MISS_KINDS = ("recall", "method", "execution", "careless", "misconception")
+CONFIDENT = 80  # a miss at this confidence or above is a confident miss
+UNSURE = 40  # a right answer at this confidence or below is fragile
+FRAGILE_DAYS = 3
+DEMANDS = ("recall", "discrimination", "composition")  # a drill slot's demand, in the order a technique meets them
+RETEST_LEVEL = 3  # a drill problem that needed a hint at this level or above is retested
 STRONG_FLOOR = 2
 
 
@@ -102,13 +117,19 @@ def quiz_misses(res, section_tags):
                     break
                 block.append(nxt)
             p = quiz_block.parse(block)
-            if p["outcome"] not in ("✗", "?"):
+            fragile = p["outcome"] == "✓" and p["confidence"] is not None and p["confidence"] <= UNSURE
+            if p["outcome"] not in ("✗", "?") and not fragile:
                 continue
             title_hash = hashlib.sha1(p["title"].encode("utf-8")).hexdigest()[:8]
             section = f"{stem}#{anchor}" if anchor else stem
-            out.append({"key": f"quiz:{section}#{title_hash}", "kind": "quiz", "source": section,
-                        "label": technique.long_label(anchor) if anchor else stem, "section": section,
-                        "techniques": section_tags.get(section, []), "prompt": _quiz_prompt(block), "missed": when})
+            m = {"key": f"quiz:{section}#{title_hash}", "kind": "quiz", "source": section,
+                 "label": technique.long_label(anchor) if anchor else stem, "section": section,
+                 "techniques": section_tags.get(section, []), "prompt": _quiz_prompt(block), "missed": when}
+            if p["confidence"] is not None and p["outcome"] != "?":
+                m["confidence"] = p["confidence"]
+            if fragile:
+                m["fragile"] = True
+            out.append(m)
     return out
 
 
@@ -157,12 +178,13 @@ def drill_misses():
         for sl in d["slots"]:
             if "recognised" not in sl or (sl["recognised"] == "right" and sl["solved"] == "right"):
                 continue
-            out.append({"key": f"drill:{d['id']}#{sl['slot']}", "kind": "drill",
-                        "source": f"practice/{d['date']}#Drill {d['id']}",
-                        "label": f"drill {d['id']}, problem {sl['slot']}", "section": None,
-                        "techniques": [sl["technique"]],
-                        "prompt": " ".join(str(problems.get(sl["slot"], {}).get("statement") or "").split()),
-                        "missed": d["date"]})
+            m = {"key": f"drill:{d['id']}#{sl['slot']}", "kind": "drill",
+                 "source": f"practice/{d['date']}#Drill {d['id']}",
+                 "label": f"drill {d['id']}, problem {sl['slot']}", "section": None,
+                 "techniques": [sl["technique"]],
+                 "prompt": " ".join(str(problems.get(sl["slot"], {}).get("statement") or "").split()),
+                 "missed": d["date"]}
+            out.append({**m, **{k: sl[k] for k in ("miss", "confidence") if sl.get(k) is not None}})
     return out
 
 
@@ -192,10 +214,13 @@ def problem_misses(section_tags):
         anchor = sections[k][1] if k is not None else f"{a['n']} {a['title']}".strip()
         body = sections[k][2] if k is not None else []
         section = f"{a['note']}#{anchor}"
-        out.append({"key": f"problem:{a['slug']}/{a['eid']}#{a['k']}", "kind": "problem", "source": section,
-                    "label": technique.long_label(anchor), "section": section,
-                    "techniques": section_tags.get(section, []), "prompt": statement(body) or a["title"],
-                    "missed": a["at"]})
+        m = {"key": f"problem:{a['slug']}/{a['eid']}#{a['k']}", "kind": "problem", "source": section,
+             "label": technique.long_label(anchor), "section": section,
+             "techniques": section_tags.get(section, []), "prompt": statement(body) or a["title"],
+             "missed": a["at"]}
+        if a.get("miss"):
+            m["miss"] = a["miss"]
+        out.append(m)
     return out
 
 
@@ -237,14 +262,19 @@ def scan(today=None):
     data = data or {"cards": []}
     seen = {c["key"] for c in data["cards"]}
     new = sorted((m for m in find_misses() if m["key"] not in seen), key=lambda m: (m["missed"] or "", m["key"]))
-    new = list({m["key"]: m for m in new}.values())  # a quiz re-asked with the same title is one card
+    merged = {}  # a quiz re-asked with the same title is one card: the last answer, but a miss wins over a fragile one
+    for m in new:
+        old = merged.get(m["key"])
+        if old is None or not m.get("fragile") or old.get("fragile"):
+            merged[m["key"]] = m
+    new = list(merged.values())
     nxt = max([int(c["id"][1:]) for c in data["cards"]], default=0) + 1
     for k, m in enumerate(new):
         if first:
             due = today + timedelta(1 + k * SPREAD_DAYS // len(new))
         else:
             missed = date.fromisoformat(m["missed"]) if m["missed"] else today
-            due = max(missed + timedelta(1), today)
+            due = max(missed + timedelta(FRAGILE_DAYS if m.get("fragile") else 1), today)
         data["cards"].append({"id": f"c{nxt + k}", **m, "step": 0, "due": due.isoformat(), "status": "active",
                               "history": []})
     if new or first:
@@ -252,26 +282,55 @@ def scan(today=None):
     return len(new)
 
 
-def schedule(card, result, today=None):
+def schedule(card, result, today=None, miss=None, confidence=None):
+    """Right moves the card a step (a fragile card retires); wrong sends it back to tomorrow and records the kind of
+    miss and the confidence, which order the due cards. Right at 40% or less is not a step forward: the gap repeats."""
     today = today or date.today()
-    card["history"].append({"date": today.isoformat(), "result": result})
+    entry = {"date": today.isoformat(), "result": result}
+    entry.update({k: v for k, v in (("miss", miss), ("confidence", confidence)) if v is not None})
+    card["history"].append(entry)
+    unsure = confidence is not None and confidence <= UNSURE
     if result == "right":
+        card.pop("miss", None)
+        card.pop("confidence", None)
+        if card.get("fragile") and not unsure:
+            card["status"] = "retired"
+            return
+        if card.get("fragile") or unsure:
+            gap = FRAGILE_DAYS if card.get("fragile") else INTERVALS[card["step"]]
+            card["due"] = (today + timedelta(gap)).isoformat()
+            return
         card["step"] += 1
         if card["step"] >= len(INTERVALS):
             card["status"] = "retired"
             return
         card["due"] = (today + timedelta(INTERVALS[card["step"]])).isoformat()
     else:
+        card.pop("fragile", None)
+        for k, v in (("miss", miss), ("confidence", confidence)):
+            if v is None:
+                card.pop(k, None)
+            else:
+                card[k] = v
         card["step"] = 0
         card["status"] = "active"
         card["due"] = (today + timedelta(1)).isoformat()
+
+
+def priority(card):
+    """0 a misconception, 1 a confident miss, 2 any other card."""
+    if card.get("miss") == "misconception":
+        return 0
+    if not card.get("fragile") and (card.get("confidence") or 0) >= CONFIDENT:
+        return 1
+    return 2
 
 
 def due_cards(limit=None, today=None):
     today = (today or date.today()).isoformat()
     data = load_cards() or {"cards": []}
     due = sorted((c for c in data["cards"] if c["status"] == "active" and c["due"] <= today),
-                 key=lambda c: (c["due"], int(c["id"][1:])))
+                 key=lambda c: (priority(c), c["due"], int(c["id"][1:])))
     return due[:limit] if limit else due
 
 
@@ -343,6 +402,32 @@ def _rate(right, total):
     return right / total if total else 0.5
 
 
+def clean(sl):
+    """A drill slot named and solved, with no hint at level 3 or above."""
+    return sl.get("recognised") == "right" and sl.get("solved") == "right" and (sl.get("hint") or 0) < RETEST_LEVEL
+
+
+def demands_shown():
+    """{technique: the demands it has met cleanly in a drill}; a slot from before demands existed counts as recall."""
+    out = {}
+    for d in drills():
+        for sl in d["slots"]:
+            if clean(sl):
+                out.setdefault(sl["technique"], set()).add(sl.get("demand") or "recall")
+    return out
+
+
+def confusions():
+    """{technique: {other technique: times one was taken for the other}} over every drill."""
+    out = {}
+    for d in drills():
+        for sl in d["slots"]:
+            if sl.get("recognised") == "wrong" and sl.get("picked"):
+                for a, b in ((sl["technique"], sl["picked"]), (sl["picked"], sl["technique"])):
+                    out.setdefault(a, {})[b] = out.get(a, {}).get(b, 0) + 1
+    return out
+
+
 def plan_drill(n, drill_id):
     """[{"slot", "technique", "wrong"}]: techniques drawn by weakness, at least two strong ones, shuffled."""
     techs, entries, _, _ = technique.collect()
@@ -373,9 +458,25 @@ def plan_drill(n, drill_id):
         if picks[i] not in strong:
             unused = [x for x in strong if x not in picks]
             picks[i] = draw(unused or strong)
-    rng.shuffle(picks)
-    return [{"slot": i, "technique": t, "wrong": rng.sample([x for x in names if x != t], 3)}
-            for i, t in enumerate(picks, 1)]
+    for _ in range(100):  # interleaved: no technique twice in a row, unless no order avoids it
+        rng.shuffle(picks)
+        if all(x != y for x, y in zip(picks, picks[1:])):
+            break
+    shown, confused = demands_shown(), confusions()
+    out = []
+    for i, t in enumerate(picks, 1):
+        met = set(shown.get(t, set())) | ({"recall"} if t in strong else set())
+        demand = next((x for x in DEMANDS if x not in met), DEMANDS[-1])
+        wrong = rng.sample([x for x in names if x != t], 3)
+        slot = {"slot": i, "technique": t, "demand": demand, "wrong": wrong}
+        if demand == "discrimination":  # the near twin: the technique most often confused with it, else a wrong option
+            seen = {k: v for k, v in confused.get(t, {}).items() if k in names and k != t}
+            twin = max(sorted(seen), key=lambda k: seen[k]) if seen else wrong[0]
+            if twin not in wrong:
+                wrong[0] = twin
+            slot["twin"] = twin
+        out.append(slot)
+    return out
 
 
 def _callout(lines, head):
@@ -434,6 +535,7 @@ def cmd_drill(a):
     for sl in slots:
         trick, cues, used = technique_brief(sl["technique"])
         print(f"SLOT {sl['slot']}: {sl['technique']}")
+        print(f"  demand: {sl['demand']}" + (f" — near twin: {sl['twin']}" if sl.get("twin") else ""))
         print(f"  trick: {trick or '—'}")
         print(f"  cues: {'; '.join(cues) or '—'}")
         print(f"  already used: {'; '.join(used) or '(none)'}")
@@ -482,11 +584,60 @@ def cmd_drill_result(a):
         book.die(f"slot {a.slot} of drill {a.id} is already recorded", 1)
     if a.picked and a.picked not in sl["wrong"]:
         book.die(f"--picked {a.picked!r} is not one of the options: {', '.join(sl['wrong'])}", 1)
+    missed = "wrong" in (a.recognised, a.solved)
+    if missed and not a.miss:
+        book.die(f"a part is wrong: give its kind with --miss {'|'.join(MISS_KINDS)}", 1)
+    if a.miss and not missed:
+        book.die("--miss is for a slot with a part wrong", 1)
     sl.update({"recognised": a.recognised, "solved": a.solved, "date": date.today().isoformat()})
-    if a.picked:
-        sl["picked"] = a.picked
+    for k in ("picked", "miss", "hint", "confidence"):
+        if getattr(a, k) is not None:
+            sl[k] = getattr(a, k)
     save_drill(d)
-    print(f"🗒 slot {a.slot}: recognised {a.recognised}, solved {a.solved}")
+    print(f"🗒 slot {a.slot}: recognised {a.recognised}, solved {a.solved}"
+          + (f", {a.miss} miss" if a.miss else "") + (f", hints up to level {a.hint}" if a.hint is not None else ""))
+
+
+def needs_retest(sl):
+    """Why a recorded slot is retested at the end of its drill, or None."""
+    if "recognised" not in sl:
+        return None
+    if sl["recognised"] == "wrong" or sl["solved"] == "wrong":
+        return f"missed ({sl.get('miss') or 'kind not recorded'})"
+    if (sl.get("hint") or 0) >= RETEST_LEVEL:
+        return f"needed a hint at level {sl['hint']}"
+    return None
+
+
+def cmd_drill_retests(a):
+    d = load_drill(a.id)
+    problems = {p.get("slot"): p for p in (load_drill_problems(a.id) or [])}
+    due = [sl for sl in d["slots"] if needs_retest(sl) and "retest" not in sl]
+    if not due:
+        print("NO RETESTS" if not any(needs_retest(sl) for sl in d["slots"]) else "RETESTS DONE")
+        return
+    for sl in due:
+        print(f"RETEST {sl['slot']}: {sl['technique']} — {needs_retest(sl)}")
+        print(f"  demand: {sl.get('demand') or 'recall'}")
+        print(f"  the problem it replaces: {' '.join(str(problems.get(sl['slot'], {}).get('statement') or '').split())}")
+
+
+def cmd_drill_retest(a):
+    d = load_drill(a.id)
+    sl = next((x for x in d["slots"] if str(x["slot"]) == a.slot), None)
+    if sl is None:
+        book.die(f"drill {a.id} has no slot {a.slot}", 1)
+    if not needs_retest(sl):
+        book.die(f"slot {a.slot} of drill {a.id} needs no retest", 1)
+    if "retest" in sl:
+        book.die(f"the retest of slot {a.slot} is already recorded", 1)
+    if a.result == "wrong" and not a.miss:
+        book.die(f"give the kind of miss with --miss {'|'.join(MISS_KINDS)}", 1)
+    sl["retest"] = a.result
+    if a.miss:
+        sl["retest_miss"] = a.miss
+    save_drill(d)
+    print(f"🗒 retest of slot {a.slot}: {a.result}")
 
 
 def cmd_drill_summary(a):
@@ -494,7 +645,17 @@ def cmd_drill_summary(a):
     done = [sl for sl in d["slots"] if "recognised" in sl]
     rec = sum(sl["recognised"] == "right" for sl in done)
     sol = sum(sl["solved"] == "right" for sl in done)
-    print(f"Recognised {rec}/{len(done)} · solved {sol}/{len(done)}")
+    retests = [sl for sl in done if needs_retest(sl)]
+    line = f"Recognised {rec}/{len(done)} · solved {sol}/{len(done)}"
+    if retests:
+        line += f" · retests {sum(sl.get('retest') == 'right' for sl in retests)}/{len(retests)}"
+    print(line)
+    kinds = {}
+    for sl in done:
+        if sl.get("miss"):
+            kinds[sl["miss"]] = kinds.get(sl["miss"], 0) + 1
+    if kinds:
+        print("kinds of miss: " + " · ".join(f"{k} {n}" for k, n in sorted(kinds.items(), key=lambda x: (-x[1], x[0]))))
     for sl in done:
         if sl["recognised"] == "wrong" and sl.get("picked"):
             print(f"took {sl['picked']} for {sl['technique']}")
@@ -520,6 +681,12 @@ def cmd_due(a):
         print(f"{c['id']} · {c['kind']} · {c['label']} — [[{c['source']}|{c['label']}]]")
         print(f"  techniques: {', '.join(c['techniques']) or '—'}")
         print(f"  prompt: {c['prompt']}")
+        if c.get("fragile"):
+            how = f"at {c['confidence']}% confidence" if c.get("confidence") is not None else "but unsure"
+            print(f"  fragile: answered right {how}; one right answer above {UNSURE}% retires it")
+        elif c.get("miss") or c.get("confidence") is not None:
+            print("  last miss: " + " · ".join(x for x in (c.get("miss"), f"{c['confidence']}% sure"
+                                                           if c.get("confidence") is not None else "") if x))
         for idea in section_key_ideas(c.get("section")):
             print(f"  key idea: {idea}")
 
@@ -529,7 +696,11 @@ def cmd_result(a):
     card = next((c for c in data["cards"] if c["id"] == a.card), None)
     if card is None:
         book.die(f"no card {a.card}", 1)
-    schedule(card, a.result)
+    if a.result == "wrong" and not a.miss:
+        book.die(f"a wrong answer needs its kind: --miss {'|'.join(MISS_KINDS)}", 1)
+    if a.result == "right" and a.miss:
+        book.die("--miss is for a wrong answer", 1)
+    schedule(card, a.result, miss=a.miss, confidence=a.confidence)
     save_cards(data)
     print(f"🗒 {card['id']}: " + ("retired" if card["status"] == "retired" else f"next due {card['due']}"))
 
@@ -550,6 +721,13 @@ def cmd_stats(a):
         print("next due: none")
 
 
+def confidence_arg(text):
+    n = int(text)
+    if not 0 <= n <= 100:
+        raise argparse.ArgumentTypeError("a percentage, 0-100")
+    return n
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="practice.py", description="Review cards and drills.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -559,6 +737,8 @@ def main(argv=None):
     s = sub.add_parser("result")
     s.add_argument("card")
     s.add_argument("result", choices=["right", "wrong"])
+    s.add_argument("--miss", choices=MISS_KINDS)
+    s.add_argument("--confidence", type=confidence_arg)
     sub.add_parser("stats")
     s = sub.add_parser("drill")
     s.add_argument("--n", type=int, default=8)
@@ -570,11 +750,22 @@ def main(argv=None):
     s.add_argument("--recognised", choices=["right", "wrong"], required=True)
     s.add_argument("--picked")
     s.add_argument("--solved", choices=["right", "wrong"], required=True)
+    s.add_argument("--miss", choices=MISS_KINDS)
+    s.add_argument("--hint", type=int, choices=range(6), help="the highest hint level given, 0-5")
+    s.add_argument("--confidence", type=confidence_arg)
+    s = sub.add_parser("drill-retests")
+    s.add_argument("id")
+    s = sub.add_parser("drill-retest")
+    s.add_argument("id")
+    s.add_argument("slot")
+    s.add_argument("result", choices=["right", "wrong"])
+    s.add_argument("--miss", choices=MISS_KINDS)
     s = sub.add_parser("drill-summary")
     s.add_argument("id")
     a = p.parse_args(argv)
     {"scan": cmd_scan, "due": cmd_due, "result": cmd_result, "stats": cmd_stats, "drill": cmd_drill,
-     "drill-check": cmd_drill_check, "drill-result": cmd_drill_result, "drill-summary": cmd_drill_summary}[a.cmd](a)
+     "drill-check": cmd_drill_check, "drill-result": cmd_drill_result, "drill-retests": cmd_drill_retests,
+     "drill-retest": cmd_drill_retest, "drill-summary": cmd_drill_summary}[a.cmd](a)
 
 
 if __name__ == "__main__":

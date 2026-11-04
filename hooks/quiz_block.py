@@ -10,11 +10,13 @@
     >
     > Selected: 2. <option>
     > Correct answer: 1. <option>
+    > Confidence: 80%
     >
     > <explanation>
 
 `|quiz` is callout metadata: Obsidian hides it, and code and CSS find quiz blocks by it. mcp/quiz_server.py and
-md_log.py write the block (render); md_log.py, lesson.py and figures.py read it back (parse).
+md_log.py write the block (render); md_log.py, lesson.py, figures.py and practice.py read it back (parse). The
+Confidence line is there only when the learner gave one: blocks written before it existed have none.
 
 Notes written before this block existed hold a "> [!question] Quiz" callout and a result callout per quiz:
 
@@ -36,6 +38,7 @@ BACKUP_DIR = os.path.join(CLAUDE_DIR, "md-log-state", "quiz-fold-backup")
 
 TITLE_LIMIT = 100
 HEADER_RE = re.compile(r"^>\s?\[!(\w+)\|quiz\][-+]?[ \t]*(.*)$")
+CONFIDENCE_RE = re.compile(r"^Confidence: (\d{1,3})%$", re.M)
 PROTECTED_RE = re.compile(r"\$\$.*?\$\$|\$[^$]*\$|`[^`]*`|\[\[.*?\]\]")
 # (kind, title prefix, outcome) — the outcome strings are the ones lesson.py reports
 OUTCOMES = [
@@ -87,6 +90,12 @@ def block(kind, title, parts, fold="-"):
     return "\n".join(lines)
 
 
+def _sure(r):
+    """The Confidence line of an answered quiz, with its newline, or ""."""
+    c = r.get("confidence")
+    return f"\nConfidence: {c}%" if isinstance(c, int) and not isinstance(c, bool) and not r.get("dontKnow") else ""
+
+
 def _outcome(r):
     """(kind, title prefix, outcome paragraphs) for a quiz record."""
     status = r.get("status")
@@ -106,8 +115,8 @@ def _outcome(r):
         return "info", "? ", [f"Correct answer: {correct}"]
     selected = ", ".join(f"{i}. {by_index[i]}" for i in r.get("answers", []))
     if r.get("correct"):
-        return "success", "✓ ", [f"Selected: {selected}"]
-    return "failure", "✗ ", [f"Selected: {selected}\nCorrect answer: {correct}"]
+        return "success", "✓ ", [f"Selected: {selected}{_sure(r)}"]
+    return "failure", "✗ ", [f"Selected: {selected}\nCorrect answer: {correct}{_sure(r)}"]
 
 
 def _typed_outcome(r):
@@ -118,8 +127,8 @@ def _typed_outcome(r):
         return "info", "? ", [f"Correct answer: {answer}"]
     typed = "Your answer: `" + str(r.get("typed") or "").replace("`", "") + "`"
     if r.get("correct"):
-        return "success", "✓ ", [typed + (f"\nExact value: {answer}" if r.get("decimal") else "")]
-    lines = [f"{typed}\nCorrect answer: {answer}"]
+        return "success", "✓ ", [typed + (f"\nExact value: {answer}" if r.get("decimal") else "") + _sure(r)]
+    lines = [f"{typed}\nCorrect answer: {answer}{_sure(r)}"]
     wrong = r.get("wrongAnswers") or []
     if isinstance(r.get("matchedWrong"), int) and 0 <= r["matchedWrong"] < len(wrong):
         lines.append(f"Common mistake: {wrong[r['matchedWrong']].get('why', '')}")
@@ -154,8 +163,9 @@ def is_quiz_header(line):
 
 
 def parse(lines):
-    """{"kind", "outcome", "title", "body"} for a quiz callout's lines, or None for any other callout.
-    The question is at the start of the body when the title is not all of it, else it is the title."""
+    """{"kind", "outcome", "title", "body", "confidence"} for a quiz callout's lines, or None for any other callout.
+    The question is at the start of the body when the title is not all of it, else it is the title. "confidence" is
+    the learner's stated confidence, 0-100, or None when the block has none."""
     m = HEADER_RE.match(lines[0].rstrip()) if lines else None
     if not m:
         return None
@@ -166,7 +176,9 @@ def parse(lines):
             outcome, title = out, title[len(prefix):]
             break
     body = "\n".join(ln[2:] if ln.startswith("> ") else ln[1:] for ln in lines[1:]).strip("\n")
-    return {"kind": kind, "outcome": outcome, "title": title, "body": body}
+    c = CONFIDENCE_RE.search(body)
+    confidence = int(c.group(1)) if c and int(c.group(1)) <= 100 else None
+    return {"kind": kind, "outcome": outcome, "title": title, "body": body, "confidence": confidence}
 
 
 # ---- converting notes written before the folded block

@@ -31,28 +31,26 @@ If the record's status is `open`, start your first reply with a heading and the 
 *Book: Exercise 2.3, p. 74.*
 ```
 
-## The hint ladder
+## Hints
 
-Give **one rung per reply**, then stop with one line asking them to try it and show what they get. Start at the rung that fits where they are; never climb unprompted.
+Hints follow the hint levels of the teach skill's *Practice rules*: 0 points at a skipped given, 1 describes the kind of pattern, 2 narrows to a family of methods, 3 names the result, 4 outlines the move, 5 works the step. Give **one hint per reply**, then stop with one line asking them to try it and show what they get. Start at the lowest level that addresses the first point where their reasoning breaks; never climb unprompted. A hint that names a result cites it by the book's section and equation numbers (and the lesson note, when that section has been studied).
 
-1. **Orient.** What is given and what has to be shown or found, and which definition or result of the chapter it rests on, by the book's section and equation numbers (and the lesson note, when that section has been studied).
-2. **Strategy.** The approach in a sentence or two. No computation.
-3. **Next step.** The first concrete move from the line where their work stops. One step, not the rest of the solution.
-4. **Check.** They show work or an answer: say whether it is right. If it is not, name the first line that goes wrong and what is wrong with it; leave the repair to them.
-5. **Full solution.** Only as the policy below allows.
+**Checking is not a hint.** When they show work or an answer, say whether it is right. If it is not, name the first line that goes wrong and what is wrong with it; leave the repair to them. Saying what the exercise asks is not a hint either.
 
-When a hint has a right answer ("which of these results applies here?"), pose it as a `quiz` instead of stating it. After each rung, record it:
+When a hint has a right answer ("which of these results applies here?"), pose it as a `quiz` instead of stating it. After each hint, record its level:
 
 ```
-python3 .claude/hooks/book.py exercise <id> --hint <rung>
+python3 .claude/hooks/book.py exercise <id> --hint <level>
 python3 .claude/hooks/book.py exercise <id> --status solved      # they got there
 ```
+
+A full solution is not a hint level. It comes only as the policy below allows.
 
 ## Full solutions
 
 The `FULL SOLUTIONS POLICY` line and the `RECORD` line decide:
 
-- `never` — do not give one. Say so in a sentence and offer the next rung.
+- `never` — do not give one. Say so in a sentence and offer the next hint level.
 - `after-attempt` — only when they have shown an attempt at this exercise (in this conversation, or the record says `attempted`) **and** ask for the solution outright.
 - `on-request` — when they ask outright.
 - **`ASSESSED`** on the record overrides all three: hints and checks only, never a full solution.

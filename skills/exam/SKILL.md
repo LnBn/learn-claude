@@ -60,7 +60,7 @@ An exam is a paper the learner sits on their own, in Obsidian, and hands in as a
    - Spread the questions over the sections in proportion to how much each one taught. Test understanding and use, not recall of wording: a computation, a derivation, an explanation of why, an application to a new case.
    - The learner has read every worked example in the note and answered its quizzes, so none of them comes back with new numbers. Most questions in Parts B and C are the two transfer kinds of the teach skill's Apply step: the same setting with one crucial difference, or a different setting that needs the same trick. At least one Part C problem is of the second kind, and its text does not name the section it draws on.
    - Build multiple-choice options with the teach skill's construction procedure: bare claims, the correct one first, each distractor a real misconception in the same form. Every wrong option has a `why_wrong`. "Select all" questions say so in their text and list every correct letter.
-   - Check every number in the scheme by running code.
+   - Check every number in the scheme by running code, and check each question for a shortcut past what it tests (the teach skill's *Checked problems*).
    - A book exercise may be adapted only after `python3 .claude/hooks/book.py exercise <id>` shows it is not `ASSESSED`. Name the source in the question.
 6. **Write the paper** to the `PAPER` path:
    ```markdown

@@ -168,7 +168,9 @@ def section_tags(body):
 
 def problem_attempts():
     """Every attempt with a result at a problem of a course in problems mode (book.py attempt), earlier attempts at
-    a problem first: [{"dir", "slug", "eid", "k", "note", "n", "title", "outcome", "hints", "at"}]."""
+    a problem first: [{"dir", "slug", "eid", "k", "note", "n", "title", "outcome", "hints", "level", "miss", "at"}].
+    "level" is the highest hint level (None in a record from before levels); "miss" the kind of the attempt's miss,
+    else of the transfer's, or None."""
     out = []
     for sp in sorted(glob.glob(os.path.join(glob.escape(VAULT), "courses", "*", ".course", "state.json"))):
         st = book.load_json(sp, None)
@@ -182,7 +184,8 @@ def problem_attempts():
                 if isinstance(h, dict) and h.get("outcome") in ("solved", "hinted", "unsolved"):
                     out.append({"dir": cdir, "slug": st.get("slug") or os.path.basename(cdir), "eid": eid, "k": k,
                                 "note": r["note"], "n": r["n"], "title": r.get("title", ""), "outcome": h["outcome"],
-                                "hints": h.get("hints", 0), "at": h.get("at")})
+                                "hints": h.get("hints", 0), "level": h.get("level"),
+                                "miss": h.get("miss") or h.get("transfer_miss"), "at": h.get("at")})
     return out
 
 
@@ -193,9 +196,11 @@ def problem_sections(sections):
 
 def scan_tags():
     out = []
-    attempts = {}
+    attempts, kinds = {}, {}
     for a in problem_attempts():
         attempts.setdefault(a["note"], {}).setdefault(a["n"], []).append("✓" if a["outcome"] == "solved" else "✗")
+        if a["miss"]:
+            kinds.setdefault(a["note"], {}).setdefault(a["n"], []).append(a["miss"])
     for path in scanned_notes():
         try:
             lines = lesson.read(path)
@@ -210,14 +215,16 @@ def scan_tags():
             if not targets:
                 continue
             first = anchor.split()[0] if anchor.split() else ""
-            marks = list(attempts.get(stem, {}).get(first, [])) if last.get(first) == k else []
+            mine = last.get(first) == k
+            marks = list(attempts.get(stem, {}).get(first, [])) if mine else []
             for ln in body:
                 if quiz_block.is_quiz_header(ln):
                     o = quiz_block.parse([ln])["outcome"]
                     if o in ("✓", "✗", "?"):
                         marks.append(o)
             out.append({"note": path, "stem": stem, "heading": anchor, "anchor": anchor, "label": long_label(anchor),
-                        "course": course, "targets": targets, "marks": marks, "date": date})
+                        "course": course, "targets": targets, "marks": marks, "date": date,
+                        "kinds": list(dict.fromkeys(kinds.get(stem, {}).get(first, []))) if mine else []})
     return out
 
 
@@ -281,7 +288,8 @@ def record(entries):
 
 def entry_line(e):
     if "marks" in e:
-        return f"- [[{e['stem']}#{e['anchor']}|{e['label']}]] ({e['course']}) {''.join(e['marks'])}".rstrip()
+        kinds = f" — {', '.join(e['kinds'])} miss" if e.get("kinds") else ""
+        return f"- [[{e['stem']}#{e['anchor']}|{e['label']}]] ({e['course']}) {''.join(e['marks'])}".rstrip() + kinds
     return f"- [[{e['stem']}#Problem {e['i']}|{e['slug']} interview {e['number']}, problem {e['i']}]] — {e['outcome']}"
 
 

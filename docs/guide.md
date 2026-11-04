@@ -98,6 +98,7 @@ Quizzes open in a popup over the terminal.
 | Esc | cancel the quiz |
 
 - "I don't know" is always the last option. It is recorded as a gap, not as a wrong answer.
+- **How sure are you?** After you choose, the popup asks how sure you are. Press 1 to 5 for 20, 40, 60, 80 or 100%; Esc takes you back to the question. "I don't know" skips this step. The teacher reads the grade and your confidence together: a right answer you were unsure of gets one more look, and a wrong answer you were sure of is treated as a belief to fix.
 - After you answer, the popup shows ✓ or ✗, the correct answer and the explanation. Any key closes it.
 - Math is shown as Unicode in the popup (x², αᵢ, √(a²+b²)). The note keeps the real LaTeX.
 
@@ -140,6 +141,7 @@ While you answer, the quiz is in the note as an open box with the question and t
 >
 > Selected: 2. The pirates who get 1 coin in the $(k-1)$-pirate game
 > Correct answer: 1. The pirates who get 0 coins in the $(k-1)$-pirate game
+> Confidence: 80%
 >
 > If the proposer's plan fails, …
 ```
@@ -230,13 +232,18 @@ When a chapter is finished the teacher says so, and `/course next` opens the nex
 
 Run `/exercise 2.3`, or just say you are stuck on Exercise 2.3. You can paste your work or give the path of a photo of it.
 
-Help comes one step per reply:
+Help comes one hint per reply, at the lowest level that gets you past the first place your reasoning goes wrong:
 
-1. **Orient.** What is asked, and which result of the chapter it rests on.
-2. **Strategy.** The approach, without computation.
-3. **Next step.** The first move from where your work stops.
-4. **Check.** Whether your answer is right, and if not, the first line that goes wrong.
-5. **Full solution.** Only as the course allows.
+| Level | The hint |
+|---|---|
+| 0 | points back at a given or a condition you skipped |
+| 1 | describes the kind of pattern in front of you |
+| 2 | narrows it to a family of methods |
+| 3 | names the result or technique |
+| 4 | outlines the move |
+| 5 | works the step |
+
+Asking what the problem means is not a hint. When you show work, the teacher says whether it is right and, if not, which line goes wrong. A full solution comes only as the course allows.
 
 `/course assess 2.5 2.6` marks exercises as assessed coursework. Those get hints and checks, never a full solution, and they are never used as quiz questions.
 
@@ -245,11 +252,11 @@ Help comes one step per reply:
 A book of problems with their solutions, such as an interview guide, is better worked than read. In a problem course each problem is one section of the note:
 
 1. **Statement.** The teacher states the problem in its own words and stops. It reads only the pages of the statement, so nothing of the solution leaks in.
-2. **Attempt.** You work it in the chat. Hints come one step at a time, as for exercises, and are counted.
+2. **Attempt.** You work it in the chat. Hints come one level at a time, as for exercises, and the highest level is recorded.
 3. **Reveal.** The book's solution, condensed, then the general method and what in a problem should make you reach for it. Then `ready`.
 4. **Transfer.** One quiz on a new problem that needs the same method.
 
-Each problem is recorded as solved unaided, solved with hints, or not solved. A problem not solved, or solved with two or more hints, marks its section shaky. A problem that needed any hint becomes a review card, and it counts as a miss in its technique notes. `/course toc 4` shows each problem's mark.
+Each problem is recorded as solved unaided, solved with hints (with the highest level), or not solved. A problem not solved, solved with a hint at level 3 or more, or whose transfer you missed, marks its section shaky. A problem that needed any hint becomes a review card, and it counts as a miss in its technique notes. `/course toc 4` shows each problem's mark.
 
 Make a course a problem course when you set it up (`/course new <book.pdf> <name> --problems`), or switch an existing one with `/course mode problems`. Switching keeps the progress, notes and checkpoints; the sections still to come are taught problem first. `/course mode textbook` switches back.
 
@@ -429,7 +436,7 @@ The script checks every answer and computes the score. An answer it cannot read 
 
 Think aloud in plain messages. The interviewer says little while you make progress, asks you to justify a step a real interviewer would question, and checks your final answer the moment you give it. Give answers as a number or a formula, as in a typed quiz.
 
-- **Hints.** When you are stuck, or time is running short, the interviewer gives a nudge. A pointed-out error ("are you sure about that term?") also counts as a hint. Being asked *why* does not.
+- **Hints.** When you are stuck, or time is running short, the interviewer gives a nudge. A pointed-out error ("are you sure about that term?") also counts as a hint. Being asked *why* does not. Each hint is recorded with its level, as for exercises.
 - **The clock.** Each problem has 12 minutes (20 in a `sig` or `mw` round), shown in the tmux status bar (`P2/3 9:40/12:00`). Near the end the interviewer gives a stronger nudge; when time is up it sketches the solution and moves on. Your own status bar comes back when the round ends.
 - **Follow-ups.** A correct answer with at least two minutes left gets a follow-up: the same problem with one thing changed.
 - **Stopping.** `/interview stop`, or saying you want to stop, ends the round and goes to the scorecard.
@@ -479,11 +486,12 @@ Two commands bring back what you have learned, in forms you have not seen.
 
 ### Review
 
-Every question you have missed becomes a card: a lesson quiz you got wrong or answered "I don't know", a recall-check question, an exam question that lost marks, an interview problem or a problem course's problem you needed hints for, a drill problem. `/review` asks the cards that are due, up to 10 at a time, oldest first.
+Every question you have missed becomes a card: a lesson quiz you got wrong or answered "I don't know", a recall-check question, an exam question that lost marks, an interview problem or a problem course's problem you needed hints for, a drill problem. So does a lesson quiz you got right at 40% confidence or less: it comes back once, after 3 days, and one sure right answer retires it. `/review` asks the cards that are due, up to 10 at a time: misconceptions first, then misses you were 80% or more sure of, then the rest, oldest first.
 
 - **Each card is a new question**, not the one you missed: the same idea in a different setting, or the same setting with one thing changed. Where the card came from is shown only after you answer.
 - **Spacing.** A card first comes back the day after you missed it. Each time you get it right, the gap grows: 1, 3, 7, 16, then 35 days, after which it retires. A wrong answer brings it back the next day.
 - **Your history counts.** The first time cards are made, every miss already in your notes becomes one, spread over the next two weeks so that no single day is a pile.
+- **Kinds of miss.** Each miss in a review, a drill or a problem course is recorded with its kind: `recall` (nothing came to mind), `method` (the wrong method), `execution` (the right method, carried out wrongly), `careless`, or `misconception` (a wrong belief). A misconception gets a short nudge after the answer, not a new lesson. Technique notes show the kind beside a problem-course miss.
 
 When you resume a lesson and cards are due, the opening question says how many. Review never starts unless you ask for it.
 
@@ -494,7 +502,17 @@ When you resume a lesson and cards are due, the opening question says how many. 
 1. **Which technique does this problem need?** Pick from four of your technique names.
 2. **Solve it**, with a typed answer.
 
-The two are scored separately, so you can see whether you missed the trick or the working. Techniques where your record is weak come up more often, and a couple of strong ones are always mixed in, so you cannot assume every problem is a hard one. At the end you get `Recognised 6/8 · solved 5/8` and any techniques you mistook for others. Missed problems become review cards, and your recognition rate shows on each technique note and in the index.
+The two are scored separately, so you can see whether you missed the trick or the working. Techniques where your record is weak come up more often, and a couple of strong ones are always mixed in, so you cannot assume every problem is a hard one. No two problems in a row use the same technique.
+
+Each problem makes one of three demands. A technique meets them in order, and moves on once you name and solve it cleanly:
+
+- **recall**: one or two decisions, in a setting you have not seen the technique in;
+- **discrimination**: a problem that looks like one for a near twin, where one feature decides between the two;
+- **composition**: a short chain of results, run as a whole.
+
+Some problems turn a result around (you get the conclusion and find what makes it true) or change one of its assumptions and ask what follows.
+
+At the end, every problem you missed, or needed a hint of level 3 or more on, is retested in a new setting and scored apart. You get `Recognised 6/8 · solved 5/8 · retests 2/3`, the kinds of your misses, and any techniques you mistook for others. Missed problems become review cards, and your recognition rate shows on each technique note and in the index.
 
 A drill needs at least four technique notes; `/techniques backfill` makes them from the chapters you have done.
 
