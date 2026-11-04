@@ -24,7 +24,7 @@ In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams 
 - **Do a mock interview.** `/interview` is a timed round of new problems, with a clock in the tmux status bar and an interviewer who stays quiet while you make progress and nudges you when you are stuck.
 - **Collect techniques.** Each problem-solving trick (symmetry, linearity of expectation, the pigeonhole principle…) gets its own note. The note lists every problem that used the trick, and, in your words, what in a problem should make you think of it.
 - **Review what you missed.** Every question you get wrong comes back later as a new question on the same idea, spaced out over weeks (`/review`). `/drill` mixes problems from all your techniques without saying which one each needs.
-- **Practise mental arithmetic.** `/arith` is a timed sprint in the style of [Zetamac](https://arithmetic.zetamac.com).
+- **Practise mental arithmetic.** `/arith` is a timed sprint in the style of [Zetamac](https://arithmetic.zetamac.com). `/arith dist` does the same for distribution facts.
 - **Practise coding.** `/code` sets LeetCode-style problems that you solve in your own editor. Hidden tests judge them, and a passing solution gets reviewed the way an interviewer would.
 
 When the teacher is unsure of a fact, a research subagent checks it on the web. Diagrams are drawn by another subagent, which looks at the rendered picture before you see it.

@@ -413,6 +413,7 @@ A drill needs at least four technique notes; `/techniques backfill` makes them f
 /arith               # core, 120 seconds
 /arith fractions     # one mode
 /arith weak 60       # a mode and a length in seconds (10–480)
+/arith dist 300      # distribution facts
 /arith history       # your last scores per mode
 ```
 
@@ -424,10 +425,24 @@ A drill needs at least four technique notes; `/techniques backfill` makes them f
 | `estimate` | 2–3-digit × and ÷; anything within 2% counts |
 | `mixed` | all of the above |
 | `weak` | mostly the kinds of question you are slowest at |
+| `dist` | distribution facts with a small calculation, as in quant online assessments |
+| `dist-weak` | mostly the distribution kinds you are slowest at |
 
 Type the answer: a correct one moves on at once, with no Enter, and a wrong one waits until you fix it. Estimates are submitted with Enter. Tab skips a question; Esc stops early, and a stopped sprint does not count towards your best or your average.
 
 The end screen shows your score, your best and your last-five average in that mode and length (a 60-second sprint is compared only with other 60-second sprints), and the three kinds of question that took you longest this time (for example `× 7` or `− borrow`, a subtraction that needs a borrow). Every answer's time is kept, so `weak` mode can draw mostly from the kinds you are slowest at, each compared with the other kinds of its own mode. The teacher writes a short summary into the day's practice note, with a tip when one kind stands out.
+
+**Distribution sprints.** `dist` asks for a mean, a variance or a probability that needs one fact and a little arithmetic:
+
+```
+X ~ Gamma(3, λ=2). Var(X) = 3/4
+3 iid Unif[0, 3] draws. E[median] = 3/2
+X ~ N(0, 4), Y ~ N(0, 1) indep. E[X | X+Y=5] = 4
+A: 51 fair coins, B: 50. P(A has more heads) = 1/2
+A = diag(ln 2, ln 3). tr(e^A) = 5
+```
+
+The questions cover the moments of Bern, Bin, Geom, Pois, DUnif, Unif, Expo, Gamma, Beta and N; Var(aX + b) and Var(X ± Y); sums and means of iid draws; order statistics of uniforms; a normal given a sum, and regression with a correlation; coins, linearity of expectation, memorylessness and waiting times; and 2×2, diagonal and triangular matrices. Expo and Gamma take a rate λ, and N(μ, σ²) a variance. When a convention matters, the question says it: `Geom(1/4) on {1,2,…}` counts trials, `on {0,1,…}` failures. Type the answer as an integer, a decimal or a fraction (`5/4`, `1.25`); an answer that does not end, like 1/12, can also be a decimal to 4 places (`0.0833`). Tab shows the answer of the question you skipped. These questions take longer than arithmetic, so a longer sprint (`/arith dist 300`) suits them. `weak` draws only arithmetic, and `dist-weak` only distributions.
 
 The popup needs tmux. Without it, run `python3 .claude/hooks/arith.py play <mode>` in another terminal, then `/arith last`.
 
@@ -586,7 +601,7 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/techniques sync` | Rebuild the technique notes' problem lists and the index. |
 | `/review` | Ask the review cards that are due, each as a new variant. |
 | `/drill [n]` | Mixed, unlabelled problems: name the technique, then solve it (8 by default). |
-| `/arith [mode] [seconds]` | A timed mental arithmetic sprint (core by default, 120 s). |
+| `/arith [mode] [seconds]` | A timed mental arithmetic sprint (core by default, 120 s), or a distribution sprint (`dist`). |
 | `/arith last`, `/arith history [mode]` | The last sprint's summary; recent scores per mode. |
 | `/code <topic>` | Start a practice track on a topic, or set the next problem in it. |
 | `/code next` | The next problem of the current track. |
