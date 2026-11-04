@@ -88,7 +88,7 @@ A code task is a problem the learner solves in a real file, in their own editor.
 
 ## Submit
 
-1. If an exam paper is open too (`python3 .claude/hooks/exam.py list` shows one `open`), ask which the learner means with one `AskUserQuestion` (header `Submit`), options **The code task** and **The exam paper**. The exam paper goes to the `exam` skill.
+1. During a written interview test (the hook line reads `INTERVIEW: written test`), a plain `submit` goes to the `interview` skill. If an exam paper is open too (`python3 .claude/hooks/exam.py list` shows one `open`), ask which the learner means with one `AskUserQuestion` (header `Submit`), options **The code task** and **The exam paper**. The exam paper goes to the `exam` skill.
 2. Run it:
    ```
    python3 .claude/hooks/coding.py submit ["<task note>"]

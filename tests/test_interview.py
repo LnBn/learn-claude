@@ -521,5 +521,279 @@ class ReviewFixes(InterviewBase):
         self.assertNotIn("status: running", note)
 
 
+# ---------------------------------------------------------------- rounds on several courses, firm profiles
+
+def tagged(i, topic, units, answer=None):
+    p = problem(i, answer=answer or str(3 * i), units=units)
+    p["topic"] = topic
+    return p
+
+
+class CrossCourse(InterviewBase):
+    def setUp(self):
+        super().setUp()
+        self.bh = make_course(self.vault, "bh")  # also the current course now
+        set_status(self.bh, **{"2.1": ("done", "2026-10-07")})
+        (self.bh / "bh-ch02.md").write_text("### 2.1 Intro\n\nText.\n", encoding="utf-8")
+        self.vstate = self.vault / ".interviews" / "mixed-interview-1.state.json"
+
+    def write_mixed(self, data):
+        p = self.vault / ".interviews" / "mixed-interview-1.json"
+        p.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_new_spans_every_course(self):
+        r = self.iv("new", "--length", "short")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("NOTE: interviews/mixed-interview-1.md", r.stdout)
+        self.assertIn("PROBLEMS: .interviews/mixed-interview-1.json", r.stdout)
+        self.assertIn("COURSES: bh, gb", r.stdout)
+        self.assertIn("  gb:1.1 What is learning — [[gb-ch01#1.1 What is learning|§1.1]]", r.stdout)
+        self.assertIn("  bh:2.1 Intro — [[bh-ch02#2.1 Intro|§2.1]]", r.stdout)
+        st = json.loads(self.vstate.read_text())
+        self.assertEqual(st["courses"], [str(self.bh), str(self.cdir)])
+        self.assertEqual(st["units"], ["bh:2.1", "gb:1.1", "gb:2.3"])
+        r = self.iv("new", "--length", "short")
+        self.assertIn("OPEN: interviews/mixed-interview-1.md (set)", r.stdout)
+
+    def test_courses_option(self):
+        r = self.iv("new", "--length", "short", "--courses", "gb")
+        self.assertIn("NOTE: courses/gb/interviews/gb-interview-1.md", r.stdout)
+        self.assertNotIn("bh:", r.stdout)
+        self.assertNotIn("2.1 Intro", r.stdout)
+        self.iv("abandon")
+        r = self.iv("new", "--length", "short", "--courses", "gb,nope")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no course named nope; the courses are: bh, gb", r.stderr)
+        set_status(self.bh, **{"2.1": ("todo", "")})
+        r = self.iv("new", "--length", "short", "--courses", "bh,gb")
+        self.assertIn("no finished unit in bh", r.stderr)
+        r = self.iv("new", "--length", "short")  # every course with a finished unit: gb alone
+        self.assertIn("NOTE: courses/gb/interviews/gb-interview-2.md", r.stdout)
+
+    def test_a_round_on_several_courses(self):
+        self.iv("new", "--length", "short")
+        data = {"problems": [problem(1, units=("1.1",)), problem(2, answer="n+1", variables={"n": "int 1..12"},
+                                                                 units=("bh:2.1",))]}
+        self.write_mixed(data)
+        self.assertIn("p1: unit 1.1 is not finished", self.iv("check").stdout)
+        data["problems"][0]["units"] = ["gb:1.1"]
+        self.write_mixed(data)
+        self.assertIn("🗒 interview ready: 2 problems", self.iv("check").stdout)
+        self.assertIn("NOTE: interviews/mixed-interview-1.md", self.iv("start", "--session", "s1").stdout)
+        self.assertIn("INTERVIEW: problem 1 of 2", self.hook("s1").stdout)
+        self.iv("answer", "21")
+        self.iv("next")
+        self.iv("hint")
+        self.iv("answer", "n+1")
+        self.assertIn("ROUND OVER: write the marks to .interviews/mixed-interview-1.marks.json", self.iv("stop").stdout)
+        (self.vault / ".interviews" / "mixed-interview-1.marks.json").write_text(json.dumps(
+            {"problems": {"p1": "Clear.", "p2": "Needed a push."}, "work_on": ["x"]}), encoding="utf-8")
+        r = self.iv("finish", "--marks", ".interviews/mixed-interview-1.marks.json")
+        self.assertIn("🗒 interview finished: 1/2 solved", r.stdout)
+        note = (self.vault / "interviews" / "mixed-interview-1.md").read_text()
+        self.assertIn("| Problem 2 | hinted |", note)
+        self.assertRegex(self.iv("list").stdout, r"mixed-interview-1  \d{4}-\d{2}-\d{2}  short  finished  1/2 solved")
+        self.assertIn("mixed interview 1, problem 1]] — solved", (self.vault / "techniques" / "Symmetry.md").read_text())
+        run(self.vault, "practice.py", "scan")
+        keys = [c["key"] for c in json.loads((self.vault / "practice" / ".cards.json").read_text())["cards"]]
+        self.assertIn("interview:mixed-interview-1#p2", keys)
+        self.assertNotIn("interview:mixed-interview-1#p1", keys)
+        out = run(self.vault, "lesson.py", "summary", "courses/bh/bh-ch02.md").stdout
+        self.assertIn("INTERVIEW MISSES (mixed-interview-1): re-probe these first", out)
+        self.assertIn("  - Problem 2 hinted §2.1 — technique 2", out)
+        out = run(self.vault, "lesson.py", "summary", "courses/gb/gb-ch02.md").stdout
+        self.assertNotIn("INTERVIEW MISSES", out)  # problem 2 is on bh, and problem 1 was solved
+
+    def test_an_older_pointer_still_finds_the_round(self):
+        self.iv("new", "--length", "short", "--courses", "gb")
+        self.write_problems(problems(2))
+        self.iv("check")
+        self.iv("start", "--session", "s1")
+        ptr = self.vault / ".claude" / "md-log-state" / "interview.json"
+        ptr.write_text(json.dumps({"course": str(self.cdir), "number": 1}))
+        self.assertIn("INTERVIEW: problem 1 of 2", self.hook("s1").stdout)
+        self.assertEqual(self.iv("answer", "21").stdout.split("\n")[0], "CORRECT")
+
+
+class Profiles(InterviewBase):
+    def test_a_profile_needs_topics(self):
+        r = self.iv("new", "--profile", "sig")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("UNTAGGED", r.stdout)
+        self.assertIn("  gb 1 Introduction: 1.1", r.stdout)
+        self.assertIn("  gb 2 Probability: univariate models: 2.3", r.stdout)
+        self.assertNotEqual(self.iv("topic", "gb", "astrology", "1").returncode, 0)
+        self.assertIn("not a chapter or unit of gb: 9.9", self.iv("topic", "gb", "probability", "9.9").stderr)
+        self.assertIn("🗒 gb: * → probability", self.iv("topic", "gb", "probability", "*").stdout)
+        self.assertEqual(json.loads((self.cdir / ".course" / "state.json").read_text())["topics"], {"*": "probability"})
+        r = self.iv("new", "--profile", "sig")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("PROFILE: sig — SIG quant research, live round", r.stdout)
+        self.assertIn("BUDGET: 3 problems × 20 minutes (round 60 minutes)", r.stdout)
+        self.assertIn("MIX: probability 3", r.stdout)
+        self.assertIn("STYLE:\n  Probability and expected-value puzzles", r.stdout)
+        self.assertIn("  probability:\n    1.1 What is learning — [[gb-ch01#1.1 What is learning|§1.1]]", r.stdout)
+
+    def test_options_that_clash(self):
+        self.assertIn("a profile sets the number of problems",
+                      self.iv("new", "--profile", "sig", "--length", "short").stderr)
+        self.assertIn("--minutes is for a written test", self.iv("new", "--length", "short", "--minutes", "30").stderr)
+        self.assertIn("--minutes is for a written test", self.iv("new", "--profile", "mw", "--minutes", "30").stderr)
+        self.assertIn("give --length", self.iv("new").stderr)
+
+    def test_the_mix_is_checked(self):
+        self.iv("topic", "gb", "statistics", "1", "2")
+        r = self.iv("new", "--profile", "mw")
+        self.assertIn("no finished unit has one of the profile's topics (brainteasers, regression)", r.stderr)
+        self.iv("topic", "gb", "brainteasers", "1")
+        self.iv("topic", "gb", "regression", "2.3")
+        r = self.iv("new", "--profile", "mw")
+        self.assertIn("MIX: brainteasers 2, regression 1", r.stdout)
+        good = [tagged(1, "brainteasers", ("1.1",)), tagged(2, "regression", ("2.3",)), tagged(3, "brainteasers", ("1.1",))]
+        bad = json.loads(json.dumps(good))
+        bad[2]["topic"] = "regression"
+        bad[0]["topic"] = "calculus"
+        self.write_problems({"problems": bad})
+        out = self.iv("check").stdout
+        self.assertIn("p1: topic must be one of brainteasers, regression", out)
+        self.assertIn("p3: none of its units is a regression unit", out)
+        self.assertIn("the mix is brainteasers 2, regression 1; the file has calculus 1, regression 2", out)
+        self.write_problems({"problems": good})
+        self.assertIn("🗒 interview ready: 3 problems", self.iv("check").stdout)
+        self.iv("start", "--session", "s1")
+        self.assertEqual(self.hook("s1").stdout.strip(),
+                         "INTERVIEW: problem 1 of 3 · 0:00 of 20:00 · hints 0 · round 0:00 of 60:00")
+        self.assertIn("profile: mw", (self.vault / NOTE.format(n=1)).read_text())
+
+    def test_allocate(self):
+        import interview  # the repo copy; allocate is pure
+        mw = interview.PROFILES["mw-oa"]["mix"]
+        self.assertEqual(interview.allocate(mw, set(mw), 18, "x"),
+                         {"probability": 7, "statistics": 3, "regression": 3, "linear algebra": 3, "calculus": 2})
+        part = interview.allocate(mw, {"probability", "statistics", "brainteasers"}, 18, "x")
+        self.assertEqual(sum(part.values()), 18)
+        self.assertIn(part["probability"], (12, 13))
+        self.assertEqual(interview.allocate(mw, {"brainteasers"}, 18, "x"), {})
+        sig = interview.PROFILES["sig"]["mix"]
+        draws = [interview.allocate(sig, set(sig), 3, f"r{k}") for k in range(200)]
+        self.assertTrue(all(sum(d.values()) == 3 and d["probability"] >= 2 for d in draws))
+        self.assertTrue(any("statistics" in d for d in draws) and any(d == {"probability": 3} for d in draws))
+        self.assertEqual(draws[0], interview.allocate(sig, set(sig), 3, "r0"))  # seeded by the round's name
+
+
+class WrittenTest(InterviewBase):
+    PAPER = "courses/gb/interviews/gb-interview-1.md"
+
+    def written_round(self, profile="mw-oa", *extra):
+        self.iv("topic", "gb", "probability", "1")
+        self.iv("topic", "gb", "statistics", "2")
+        r = self.iv("new", "--profile", profile, *extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.planned = r.stdout
+        mix = self.state()["mix"]
+        units = {"probability": ("1.1",), "statistics": ("2.3",)}
+        topics = [t for t, k in mix.items() for _ in range(k)]
+        data = [tagged(i, t, units[t]) for i, t in enumerate(topics, 1)]
+        for p in data:
+            del p["hints"], p["followup"]
+        self.write_problems({"problems": data})
+        r = self.iv("check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        r = self.iv("start", "--session", "s1")
+        self.assertIn(f"PAPER: {self.PAPER}", r.stdout)
+        return len(data)
+
+    def fill(self, answers):
+        """Write answers[i] on problem i's **Answer:** line."""
+        path = self.vault / self.PAPER
+        out, cur = [], None
+        for ln in path.read_text().split("\n"):
+            if ln.startswith("### Problem "):
+                cur = int(ln.split()[-1])
+            if ln.startswith("**Answer:**") and cur in answers:
+                ln = f"**Answer:** {answers[cur]}"
+            out.append(ln)
+        path.write_text("\n".join(out))
+
+    def test_the_paper_and_the_clock(self):
+        self.written_round("mw-oa", "--minutes", "45")
+        self.assertIn("BUDGET: 18 problems in 45 minutes; a right answer scores +2, a wrong one −1, a blank one 0",
+                      self.planned)
+        paper = (self.vault / self.PAPER).read_text()
+        self.assertIn("# Marshall Wace written test", paper)
+        self.assertIn("*18 problems, 45 minutes. A right answer scores +2, a wrong one −1, a blank one 0.", paper)
+        self.assertIn("### Problem 18\n\nProblem 18 statement: what is it?\n\n**Answer:** ", paper)
+        self.assertIn("profile: mw-oa", paper)
+        self.assertNotIn("Solution 1", paper)
+        self.assertEqual(self.hook("s1").stdout.strip(), "INTERVIEW: written test, 18 problems · 0:00 of 45:00")
+        self.assertEqual(self.iv("clock").stdout.strip(), "Test 0:00/45:00")
+        self.shift(46 * 60)
+        self.assertEqual(self.hook("s1").stdout.strip(),
+                         "INTERVIEW: written test, 18 problems · 46:00 of 45:00 · TIME UP")
+        self.assertEqual(self.iv("clock").stdout.strip(), "Test TIME UP")
+        for cmd in (["hint"], ["answer", "3"], ["next"]):
+            r = self.iv(*cmd)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("a written test has no hints", r.stderr)
+
+    def test_submit_scores_negative_marking_exactly(self):
+        k = self.written_round()
+        answers = {i: str(3 * i) for i in range(1, 11)}            # 10 right
+        answers.update({i: "99" for i in range(11, 15)})           # 4 wrong
+        answers[15] = "2^("                                         # unreadable
+        answers[1] = "$3$."                                         # $ and a full stop are dropped
+        self.fill(answers)
+        r = self.iv("submit")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("  - Problem 15: 2^( — ", r.stdout)
+        self.assertEqual(self.state()["status"], "running")
+        self.fill({15: ""})
+        self.shift(50 * 60)
+        r = self.iv("submit")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"SCORE: 16 of {2 * k} (10 right, 4 wrong, 4 blank) in 50:00 of 60:00", r.stdout)
+        self.assertIn("  Problem 11 wrong: 99 (the answer is 33)", r.stdout)
+        self.assertIn("  Problem 15 blank", r.stdout)
+        st = self.state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual([p["outcome"] for p in st["problems"]][9:12], ["solved", "unsolved", "unsolved"])
+        marks = "courses/gb/.interviews/gb-interview-1.marks.json"
+        (self.vault / marks).write_text(json.dumps({"problems": {"p11": "Dropped a factor."}, "work_on": ["Pace."]}))
+        r = self.iv("finish", "--marks", marks)
+        self.assertIn("🗒 interview finished: 16 of 36 (10 right, 4 wrong, 4 blank)", r.stdout)
+        paper = (self.vault / self.PAPER).read_text()
+        self.assertIn("> [!summary] Score — 16 of 36", paper)
+        self.assertIn("> 10 right, 4 wrong, 4 blank · marking +2 / −1 / 0 · 50:00 of 60:00", paper)
+        self.assertIn("| Problem 11 | wrong | `99` | $33$ |", paper)
+        self.assertIn("| Problem 15 | blank | — | $45$ |", paper)
+        self.assertIn("**Problem 11:** Dropped a factor.", paper)
+        self.assertIn("> [!example]- Problem 18 — solution", paper)
+        self.assertIn("score: 16/36", paper)
+        self.assertRegex(self.iv("list").stdout,
+                         r"gb-interview-1  \d{4}-\d{2}-\d{2}  mw-oa  finished  16/36 \(10 right, 4 wrong, 4 blank\)")
+        run(self.vault, "practice.py", "scan")
+        keys = [c["key"] for c in json.loads((self.vault / "practice" / ".cards.json").read_text())["cards"]]
+        self.assertIn("interview:gb-interview-1#p11", keys)
+        self.assertIn("interview:gb-interview-1#p15", keys)
+        self.assertNotIn("interview:gb-interview-1#p1", keys)
+
+    def test_over_time_and_no_negative_marks(self):
+        k = self.written_round("sig-oa")
+        self.assertIn("A right answer scores +1, a wrong one 0, a blank one 0. A calculator is allowed.",
+                      (self.vault / self.PAPER).read_text())
+        self.fill({1: "3", 2: "1"})
+        self.shift(61 * 60)
+        r = self.iv("stop")  # stop hands in a written test
+        self.assertIn(f"SCORE: 1 of {k} (1 right, 1 wrong, {k - 2} blank) in 61:00 of 60:00, over by 1:00", r.stdout)
+
+    def test_a_paper_without_its_answer_lines(self):
+        self.written_round()
+        path = self.vault / self.PAPER
+        path.write_text(path.read_text().replace("### Problem 4\n", "### Problem four\n"))
+        r = self.iv("submit")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("  - Problem 4: no `### Problem 4` heading", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

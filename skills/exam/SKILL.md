@@ -119,7 +119,7 @@ An exam is a paper the learner sits on their own, in Obsidian, and hands in as a
 
 ## Grading
 
-A plain `submit` may be meant for a code task instead. If `python3 .claude/hooks/coding.py status` lists an unfinished task, ask which with one `AskUserQuestion` (header `Submit`), options **The exam paper** and **The code task**. The code task goes to the `code` skill.
+During a written interview test (the hook line reads `INTERVIEW: written test`), a plain `submit` goes to the `interview` skill. A plain `submit` may also be meant for a code task. If `python3 .claude/hooks/coding.py status` lists an unfinished task, ask which with one `AskUserQuestion` (header `Submit`), options **The exam paper** and **The code task**. The code task goes to the `code` skill.
 
 1. **Hand it in.** Stop mirroring first, so nothing of the grading reaches a lesson note:
    ```
