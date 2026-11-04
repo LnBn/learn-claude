@@ -21,7 +21,7 @@ In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams 
 - **Follow a textbook.** Give it a PDF and pick the chapters. Lessons follow the book's sections, equation numbers and figures, so the book and your notes line up. Stuck on an exercise? It helps one step at a time, and shows a full solution only when you allow it.
 - **Stop and come back.** `/lesson pause` saves where you are. Next time, the teacher offers a short recall check before carrying on.
 - **Sit an exam.** `/exam` writes a paper on a chapter. You answer it in Obsidian, hand it in, and get it back marked, with feedback under each answer.
-- **Do a mock interview.** `/interview` is a timed round of new problems, with a clock in the tmux status bar and an interviewer who stays quiet while you make progress and nudges you when you are stuck.
+- **Do a mock interview.** `/interview` is a timed round of new problems, with a clock in the tmux status bar and an interviewer who stays quiet while you make progress and nudges you when you are stuck. `/interview sig` or `/interview mw-oa` follows one firm's format, live or as a written test.
 - **Collect techniques.** Each problem-solving trick (symmetry, linearity of expectation, the pigeonhole principle…) gets its own note. The note lists every problem that used the trick, and, in your words, what in a problem should make you think of it.
 - **Review what you missed.** Every question you get wrong comes back later as a new question on the same idea, spaced out over weeks (`/review`). `/drill` mixes problems from all your techniques without saying which one each needs.
 - **Practise mental arithmetic.** `/arith` is a timed sprint in the style of [Zetamac](https://arithmetic.zetamac.com).

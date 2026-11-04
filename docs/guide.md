@@ -252,6 +252,7 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 | `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
 | `courses/<name>/exams/` | Exam papers, one per attempt: `<name>-ch02-exam-1.md`. |
 | `courses/<name>/interviews/` | Mock interviews, one note per round: `<name>-interview-1.md`. |
+| `interviews/` | Rounds on several courses: `mixed-interview-1.md`; hidden beside it, `.interviews/`. |
 | `techniques/` | Technique notes, shared by every course, and their index `Techniques.md`. |
 | `practice/` | One note per day of review and drills; hidden: the review cards and the drills. |
 | `courses/<name>/.course/` | Hidden: the page map and the progress record. |
@@ -317,11 +318,12 @@ An exam on a lesson note outside a course works the same way, with its papers in
 
 ## Interviews
 
-A mock interview is a timed round of problems you have not seen, on the units of the course you have finished, with an interviewer who behaves like a real one.
+A mock interview is a timed round of problems you have not seen, on the units you have finished, with an interviewer who behaves like a real one. A round draws on every course you have finished a unit in, so probability, statistics and linear algebra can meet in one round. `--courses` narrows it.
 
 ```
-/interview            # asks how long
-/interview standard   # 3 problems, 12 minutes each
+/interview                     # asks how long
+/interview standard            # 3 problems, 12 minutes each
+/interview short --courses gb  # only the gb course
 ```
 
 | Length | Problems | Time |
@@ -332,12 +334,40 @@ A mock interview is a timed round of problems you have not seen, on the units of
 
 The problems are written for the round and checked by running code before it starts. They are not labelled by topic: recognising which idea a problem needs is part of the test.
 
+A round on one course is kept in that course's folder. A round on several is kept at the vault root, in `interviews/mixed-interview-1.md`.
+
+### Firm profiles
+
+A profile follows one firm's format: how many problems, how long, which topics in what proportion, and how the interviewer behaves.
+
+```
+/interview sig                  # SIG live round: 3 probability puzzles, 20 minutes each
+/interview mw                   # Marshall Wace on-site: 2 brainteasers and a regression problem
+/interview sig-oa               # SIG online test: 17 short questions in 60 minutes
+/interview mw-oa --minutes 45   # Marshall Wace written test: 18 questions, +2 / −1 / 0
+```
+
+| Profile | Format | Topics |
+|---|---|---|
+| `sig` | live, 3 problems, 60 minutes | mostly probability and expected value; sometimes statistics or regression. Follow-ups ask you to generalise and to sanity-check. |
+| `mw` | live, 3 problems, 60 minutes | two brainteasers, then a regression problem and a short talk about its assumptions |
+| `sig-oa` | written, 17 problems, 60 minutes, calculator | probability and statistics; one mark per right answer |
+| `mw-oa` | written, 18 problems, 60 minutes (`--minutes`) | probability and counting, statistics, regression, linear algebra, calculus; +2 right, −1 wrong, 0 blank |
+
+The formats come from interview reports, so treat them as a guide. The mix only uses topics you have finished: with no linear algebra yet, `mw-oa` has none. To know the topics, the first profile round tags each finished chapter with one (probability, statistics, regression, linear algebra, calculus, brainteasers or other). The tags are kept in the course.
+
+### Written tests
+
+`sig-oa` and `mw-oa` are written tests. The paper opens in Obsidian, at the same path as a round's note, with one `**Answer:**` line per problem. The clock runs in the status bar. Write each answer as a number or a formula, as in a typed quiz, and do rough work above the answer line. Leave a line empty to skip a problem; under negative marking a blank costs nothing. Type `submit` when you are done.
+
+The script checks every answer and computes the score. An answer it cannot read is listed back to you before anything is scored. The result goes into the paper: the score, a table of your answers against the right ones, comments on the wrong ones, what to work on, and each solution, folded. Time past the limit is shown, not cut off.
+
 ### During the round
 
 Think aloud in plain messages. The interviewer says little while you make progress, asks you to justify a step a real interviewer would question, and checks your final answer the moment you give it. Give answers as a number or a formula, as in a typed quiz.
 
 - **Hints.** When you are stuck, or time is running short, the interviewer gives a nudge. A pointed-out error ("are you sure about that term?") also counts as a hint. Being asked *why* does not.
-- **The clock.** Each problem has 12 minutes, shown in the tmux status bar (`P2/3 9:40/12:00`). Near the end the interviewer gives a stronger nudge; when time is up it sketches the solution and moves on. Your own status bar comes back when the round ends.
+- **The clock.** Each problem has 12 minutes (20 in a `sig` or `mw` round), shown in the tmux status bar (`P2/3 9:40/12:00`). Near the end the interviewer gives a stronger nudge; when time is up it sketches the solution and moves on. Your own status bar comes back when the round ends.
 - **Follow-ups.** A correct answer with at least two minutes left gets a follow-up: the same problem with one thing changed.
 - **Stopping.** `/interview stop`, or saying you want to stop, ends the round and goes to the scorecard.
 
@@ -577,7 +607,9 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/exam reopen <paper>` | Take back a paper you submitted but that is not graded yet, to change it and submit again. |
 | `/exam abandon <paper>` | Drop a paper you will not finish; it stays on file. |
 | `/exam list` | Every exam paper, with its status and score. |
-| `/interview [short \| standard \| long]` | A timed mock interview on the units finished so far. |
+| `/interview [short \| standard \| long]` | A timed mock interview on the units finished so far. `--courses gb,bh` narrows it. |
+| `/interview sig \| mw \| sig-oa \| mw-oa` | A round in a firm's format; `sig-oa` and `mw-oa` are written tests (`--minutes` sets the time). |
+| `/interview submit` | Hand in a written test. |
 | `/interview stop` | End the round early and get the scorecard. |
 | `/interview list` | Every round, with its result. |
 | `/interview abandon` | Drop a round you will not finish. |

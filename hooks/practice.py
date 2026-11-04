@@ -132,8 +132,7 @@ def exam_misses(section_tags):
 
 def interview_misses(res):
     out = []
-    pattern = os.path.join(glob.escape(VAULT), "courses", "*", ".interviews", "*-interview-*.state.json")
-    for sp in sorted(glob.glob(pattern)):
+    for sp in technique.interview_state_files():
         m = re.search(r"([^/]+)-interview-(\d+)\.state\.json$", sp)
         st = book.load_json(sp, None)
         if not m or not isinstance(st, dict) or st.get("status") != "finished":

@@ -190,10 +190,16 @@ def scan_tags():
     return out
 
 
+def interview_state_files():
+    """The state file of every interview round: in each course, and the rounds on several courses at the vault root."""
+    patterns = [os.path.join(glob.escape(VAULT), "courses", "*", ".interviews", "*-interview-*.state.json"),
+                os.path.join(glob.escape(VAULT), ".interviews", "*-interview-*.state.json")]
+    return sorted(f for p in patterns for f in glob.glob(p))
+
+
 def interview_problems():
     out = []
-    pattern = os.path.join(glob.escape(VAULT), "courses", "*", ".interviews", "*-interview-*.state.json")
-    for sp in sorted(glob.glob(pattern)):
+    for sp in interview_state_files():
         m = re.search(r"([^/]+)-interview-(\d+)\.state\.json$", sp)
         st = book.load_json(sp, None)
         if not m or not isinstance(st, dict) or st.get("status") != "finished":
