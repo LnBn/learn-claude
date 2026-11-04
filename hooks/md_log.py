@@ -497,7 +497,7 @@ ACK_RE = re.compile(r"^\W*(ready|ok|okay|go|go on|next|continue|yes|yep|done|sur
 # (/course next, /course study, /lesson resume and /exercise start or continue teaching. /exam sets or grades a
 # paper: the paper and its feedback are the record, so nothing of its replies goes into a note.)
 ADMIN_COMMANDS = {
-    "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions"},
+    "course": {"new", "list", "use", "status", "toc", "select", "assess", "solutions", "programme"},
     "lesson": {"pause", "status", "reset"},
     "md-log": None,    # None: every use of the command
     "md-unlog": None,

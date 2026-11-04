@@ -242,11 +242,41 @@ Each course keeps its own syllabus, progress, notes and checkpoints. Commands ac
 /course next         # continue that course from its own checkpoint
 ```
 
+### Programmes
+
+A programme is one course made of units from several books, grouped into topic modules. Use it when you study several books for one goal, for example revising probability, statistics and linear algebra for an assessment. Each book stays a course of its own: its pages, figures, exercises, equation numbers, chapter notes and progress. The programme only sets the order and the modules.
+
+Set the books up first with `/course new`, then build the programme:
+
+```
+/course programme new quant --title "Quant research revision"
+/course programme module "Linear regression" strang:3.3 stats:13.1-13.2
+/course programme module "Conditional expectation" bh:9.1-9.4 gb:4.6
+/course programme move 2 1     # make module 2 the first
+/course programme remove 3     # drop module 3
+/course programme goal "<what you want from it>"
+```
+
+A module lists `<course>:<sections>`, in the order you want them taught. The sections are written as for `/course select`; `bh:7.1-7.5 7.7` takes 7.1 to 7.5 and 7.7 of `bh`. Each book's syllabus follows the programme, so `/course status` on one book agrees with it.
+
+Then study as usual:
+
+- **`/course next`** follows the programme from book to book. You never switch books yourself.
+- **A module opens with an overview** to read: what it covers, which sections of which books in what order, why that order, how the books connect, and a map. Then you choose `ready` or `probe`, as at a chapter.
+- **A chapter first reached through a programme** opens with two or three sentences that link back to the module overview, then the first section.
+- **Within a note**, the teacher goes on from section to section. When the next section is in another book or chapter, or opens a new module, it saves a checkpoint and you run `/course next`.
+- **`/course status`** shows progress per module and overall, and what is next. **`/course list`** shows the programme with its books under it.
+- **`/course study bh:7.3`** studies a given section of one of its books.
+- **`/exercise` and `/exam <chapter>`** act on the book of the section studied last. For another book, run `/course use <book>` first; the programme stays current.
+
+The programme's note, `courses/quant/quant.md`, starts with an index of the modules. Each section in it links to its heading in the book's chapter note once it is taught. Below the index are the module overviews.
+
 ### Files of a course
 
 | File | What it is |
 |---|---|
 | `courses/<name>/<name>.md` | The index: syllabus with progress, and a table of exercises. Generated; do not edit. |
+| `courses/<programme>/<programme>.md` | A programme's note: the index of its modules (generated), then the module overviews. |
 | `courses/<name>/<name>-ch02.md` | The lesson note of chapter 2. |
 | `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
 | `courses/<name>/<name>-review.md` | Recall checks from every resumed session, linked from the index. |
@@ -563,11 +593,14 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/lesson reset <note.md>` | Start a lesson over; the note and checkpoints are moved to a trash folder. |
 | `/course new <book.pdf> [name]` | Map a textbook and set up a course. |
 | `/course next` | Study the next section of the current course, or resume it. |
-| `/course study <section>` | Study a given section, for example `4.2`. |
+| `/course study <section>` | Study a given section, for example `4.2`, or `bh:4.2` in a programme. |
 | `/course status` | Progress of the current course. |
 | `/course toc [chapter]` | The syllabus, or one chapter's sections, with progress marks. |
 | `/course list` | All courses, the current one marked. |
-| `/course use <name>` | Make another course the current one. |
+| `/course use <name>` | Make another course or programme the current one. |
+| `/course programme new <name> --title T` | Start a programme over several courses. |
+| `/course programme module "<title>" <course>:<spec>...` | Add a module, or replace the units of the module with that title. |
+| `/course programme move <n> <to>`, `remove <n>`, `goal "<goal>"` | Reorder or drop a module; set the programme's goal. |
 | `/course select <spec>` | Change the syllabus: `all`, `unstarred`, or chapters, sections and ranges. |
 | `/course assess <exercise>...` | Mark exercises as assessed coursework. |
 | `/course solutions <policy>` | When full solutions may be shown: `never`, `after-attempt` or `on-request`. |

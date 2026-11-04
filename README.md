@@ -70,6 +70,7 @@ To update later, run `git -C .claude pull` and start a new session.
 
 /course new ~/books/book.pdf  # turn a textbook into a course
 /course next                  # study the next section (also resumes)
+/course programme new quant   # one course over several books, in topic modules
 /exercise 2.3                 # help with exercise 2.3
 
 /exam                         # a paper on the chapter you just finished
