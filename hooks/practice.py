@@ -3,7 +3,8 @@
 practice — review cards from every miss, and drills that mix every technique.
 
 Misses are found by scanning what already exists: graded quiz blocks in lesson and review notes, graded exam
-schemes, finished interview rounds and drill results. Each becomes a card in `<vault>/practice/.cards.json`, which
+schemes, finished interview rounds, drill results, and the problems of a problem course that needed hints or were
+not solved. Each becomes a card in `<vault>/practice/.cards.json`, which
 comes back after 1, 3, 7, 16 and 35 days as long as it is answered right, and after 1 day again when it is not.
 
     practice.py scan                          add cards for new misses; print how many were added
@@ -165,11 +166,44 @@ def drill_misses():
     return out
 
 
+def statement(body):
+    """The problem as stated in a problem course's section: the paragraph that opens with **The problem.**"""
+    for p in "\n".join(body).split("\n\n"):
+        m = re.match(r"^\*\*The problem\.?\*\*\s*(.*)$", p.strip(), re.S)
+        if m:
+            return " ".join(m.group(1).split())
+    return ""
+
+
+def problem_misses(section_tags):
+    """Attempts at a problem of a course in problems mode that needed hints or were not solved."""
+    out, notes = [], {}
+    for a in technique.problem_attempts():
+        if a["outcome"] not in ("hinted", "unsolved"):
+            continue
+        path = os.path.join(a["dir"], a["note"] + ".md")
+        if path not in notes:
+            try:
+                notes[path] = technique.note_sections(lesson.read(path))
+            except (OSError, UnicodeDecodeError):
+                notes[path] = []
+        sections = notes[path]
+        k = technique.problem_sections(sections).get(a["n"])
+        anchor = sections[k][1] if k is not None else f"{a['n']} {a['title']}".strip()
+        body = sections[k][2] if k is not None else []
+        section = f"{a['note']}#{anchor}"
+        out.append({"key": f"problem:{a['slug']}/{a['eid']}#{a['k']}", "kind": "problem", "source": section,
+                    "label": technique.long_label(anchor), "section": section,
+                    "techniques": section_tags.get(section, []), "prompt": statement(body) or a["title"],
+                    "missed": a["at"]})
+    return out
+
+
 def find_misses():
     res = technique.resolver(technique.load_techniques())
     section_tags = {}
     out = quiz_misses(res, section_tags)
-    return out + exam_misses(section_tags) + interview_misses(res) + drill_misses()
+    return out + exam_misses(section_tags) + interview_misses(res) + drill_misses() + problem_misses(section_tags)
 
 
 # ---------------------------------------------------------------- the cards

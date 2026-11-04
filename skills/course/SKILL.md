@@ -1,7 +1,7 @@
 ---
 name: course
-description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course list` and `/course use <name>` switch between courses and programmes; `/course programme ...` builds a programme over several books; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>` manage one.
-argument-hint: new <book.pdf> [name] | next | study <section> | list | use <name> | programme <new|module|move|remove|goal> ... | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request>
+description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course list` and `/course use <name>` switch between courses and programmes; `/course programme ...` builds a programme over several books; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>`, `/course mode <problems|textbook>` manage one.
+argument-hint: new <book.pdf> [name] [--toc <file> --offset <n>] [--problems] | next | study <section> | list | use <name> | programme <new|module|move|remove|goal> ... | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request> | mode <problems|textbook>
 disable-model-invocation: true
 allowed-tools: Bash(python3 .claude/hooks/book.py *), Bash(python3 .claude/hooks/programme.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
 ---
@@ -10,7 +10,7 @@ Arguments: `$ARGUMENTS`
 
 A course is a textbook, a syllabus chosen from it, and one lesson note per chapter. `book.py` holds the page map and the progress; you never load the whole book, only the pages a command tells you to Read. Every `book.py` command acts on the **current course**: the one created or chosen last. The learner changes it with `/course use <name>`; do not pass `--course` on your own initiative.
 
-## `new <book.pdf> [name]`
+## `new <book.pdf> [name] [--toc <file> --offset <n>] [--problems]`
 
 Setup is not lesson content, so nothing of it may reach a note.
 
@@ -20,23 +20,26 @@ Setup is not lesson content, so nothing of it may reach a note.
    ```
 2. Map the book:
    ```
-   python3 .claude/hooks/book.py new "<book.pdf>" [--name <name>]
+   python3 .claude/hooks/book.py new "<book.pdf>" [--name <name>] [--toc <file> --offset <n>] [--problems]
    ```
-   If it prints `NO OUTLINE`, follow the steps it prints: Read the contents pages, write the contents file under `/tmp/learn-book/`, run it again with `--toc` and `--offset`.
+   Pass on `--toc`, `--offset` and `--problems` when the learner gave them. If it prints `NO OUTLINE`, follow the steps it prints: Read the contents pages, write the contents file under `/tmp/learn-book/`, run it again with `--toc` and `--offset`. When the book prints its solutions apart from the problems, give each problem's solution page in a fourth column.
 3. If the output says the title is unknown, Read PDF pages 1-3 and run `book.py set title "<title>"`.
 4. Read the front matter the output names (preface, "how to use this book"; at most 20 pages per Read call). Look for: suggested course tracks or chapter dependencies; how optional material is marked; where solutions to the exercises are published; stated prerequisites.
 5. Write one short paragraph: what the book covers, how it is organised, and what the author suggests for a first course. Then ask with **one** `AskUserQuestion` call, header `Course`, three questions:
    - *What should the course cover?* Offer what the book itself suggests (a named track, or "core sections only" when the book marks optional material), the whole book, and one or two sensible selections for a learner like this one. Their own list or a pasted syllabus arrives through "Other".
    - *What do you want from it?* Two to four concrete goals for this book, plus their own wording. This is the goal question of the teach skill's Phase 1b, asked once for the whole course.
    - *When may I show a full solution to an exercise?* **After you have shown an attempt and ask for it** (default), **Whenever you ask**, **Never**.
+
+   A problem course needs no solutions policy, since each solution is shown after its attempt. When `--problems` was given, leave the third question out. When it was not and the book is a collection of problems with their solutions (an interview guide, a problem book), replace the third question with *How should each unit run?*: **Problem first** (you attempt each problem before you see its solution) and **Textbook** (read the section, then quizzes).
 6. Record the answers:
    ```
    python3 .claude/hooks/book.py select <spec>          # all | unstarred | 2 | 2.1-2.6 | 3-5 8 10.2 ...
    python3 .claude/hooks/book.py set goal "<goal>"
    python3 .claude/hooks/book.py set solutions <after-attempt|on-request|never>
+   python3 .claude/hooks/book.py set mode problems                  # for Problem first
    ```
    A pasted syllabus that names sections maps directly onto a spec; check doubtful ids with `book.py toc <chapter>`.
-7. Reply with the `🗒 syllabus set` line and one sentence: `/course next` starts the first section, and `/course assess <exercise>...` marks exercises that are assessed coursework.
+7. Reply with the `🗒 syllabus set` line and one sentence: `/course next` starts the first section, and, in a textbook course, `/course assess <exercise>...` marks exercises that are assessed coursework.
 
 ## `next` and `study <section>`
 
@@ -53,6 +56,8 @@ Setup is not lesson content, so nothing of it may reach a note.
    - **The note is new** (first unit of a chapter): run the chapter start described there. Your reply to this command is the `### Overview` of the chapter and nothing else: it ends with the ready-or-probe choice, and no quiz or question is asked in it. A probe happens only if the learner then asks for one.
    - **The note exists**: get the resume brief with `python3 .claude/hooks/lesson.py summary "<note>"` and follow **Resuming a lesson** in the teach skill (the `Resume` question, the optional recall check, then the checkpoint's Next). Which unit comes next is what `book.py` printed; where things stand inside that unit is what the checkpoint says. This holds every time the command is run, also part-way through a session that has been teaching this note: `/course next` is never a `ready`, and the `Resume` question is never skipped. If this session has taught past the latest checkpoint, what it taught since counts over the checkpoint.
 4. Read the pages on the `READ` line before you write anything about the unit.
+
+When the output has a `MODE: problems` line, the course is a problem course: the unit is taught problem by problem, as the teach skill's **Problem books** says. The `READ` line then holds only the statement of the problem on the `PROBLEM` line, and the `SOLUTION` line says when to Read the solution.
 
 `/lesson pause` works as in any lesson: the checkpoint belongs to the chapter note.
 
@@ -71,7 +76,7 @@ For `list`, show the output. For `use`, reply with only the `🗒` line and the 
 
 Run `programme.py status` or `book.py toc [chapter]` and report in a few lines. Do not link, probe or teach.
 
-## `select <spec>`, `assess <exercise>...`, `solutions <policy>`
+## `select <spec>`, `assess <exercise>...`, `solutions <policy>`, `mode <problems|textbook>`
 
 Run the matching command and reply with only the `🗒` line it prints:
 
@@ -79,7 +84,10 @@ Run the matching command and reply with only the `🗒` line it prints:
 python3 .claude/hooks/book.py select <spec> [--add | --remove]
 python3 .claude/hooks/book.py assess <exercise>... [--clear]
 python3 .claude/hooks/book.py set solutions <never|after-attempt|on-request>
+python3 .claude/hooks/book.py set mode <problems|textbook>
 ```
+
+`mode` changes how the units still to come are taught. Progress, notes and checkpoints stay as they are.
 
 ## Programmes
 

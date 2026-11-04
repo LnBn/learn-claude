@@ -155,14 +155,14 @@ A course follows a textbook. The design rule: **the teacher never loads the book
 - **Ranges.** An entry runs to the next entry at its level or above. When that one starts part-way down a page, the page is shared and belongs to both ranges; the teacher is told so. Ranges err on the side of one page too many.
 - **Ids.** The book's own numbers, parsed from the outline titles ("2.3", appendix "A", part "II"). An outline without numbers gets positional ids.
 - **Printed page numbers.** From hyperref's `page.<label>` anchors, else from an offset set by hand.
-- **No outline.** The teacher reads the contents pages and writes a contents file; `new --toc <file> --offset <n>` builds the map from it.
+- **No outline.** The teacher reads the contents pages and writes a contents file; `new --toc <file> --offset <n>` builds the map from it. A fourth column gives the page of the entry's solution, for a book that prints its solutions apart; a solution runs to the next solution's page (shared) and the last one to the end of the book.
 - **Conventions.** Sections titled "Exercises" are not study units. A trailing `*` in a title marks the section optional.
 
 ### Units and state
 
 The study **unit** is a section (level 2 of the outline), or a chapter that has no sections. A unit is `todo`, `done`, `shaky` or `skipped`.
 
-State is two hidden files in the course folder. `.course/book.json` is the map and can be regenerated. `.course/state.json` holds the syllabus, unit status, exercise records, the goal and the solutions policy. The visible index `<name>.md` is regenerated from the state on every change.
+State is two hidden files in the course folder. `.course/book.json` is the map and can be regenerated. `.course/state.json` holds the syllabus, unit status, exercise records, problem attempts, the goal, the solutions policy and the mode. The visible index `<name>.md` is regenerated from the state on every change.
 
 Commands act on the **current course**, remembered in `md-log-state/course.json`. `book.py use <name>` changes it.
 
@@ -207,6 +207,15 @@ A reference resolves to its own heading, else the nearest heading that contains 
 4. **`book.py done <id>`** records the unit and prints the next one with its pages.
 
 The book is the backbone, not the boundary. The teacher may add outside material and further reading. That material is marked as not in the book, and it is held to the usual accuracy rule (the researcher), not to the page.
+
+### Problem courses
+
+`state.json` `mode` is `textbook` (or missing) or `problems`; `new --problems` and `set mode` write it, and nothing else depends on it, so switching keeps every record.
+
+- **Problems of a unit** (`Course.problems`): the entries directly under the unit, numbered by their ids when all have one, else `<unit>.<position>`; the entries below one of them get a letter (`2.7.1a`). A unit with nothing under it is its own problem. Entries are found by position in the outline (`descendants`), since hand-made maps give subsections slug ids (`2:defective-ball`).
+- **`next`, `section`** print `PROBLEM`, `LEAD-IN` (the opening of the chapter, unit or topic whose first problem this is, when it starts on an earlier page), `READ` with the statement pages only, `SOLUTION`, `RECORD` and the unit's problem marks.
+- **`attempt <n>`**: `--hint` adds one, `--result solved|unsolved` stores `solved`, `hinted` or `unsolved`, `--transfer passed|missed` completes the problem. A call that changes a complete problem first moves its record into `history`. When every problem of the unit is complete, the unit is recorded `shaky` if any is shaky (unsolved, two or more hints, transfer missed), else `done`, and the output is the same as `done`'s.
+- **Misses.** `technique.problem_attempts` reads `attempts` from every course. A problem's note section is the last `###` section of the chapter note whose heading starts with its number. `technique.scan_tags` adds ✓ or ✗ to that section's marks; `practice.problem_misses` makes a card for each `hinted` or `unsolved` attempt, prompted by the section's `**The problem.**` paragraph.
 
 ### Exercises
 
@@ -296,7 +305,7 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 **Resolution.** A tag's target (the text before `|` or `#`) is matched case-insensitively against each note's file name and its frontmatter `aliases`. Obsidian itself does not resolve a raw alias link, so the teacher writes canonical names; unresolved targets are listed under **Unknown techniques** in the index.
 
-**What the script writes.** Only the block between `%% problems: written by technique.py sync; edits inside are replaced %%` and `%% /problems %%` in each note (appended under `## Problems` when missing), and the whole index. Records: a section's graded quiz marks (✓ pass; ✗, ? miss), an interview problem's outcome (`solved` pass; `hinted`, `unsolved` miss). The index sorts by pass rate, lowest first. A file whose content would not change is not written.
+**What the script writes.** Only the block between `%% problems: written by technique.py sync; edits inside are replaced %%` and `%% /problems %%` in each note (appended under `## Problems` when missing), and the whole index. Records: a section's graded quiz marks (✓ pass; ✗, ? miss) and, in a problem course, its attempt (✓ solved; ✗ hinted or unsolved), an interview problem's outcome (`solved` pass; `hinted`, `unsolved` miss). The index sorts by pass rate, lowest first. A file whose content would not change is not written.
 
 **When `sync` runs.** From `md_log.append`, after it writes text containing `*Techniques:` to a note: a separate `Stop` hook entry could run in parallel with the mirror and read the note before the tag line is in it. Also from `interview.py finish`, from `technique.py tag`, `cue` and `list`, and by hand. The cue question's answer is added with `technique.py cue`, under `**In your words:**`.
 
@@ -304,7 +313,7 @@ An exam is a paper the learner sits alone, in Obsidian, and hands in as a whole.
 
 `hooks/practice.py` keeps review cards and drills; `skills/review/SKILL.md` and `skills/drill/SKILL.md` drive them.
 
-**Cards come from a scan, not from registration.** `practice.py scan` finds every miss in what already exists: graded quiz blocks marked `✗` or `?` in lesson and review notes (not in `practice/`, `techniques/`, `exams/`, `interviews/`, hidden folders or fenced code), the `misses` of graded exam schemes, `hinted` or `unsolved` problems of finished interview rounds, and drill slots with either part wrong. Each miss has a stable key (`quiz:<stem>#<anchor>#<sha1 of the title>`, `exam:<paper>#<qid>`, `interview:<round>#p<i>`, `drill:<id>#<slot>`); a key once seen is never added again. A quiz card carries its section's techniques (from the tag lines), an exam card its question's section and that section's techniques. Cards live in `<vault>/practice/.cards.json`; a corrupt file stops the scan instead of being overwritten.
+**Cards come from a scan, not from registration.** `practice.py scan` finds every miss in what already exists: graded quiz blocks marked `✗` or `?` in lesson and review notes (not in `practice/`, `techniques/`, `exams/`, `interviews/`, hidden folders or fenced code), the `misses` of graded exam schemes, `hinted` or `unsolved` problems of finished interview rounds and of problem courses, and drill slots with either part wrong. Each miss has a stable key (`quiz:<stem>#<anchor>#<sha1 of the title>`, `exam:<paper>#<qid>`, `interview:<round>#p<i>`, `problem:<course>/<entry id>#<attempt>`, `drill:<id>#<slot>`); a key once seen is never added again. A quiz card carries its section's techniques (from the tag lines), an exam card its question's section and that section's techniques. Cards live in `<vault>/practice/.cards.json`; a corrupt file stops the scan instead of being overwritten.
 
 **Scheduling.** Intervals 1, 3, 7, 16, 35 days: right moves a card one step (retired after the last), wrong sends it to step 0, due tomorrow. On the first scan every miss found is spread over the next 14 days, oldest first; later misses are due the day after they happened, or today. `lesson.py summary` runs the scan and prints `REVIEW DUE` when cards are due, and the teach skill mentions it in the `Resume` question.
 
@@ -385,7 +394,7 @@ Everything under `.claude/` in this table is gitignored.
 | `.claude/md-log-state/trash/` | reset lessons | `lesson.py reset` |
 | `<notes>/.checkpoints/<note>.md` | checkpoints of a lesson note | `lesson.py checkpoint` |
 | `courses/<name>/.course/book.json` | the page map | `book.py new` |
-| `courses/<name>/.course/state.json` | syllabus, progress, exercise records, settings | `book.py` |
+| `courses/<name>/.course/state.json` | syllabus, progress, exercise records, problem attempts, settings | `book.py` |
 | `courses/<name>/.programme/programme.json` | a programme's title, goal and modules | `programme.py` |
 | `<notes>/exams/<…>-exam-<n>.md` | an exam paper; feedback and result once graded | the teacher (Write), then `exam.py` |
 | `<notes>/.exams/<…>-exam-<n>.json` | its marking scheme, marks, status and misses | the teacher (Write), then `exam.py` |

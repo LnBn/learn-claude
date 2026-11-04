@@ -202,6 +202,8 @@ The teacher then reads the preface and asks three things:
 2. **What you want from it.** This is the goal the whole course is aimed at.
 3. **When it may show full solutions** to exercises. The default is: after you have shown an attempt and asked.
 
+For a book of problems with solutions, the third question is instead whether to work **problem first** (see [Problem books](#problem-books)).
+
 If the PDF is outside the folder Claude Code runs in, Claude Code asks once for permission to read it.
 
 ### Studying
@@ -237,6 +239,30 @@ Help comes one step per reply:
 5. **Full solution.** Only as the course allows.
 
 `/course assess 2.5 2.6` marks exercises as assessed coursework. Those get hints and checks, never a full solution, and they are never used as quiz questions.
+
+### Problem books
+
+A book of problems with their solutions, such as an interview guide, is better worked than read. In a problem course each problem is one section of the note:
+
+1. **Statement.** The teacher states the problem in its own words and stops. It reads only the pages of the statement, so nothing of the solution leaks in.
+2. **Attempt.** You work it in the chat. Hints come one step at a time, as for exercises, and are counted.
+3. **Reveal.** The book's solution, condensed, then the general method and what in a problem should make you reach for it. Then `ready`.
+4. **Transfer.** One quiz on a new problem that needs the same method.
+
+Each problem is recorded as solved unaided, solved with hints, or not solved. A problem not solved, or solved with two or more hints, marks its section shaky. A problem that needed any hint becomes a review card, and it counts as a miss in its technique notes. `/course toc 4` shows each problem's mark.
+
+Make a course a problem course when you set it up (`/course new <book.pdf> <name> --problems`), or switch an existing one with `/course mode problems`. Switching keeps the progress, notes and checkpoints; the sections still to come are taught problem first. `/course mode textbook` switches back.
+
+When the book prints its solutions apart from the problems, the contents file gives each problem's solution page in a fourth column:
+
+```
+1	1 Problems 1–10	1
+2	1.1 The sock drawer	1	15
+2	1.2 Successive wins	1	17
+1	Solutions	15
+```
+
+Columns are separated by tabs: level, number and title, the problem's printed page, the solution's printed page. `=N` is a PDF page instead. Pass the file with `/course new <book.pdf> <name> --toc <file> --offset <n> --problems`, where the offset is the PDF page of printed page 1, minus one.
 
 ### Several courses
 
@@ -282,7 +308,7 @@ The programme's note, `courses/quant/quant.md`, starts with an index of the modu
 
 | File | What it is |
 |---|---|
-| `courses/<name>/<name>.md` | The index: syllabus with progress, and a table of exercises. Generated; do not edit. |
+| `courses/<name>/<name>.md` | The index: syllabus with progress, and tables of exercises and attempted problems. Generated; do not edit. |
 | `courses/<programme>/<programme>.md` | A programme's note: the index of its modules (generated), then the module overviews. |
 | `courses/<name>/<name>-ch02.md` | The lesson note of chapter 2. |
 | `courses/<name>/<name>-ch02-exercises.md` | Exercise help for chapter 2. |
@@ -355,7 +381,7 @@ An exam on a lesson note outside a course works the same way, with its papers in
 
 ## Interviews
 
-A mock interview is a timed round of problems you have not seen, on the units you have finished, with an interviewer who behaves like a real one. A round draws on every course you have finished a unit in, so probability, statistics and linear algebra can meet in one round. `--courses` narrows it.
+A mock interview is a timed round of problems you have not seen, on the units you have finished, with an interviewer who behaves like a real one. A round draws on every course you have finished a unit in, so probability, statistics and linear algebra can meet in one round. While a programme is current, it draws on the programme's books. `--courses` narrows it.
 
 ```
 /interview                     # asks how long
@@ -453,7 +479,7 @@ Two commands bring back what you have learned, in forms you have not seen.
 
 ### Review
 
-Every question you have missed becomes a card: a lesson quiz you got wrong or answered "I don't know", a recall-check question, an exam question that lost marks, an interview problem you needed hints for, a drill problem. `/review` asks the cards that are due, up to 10 at a time, oldest first.
+Every question you have missed becomes a card: a lesson quiz you got wrong or answered "I don't know", a recall-check question, an exam question that lost marks, an interview problem or a problem course's problem you needed hints for, a drill problem. `/review` asks the cards that are due, up to 10 at a time, oldest first.
 
 - **Each card is a new question**, not the one you missed: the same idea in a different setting, or the same setting with one thing changed. Where the card came from is shown only after you answer.
 - **Spacing.** A card first comes back the day after you missed it. Each time you get it right, the gap grows: 1, 3, 7, 16, then 35 days, after which it retires. A wrong answer brings it back the next day.
@@ -643,7 +669,7 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/lesson resume <note.md>` | Continue a lesson from its checkpoint. |
 | `/lesson status <note.md>` | Show where a lesson stands. |
 | `/lesson reset <note.md>` | Start a lesson over; the note and checkpoints are moved to a trash folder. |
-| `/course new <book.pdf> [name]` | Map a textbook and set up a course. |
+| `/course new <book.pdf> [name]` | Map a textbook and set up a course. Add `--problems` for a problem book, and `--toc <file> --offset <n>` to map it from a contents file. |
 | `/course next` | Study the next section of the current course, or resume it. |
 | `/course study <section>` | Study a given section, for example `4.2`, or `bh:4.2` in a programme. |
 | `/course status` | Progress of the current course. |
@@ -656,6 +682,7 @@ The callout snippet carries the print rules: a heading stays on the page of the 
 | `/course select <spec>` | Change the syllabus: `all`, `unstarred`, or chapters, sections and ranges. |
 | `/course assess <exercise>...` | Mark exercises as assessed coursework. |
 | `/course solutions <policy>` | When full solutions may be shown: `never`, `after-attempt` or `on-request`. |
+| `/course mode <problems \| textbook>` | Work the problems of the units still to come before seeing their solutions, or go back to reading. |
 | `/exercise <id>` | Step-by-step help with an exercise from the course's book. |
 | `/exam [chapter \| note.md]` | Set an exam paper on a chapter (default: the one finished last) or a lesson note. |
 | `/exam submit` | Hand in the open paper to be graded. Typing `submit` does the same. |

@@ -285,6 +285,52 @@ When the session was started with `/course next` or `/course study`, the lesson 
 
 **Help with the book's exercises** follows the `exercise` skill: hints in steps, never the whole solution unprompted.
 
+### Problem books
+
+When `book.py` prints `MODE: problems`, the book is a collection of problems with their solutions, and the learner attempts each problem before seeing how it is solved. Reading a solution first teaches the solution; attempting first teaches how to find one. Everything above still holds (read the pages, the overview at the start of a chapter, the figures, the book's notation), except that a unit is not taught read, check, apply. It is taught **problem by problem**, in the order `book.py` names them, and each problem is one section of the note, run in five steps.
+
+**Lead-in.** A `LEAD-IN` line means the book sets out definitions or a method before the problem (the opening of a section, a topic heading). Teach those pages first as one ordinary node: read, `ready`, check, no apply. Cover what the problems use (definitions, formulas, standard results), nothing more. Then the problem.
+
+1. **Statement.** Read only the pages on the `READ` line. Then write:
+   - the heading `### <number> <title>`, with the number and title from the `PROBLEM` line;
+   - the source line, from the `CITE AS` line, in the book's own words for the problem: `*Book: §2.2, p. 7.*`, or `*Book: Problem 17, p. 5.*` when the book numbers its problems;
+   - one paragraph that opens with `**The problem.**`: the problem in your own words, with every given, every condition and exactly what is asked. The review cards quote this paragraph. A figure from the book may go with it, cropped as above.
+
+   Give nothing away: no method, no answer, no technique name, no "this is a classic", no wording that points to the solution. When the `SOLUTION` line says the solution is on the same pages, you have seen it: write the statement as the book poses it, not as the solution frames it. End the reply with one line, `Work on it here: say what you try, or ask for a hint.` The reply ends there.
+
+2. **Attempt.** The learner works in chat. Before your first reply to their work, solve the problem yourself: Read the pages on the `SOLUTION` line when they are printed apart, and check any number by running code. Then follow the `exercise` skill's hint ladder (rungs 1 to 4: orient, strategy, next step, check): one rung per reply, the smallest step that unsticks them, starting at the rung that fits where they are. After each reply that gives a rung, or that names a wrong step in their work, count the hint:
+   ```
+   python3 .claude/hooks/book.py attempt <number> --hint
+   ```
+   Confirming that work is right is not a hint. A hint that has a right answer may be a `quiz`, as in the exercise skill. The attempt ends when they reach a right answer with sound reasoning (if they give only the answer, ask for the reasoning first), or when they give up or ask for the solution. Record it, and write nothing about the call:
+   ```
+   python3 .claude/hooks/book.py attempt <number> --result solved      # or: --result unsolved
+   ```
+   `solved` after any hint is recorded as solved with hints.
+
+3. **Reveal and debrief.** One written piece, which the learner reads in full:
+   - The outcome, in one line: `*Attempt: solved unaided.*`, `*Attempt: solved with 2 hints.*` or `*Attempt: not solved.*`
+   - **The book's solution**, condensed: its main line, every step that carries weight, the answer, in the book's notation. Where the learner's attempt went another way, say whether that way works and, if it does not, which step fails.
+   - **The method**: the general move behind the solution, stated so that it applies beyond this problem, and **when to reach for it**: the features of the statement that point to it.
+   - **Beyond the book**, when it helps: a faster route, a common trap, the follow-up an interviewer asks next. Mark it as not in the book.
+   - The `> [!summary] Key idea` callout: the method and its cue, in one to three sentences.
+
+   End with `Say **ready** when you have read this.`
+
+4. **Transfer.** When they say ready: one apply `quiz`, as in Phase 3 step 4, on a fresh variant: the same setting with one crucial change, or a different setting that yields to the same method. A numerical answer is a typed quiz. A miss is handled as in Phase 3 step 5. Then record it:
+   ```
+   python3 .claude/hooks/book.py attempt <number> --transfer passed   # or: --transfer missed
+   ```
+   `missed` means the transfer was missed more than once, or is still failing when the learner stops.
+
+5. **Close the section** as in Phase 3 step 5: the techniques the problem used, a new technique's note and cue question, and the tag line last.
+
+The output of the last `attempt` call names the next problem: go on to it. In a programme, the unit's last `attempt` prints a `PROGRAMME:` line instead: run the `programme.py done` command it names and follow that output (*In a programme*, below). A problem that was not solved, needed two or more hints, or had its transfer missed makes the unit `shaky`. `book.py` records the unit itself when its last problem is recorded, so do not run `book.py done` in a problem course, except to skip a unit. Problems that needed a hint come back as review cards.
+
+**Resuming inside a problem.** The `RECORD` line says where the problem stands. If the attempt is in progress, the statement is already in the note: point back to it as for an exposition that was never checked (*Resuming a lesson*, step 3), with one line on how far they got, and the hint count carries on. If the result is recorded but the transfer is not, the reveal is in the note: point back to it, and the transfer quiz follows `ready`.
+
+**Studying a problem again.** `/course study <unit or number>` on a unit already done runs its problems again, and the record keeps the earlier attempts. Head the new section `### <number> <title> (again)`.
+
 ### In a programme
 
 A programme takes units from several books and groups them into topic modules (the `PROGRAMME:` line of `programme.py next`). Each unit is still taught from its own book, as above: its pages, its notation, its equation numbers, its chapter note. What changes is the order, the overviews and how progress is recorded.

@@ -38,7 +38,7 @@ TAG_RE = re.compile(r"^\*{0,2}\s*Techniques?\s*:\s*\*{0,2}\s*(.*)$", re.I)  # le
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 SESSION_RE = re.compile(r"^## Session — (\d{4}-\d{2}-\d{2})")
-NUM_RE = re.compile(r"([A-Z]?\d+(?:\.\d+)*)\s")
+NUM_RE = re.compile(r"([A-Z]?\d+(?:\.\d+)*[a-z]?)\s")
 SKIP_DIRS = {"exams", "interviews"}
 PASS, MISS = {"✓", "solved"}, {"✗", "?", "hinted", "unsolved"}
 
@@ -166,8 +166,36 @@ def section_tags(body):
     return list(dict.fromkeys(targets))
 
 
+def problem_attempts():
+    """Every attempt with a result at a problem of a course in problems mode (book.py attempt), earlier attempts at
+    a problem first: [{"dir", "slug", "eid", "k", "note", "n", "title", "outcome", "hints", "at"}]."""
+    out = []
+    for sp in sorted(glob.glob(os.path.join(glob.escape(VAULT), "courses", "*", ".course", "state.json"))):
+        st = book.load_json(sp, None)
+        if not isinstance(st, dict) or not isinstance(st.get("attempts"), dict):
+            continue
+        cdir = os.path.dirname(os.path.dirname(sp))
+        for eid, r in st["attempts"].items():
+            if not isinstance(r, dict) or not r.get("note") or not r.get("n"):
+                continue
+            for k, h in enumerate(list(r.get("history") or []) + [r]):
+                if isinstance(h, dict) and h.get("outcome") in ("solved", "hinted", "unsolved"):
+                    out.append({"dir": cdir, "slug": st.get("slug") or os.path.basename(cdir), "eid": eid, "k": k,
+                                "note": r["note"], "n": r["n"], "title": r.get("title", ""), "outcome": h["outcome"],
+                                "hints": h.get("hints", 0), "at": h.get("at")})
+    return out
+
+
+def problem_sections(sections):
+    """{problem number: index of the last section headed by it}: a problem studied again is the later section."""
+    return {anchor.split()[0]: k for k, (_, anchor, _, _) in enumerate(sections) if anchor.split()}
+
+
 def scan_tags():
     out = []
+    attempts = {}
+    for a in problem_attempts():
+        attempts.setdefault(a["note"], {}).setdefault(a["n"], []).append("✓" if a["outcome"] == "solved" else "✗")
     for path in scanned_notes():
         try:
             lines = lesson.read(path)
@@ -175,11 +203,14 @@ def scan_tags():
             continue
         stem = os.path.splitext(os.path.basename(path))[0]
         course = lesson.course_slug(path) or "lesson"
-        for _, anchor, body, date in note_sections(lines):
+        sections = note_sections(lines)
+        last = problem_sections(sections)
+        for k, (_, anchor, body, date) in enumerate(sections):
             targets = section_tags(body)
             if not targets:
                 continue
-            marks = []
+            first = anchor.split()[0] if anchor.split() else ""
+            marks = list(attempts.get(stem, {}).get(first, [])) if last.get(first) == k else []
             for ln in body:
                 if quiz_block.is_quiz_header(ln):
                     o = quiz_block.parse([ln])["outcome"]
