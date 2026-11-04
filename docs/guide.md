@@ -54,6 +54,12 @@ The callout styles are a copy in the vault. When an update changes them, copy th
 cp .claude/obsidian/learn-callouts.css .obsidian/snippets/
 ```
 
+An update never overwrites your `Notation.md`. If the vault has none yet, copy the starting sheet:
+
+```bash
+cp -n .claude/obsidian/Notation.md Notation.md
+```
+
 
 ## How a lesson runs
 
@@ -206,7 +212,8 @@ If the PDF is outside the folder Claude Code runs in, Claude Code asks once for 
 - **Each section is taught like any lesson node**: read, `ready`, check, apply. The heading carries the book's section number and page reference.
 - **The teacher reads the pages first.** Before each section it reads that section's pages, so the lesson matches your edition of the book.
 - **The book is the backbone, not the boundary.** The teacher adds material from outside the book when that helps: a better intuition, a link to another field, what has changed since. It says when something is not in the book, and it may suggest further reading.
-- **Notation and equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
+- **Equation numbers are the book's.** `(2.51)` in the note is `(2.51)` in the book, so references in the exercises resolve.
+- **Notation is shared across courses.** Every course uses the notation sheet `Notation.md` at the vault root. Where a book writes something differently, a `[!notation]` callout gives the book's form once, so you can still read the page and do its exercises. Edit the sheet to change a convention; lessons follow it from the next session.
 - **Apply quizzes may come from the book's exercises**, with the source named.
 - **The book's figures come into the note.** The first time the lesson names a figure ("Figure 1.4a"), it is cropped from the page into `viz/` and embedded once, below that paragraph or above the quiz that names it. Every mention of it, then and later, is a link that jumps to the figure. In a quiz that names a figure, `f` opens it in your image viewer.
 
@@ -677,6 +684,7 @@ Skills and settings are read when a session starts. Start a new session.
   visual-tools/          package.json for the Mermaid renderer
   obsidian/
     learn-callouts.css   styles for definition, theorem, proof, notation and the other callouts, and print rules
+    Notation.md          the starting notation sheet, copied to the vault root by install.sh
   docs/
     guide.md             this guide
     architecture.md      how the pieces fit and what is fragile
