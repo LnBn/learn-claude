@@ -18,7 +18,7 @@ In Obsidian the note reads like a textbook chapter. Maths is rendered, diagrams 
 
 ## What else it does
 
-- **Follow a textbook.** Give it a PDF and pick the chapters. Lessons follow the book's sections, equation numbers and figures, so the book and your notes line up. Stuck on an exercise? It helps one step at a time, and shows a full solution only when you allow it.
+- **Follow a textbook.** Give it a PDF and pick the chapters. Lessons follow the book's sections, equation numbers and figures, so the book and your notes line up. Stuck on an exercise? It helps one step at a time, and shows a full solution only when you allow it. A book of problems runs problem first: you attempt each one before you see its solution.
 - **Stop and come back.** `/lesson pause` saves where you are. Next time, the teacher offers a short recall check before carrying on.
 - **Sit an exam.** `/exam` writes a paper on a chapter. You answer it in Obsidian, hand it in, and get it back marked, with feedback under each answer.
 - **Do a mock interview.** `/interview` is a timed round of new problems, with a clock in the tmux status bar and an interviewer who stays quiet while you make progress and nudges you when you are stuck.

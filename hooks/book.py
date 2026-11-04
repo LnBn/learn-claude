@@ -6,7 +6,7 @@ The teacher never loads the whole book. This script maps the book once (outline 
 the syllabus and what has been studied, and tells the teacher which pages to Read for a section, an equation
 or an exercise. Nothing of the book reaches the context except the pages the teacher then Reads.
 
-    book.py new <book.pdf> [--name SLUG] [--title T] [--dir DIR] [--toc FILE [--offset N]] [--force]
+    book.py new <book.pdf> [--name SLUG] [--title T] [--dir DIR] [--toc FILE [--offset N]] [--problems] [--force]
                                      map the book and create the course (courses/<slug>/ by default)
     book.py select <spec>... [--add | --remove]
                                      choose the syllabus: all | unstarred | 2 | 2.3 | 2.1-2.6 | 3-5 ...
@@ -23,12 +23,18 @@ or an exercise. Nothing of the book reaches the context except the pages the tea
                                      locate an exercise, show and update its record
     book.py exercises [CHAPTER]      the exercises of a chapter with their records
     book.py assess <id>... [--clear] mark exercises as assessed coursework (never quizzed, never solved)
-    book.py set <title|goal|solutions|offset> <value>
+    book.py attempt <problem> [--hint] [--hints N] [--result solved|unsolved] [--transfer passed|missed]
+                                     a problem course: count hints, record the attempt and the transfer quiz
+    book.py set <title|goal|solutions|offset|mode> <value>
     book.py status                   progress in a few lines
     book.py list                     the courses under ./courses, the current one marked
     book.py use <name|dir>           make another course the current one
 
 Every command takes --course DIR; without it the current course is meant: the one used last.
+
+A course runs in one of two modes (`set mode`). `textbook`: each unit is taught read, check, apply. `problems`: the
+units hold the book's problems (the unit's lowest outline entries, or the unit itself), and each problem is stated,
+attempted, revealed and followed by a transfer quiz; `next` names the problem and its statement and solution pages.
 
 A course directory:
     <slug>.md                 the visible index: syllabus, progress, links to the chapter notes (generated)
@@ -56,6 +62,7 @@ CLAUDE_DIR = os.path.dirname(HERE)
 POINTER = os.path.join(CLAUDE_DIR, "md-log-state", "course.json")  # the course used last
 READ_CHUNK = 20  # the Read tool takes at most this many PDF pages per call
 SOLUTIONS = ("never", "after-attempt", "on-request")
+MODES = ("textbook", "problems")
 UNIT_STATUS = ("todo", "done", "shaky", "skipped")
 EXERCISE_STATUS = ("open", "attempted", "solved", "quizzed", "shown")
 MARK = {"todo": "·", "done": "✓", "shaky": "⚠", "skipped": "–"}
@@ -191,17 +198,24 @@ def read_outline(pdf, dests):
 
 def read_toc_file(path, offset):
     """A contents list written by hand when the PDF has no outline: `<level>\\t<title>\\t<printed page>` per
-    line (level 1 = chapter, 2 = section, 3 = subsection); `=N` in the page column is a literal PDF page."""
+    line (level 1 = chapter, 2 = section, 3 = subsection); `=N` in the page column is a literal PDF page. An
+    optional fourth column is the page where the entry's solution is printed, for a book that prints its
+    solutions apart from the problems."""
     rows = []
+
+    def page_of(col):
+        return int(col[1:]) if col.startswith("=") else int(col) + offset
+
     with open(path, encoding="utf-8") as f:
         for n, ln in enumerate(f, 1):
             if not ln.strip() or ln.lstrip().startswith("#"):
                 continue
             parts = [p.strip() for p in ln.rstrip("\n").split("\t")]
-            if len(parts) != 3 or not parts[0].isdigit() or not re.fullmatch(r"=?\d+", parts[2]):
-                die(f"{path}:{n}: expected <level>TAB<title>TAB<page>, got: {ln.strip()}")
-            page = int(parts[2][1:]) if parts[2].startswith("=") else int(parts[2]) + offset
-            rows.append((int(parts[0]) - 1, parts[1], page, None, ""))
+            if (len(parts) not in (3, 4) or not parts[0].isdigit() or not re.fullmatch(r"=?\d+", parts[2])
+                    or (len(parts) == 4 and not re.fullmatch(r"=?\d+", parts[3]))):
+                die(f"{path}:{n}: expected <level>TAB<title>TAB<page>[TAB<solution page>], got: {ln.strip()}")
+            sol = page_of(parts[3]) if len(parts) == 4 else None
+            rows.append((int(parts[0]) - 1, parts[1], page_of(parts[2]), None, "", sol))
     return rows
 
 
@@ -228,7 +242,8 @@ def clean_title(t):
 def build_book(rows, pdf, info, dests, offset):
     """Turn outline rows into entries with ids, levels and page ranges."""
     entries, unresolved = [], 0
-    for depth, title, page, y, dest in rows:
+    for row in rows:
+        depth, title, page, y, dest = row[:5]
         if not page or page < 1 or page > info["pages"]:
             unresolved += 1
             continue
@@ -236,6 +251,9 @@ def build_book(rows, pdf, info, dests, offset):
         starred = name.rstrip().endswith("*")
         entries.append({"id": id_, "title": clean_title(name.rstrip(" *")), "raw": clean_title(title), "depth": depth,
                         "start": page, "y": y, "dest": dest, "kw": kw, "starred": starred})
+        sol = row[5] if len(row) > 5 else None
+        if sol and 1 <= sol <= info["pages"]:
+            entries[-1]["sol_start"] = sol
     if not entries:
         return None, unresolved
 
@@ -318,6 +336,10 @@ def build_book(rows, pdf, info, dests, offset):
             e["end"], e["mid_end"] = max(nxt["start"] - 1, e["start"]), False  # the next entry opens a page
         else:
             e["end"], e["mid_end"] = nxt["start"], True  # the page is shared (or we cannot tell): include it
+    # solutions printed apart: one runs to the next solution's page, which may be shared, or to the end of the book
+    sols = [e for e in entries if "sol_start" in e]
+    for e, nxt in zip(sols, sols[1:] + [None]):
+        e["sol_end"] = max(nxt["sol_start"], e["sol_start"]) if nxt else info["pages"]
     for e in entries:
         for k in ("depth", "y", "dest", "kw", "raw"):
             e.pop(k, None)
@@ -380,6 +402,65 @@ class Course:
 
     def exercise_sections(self, ch_id):
         return [e for e in self.entries if e["exercises"] and e["chapter"] == ch_id]
+
+    # --- problems (a course in problems mode)
+    def mode(self):
+        return self.state.get("mode") or "textbook"
+
+    def descendants(self, e):
+        """The entries under e in the outline: those after it, up to the next one at its level or above."""
+        i = next(k for k, x in enumerate(self.entries) if x is e)
+        out = []
+        for x in self.entries[i + 1:]:
+            if x["level"] <= e["level"]:
+                break
+            out.append(x)
+        return out
+
+    def leaves(self, e):
+        below = [x for x in self.descendants(e) if not x["exercises"]]
+        return [x for k, x in enumerate(below) if k + 1 == len(below) or below[k + 1]["level"] <= x["level"]]
+
+    def problems(self, u):
+        """[(number, entry)]: the unit's lowest outline entries, or the unit itself when it has none. An entry
+        directly under the unit is numbered by its own id when every one has a number (2.2.5), else by the unit's
+        id and its position (2.2.5 for the fifth); the entries under it, by a letter after that (2.7.1a, 2.7.1b)."""
+        kids = [x for x in self.descendants(u) if x["level"] == u["level"] + 1 and not x["exercises"]]
+        if not kids:
+            return [(u["id"], u)]
+        numbered = all(re.fullmatch(r"\w+(\.\d+)+", x["id"]) and x["id"].startswith(u["id"] + ".") for x in kids)
+        out = []
+        for k, x in enumerate(kids, 1):
+            num = x["id"] if numbered else f"{u['id']}.{k}"
+            leaves = self.leaves(x)
+            if not leaves:
+                out.append((num, x))
+            out += [(num + (chr(97 + j) if j < 26 else f"-{j + 1}"), y) for j, y in enumerate(leaves)]
+        return out
+
+    def find_problem(self, token):
+        """(unit, number, entry) for a problem named by its number (2.2.5) or its entry id, else None."""
+        for u in self.units(appendices=True):
+            for n, e in self.problems(u):
+                if token in (n, e["id"]):
+                    return u, n, e
+        return None
+
+    def attempt(self, eid):
+        return (self.state.get("attempts") or {}).get(eid)
+
+    def problem_state(self, eid):
+        """'new', 'open' (hints given, no result), 'result' (no transfer yet) or 'complete'."""
+        r = self.attempt(eid)
+        if not r or (not r.get("hints") and not r.get("outcome") and not r.get("transfer")):
+            return "new"
+        if not r.get("outcome"):
+            return "open"
+        return "complete" if r.get("transfer") else "result"
+
+    def next_problem(self, u):
+        ps = self.problems(u)
+        return next(((n, e) for n, e in ps if self.problem_state(e["id"]) != "complete"), ps[0])
 
     # --- pages
     def label(self, page):
@@ -458,7 +539,8 @@ def render_index(c):
     out = [f"# {title}", "",
            "%% Generated by .claude/hooks/book.py from .course/state.json. Edits here are overwritten. %%", "",
            f"Source: `{os.path.basename(c.book['pdf'])}` · {c.book['pages']} pages · "
-           f"{done} of {len(syl)} sections studied · full solutions: {st.get('solutions', 'after-attempt')}"]
+           f"{done} of {len(syl)} sections studied · "
+           + ("problem first" if c.mode() == "problems" else f"full solutions: {st.get('solutions', 'after-attempt')}")]
     if st.get("goal"):
         out += ["", f"Goal: {st['goal']}"]
     if os.path.exists(os.path.join(c.dir, f"{c.slug}-review.md")):  # recall checks, see lesson.py review_path
@@ -479,7 +561,18 @@ def render_index(c):
             box = {"todo": "[ ]", "done": "[x]", "shaky": "[x]", "skipped": "[-]"}[s]
             name = u["title"] if u is ch or c.book["generated_ids"] else f"{u['id']} {u['title']}"
             tail = " — shaky, revisit" if s == "shaky" else " — skipped" if s == "skipped" else ""
+            ps = [x for _, x in c.problems(u)]
+            tried = [c.attempt(x["id"]) for x in ps if c.attempt(x["id"]) and c.attempt(x["id"]).get("outcome")]
+            if tried and len(ps) > 1:
+                tail += f" · {len(tried)}/{len(ps)} problems: " + " ".join(PMARK[r["outcome"]] for r in tried)
             out.append(f"- {box} {name} · {c.cite(u['start'], u['end'])}{tail}")
+    atts = [r for r in (st.get("attempts") or {}).values() if r.get("outcome")]
+    if atts:
+        out += ["", "## Problems", "", "| Problem | Result | Transfer | Date |", "|---|---|---|---|"]
+        for r in sorted(atts, key=lambda r: natural(r["n"])):
+            name = f"[[{r['note']}#{r['n']} {r['title']}\\|{r['n']} {r['title']}]]"
+            result = outcome_text(r) + (" ⚠" if is_shaky(r) else "")
+            out.append(f"| {name} | {result} | {r.get('transfer') or ''} | {r.get('at', '')} |")
     ex = st.get("exercises") or {}
     if ex:
         out += ["", "## Exercises", "", "| Exercise | Status | Hints used | Assessed |", "|---|---|---|---|"]
@@ -569,7 +662,82 @@ def chapter_exercises(c, ch_id):
 
 # ---------------------------------------------------------------- output
 
-def describe_unit(c, u, heading="UNIT"):
+PMARK = {"solved": "✓", "hinted": "~", "unsolved": "✗"}
+SCANNED = ("SCANNED: these pages have no text layer, so the book's figures are not cropped for you. Before you write "
+           "about a figure, find it on the page you Read and crop it: book.py figure <id> --pdf-page <n> --box TOP "
+           "BOTTOM (points from the top), then Read the PNG to check it.")
+
+
+def is_shaky(r):
+    """Not solved, two or more hints, or a transfer quiz missed more than once."""
+    return bool(r) and (r.get("outcome") == "unsolved" or r.get("hints", 0) >= 2 or r.get("transfer") == "missed")
+
+
+def outcome_text(r):
+    r = r or {}
+    h = r.get("hints", 0)
+    hints = f"{h} hint{'' if h == 1 else 's'}"
+    return {"solved": "solved unaided", "hinted": f"solved with {hints}",
+            "unsolved": "not solved" + (f" ({hints})" if h else "")}.get(r.get("outcome"), f"{hints} so far")
+
+
+def problem_mark(c, e):
+    return PMARK.get((c.attempt(e["id"]) or {}).get("outcome"), "·")
+
+
+def lead_in(c, u, e, ch):
+    """The entry whose opening the book prints before this problem (the chapter, unit or topic of which it is the
+    first problem), when that opening starts on an earlier page; else None."""
+    ps = [x for _, x in c.problems(u)]
+    owners = []
+    if ps[0] is e:
+        owners.append(u)
+        if ch is not u and c.units_of(ch)[0] is u:
+            owners.append(ch)
+    for x in c.descendants(u):
+        below = c.descendants(x)
+        if any(p is e for p in below) and next(p for p in ps if any(p is b for b in below)) is e:
+            owners.append(x)
+    earlier = [x for x in owners if x["start"] < e["start"]]
+    return min(earlier, key=lambda x: x["start"]) if earlier else None
+
+
+def problem_lines(c, u, ch, problem):
+    n, e = problem
+    start, end = e["start"], e["end"]
+    ps = c.problems(u)
+    lines = ["MODE: problems — state the problem, the learner attempts it, then the reveal and a transfer quiz "
+             "(teach skill, \"Problem books\")",
+             f"PROBLEM: {n} {e['title']}"
+             + (f"  ({[x for _, x in ps].index(e) + 1} of {len(ps)} in unit {u['id']})" if len(ps) > 1 else "")]
+    st = c.problem_state(e["id"])
+    li = lead_in(c, u, e, ch)
+    if li and st == "new":
+        lines.append(f"LEAD-IN: PDF pages {c.pages(li['start'], start)[0]} ({c.cite(li['start'], start)}): what the "
+                     f"book sets out under \"{li['title']}\" before this problem")
+    rng, extra = c.pages(start, end)
+    lines += [f"READ: {c.book['pdf']}", f"  pages: {rng}   ({extra}) — the statement"]
+    if e.get("sol_start"):
+        srng, sextra = c.pages(e["sol_start"], e["sol_end"])
+        lines.append(f"SOLUTION: {c.book['pdf']}\n  pages: {srng}   ({sextra}) — printed apart: Read them only after the statement "
+                     "is written, before the first hint")
+    else:
+        lines.append("SOLUTION: printed with the statement, on the same pages: write only the statement")
+    r = c.attempt(e["id"])
+    lines.append({"new": "RECORD: not attempted yet",
+                  "open": f"RECORD: attempt in progress, {outcome_text(r)}",
+                  "result": f"RECORD: {outcome_text(r)}; the transfer quiz is not recorded yet",
+                  "complete": f"RECORD: attempted before: {outcome_text(r)}, transfer {(r or {}).get('transfer')}"}[st])
+    if is_scan(c.book["pdf"], start, end):
+        lines.append(SCANNED)
+    cite = f"§{n}, {c.cite(start, end)}"
+    if e.get("sol_start"):
+        cite += f"; solution {c.cite(e['sol_start'], e['sol_end'])}"
+    lines.append(f"CITE AS: {cite}")
+    return lines
+
+
+def describe_unit(c, u, heading="UNIT", problem=None):
     ch = c.by_id.get(u["chapter"]) if u.get("chapter") else None
     ch = ch or u
     us = c.units_of(ch)
@@ -577,28 +745,31 @@ def describe_unit(c, u, heading="UNIT"):
     lines = [f"{heading}: {u['id']} {u['title']}" + (f" — chapter {ch['id']} \"{ch['title']}\"" if ch is not u else "")
              + ("  [optional in the book]" if c.optional(u) else "")
              + (f"  [status: {c.status(u['id'])}]" if c.status(u["id"]) != "todo" else "")]
-    opening = u is us[0] and ch is not u and (ch["start"] < u["start"] or u["mid_start"])
-    if opening:
-        start = ch["start"]
-    rng, extra = c.pages(start, u["end"])
-    lines.append(f"READ: {c.book['pdf']}")
-    lines.append(f"  pages: {rng}   ({extra})")
-    if opening:
-        lines.append(f"  first unit of the chapter: the range includes the chapter opening (from PDF page {ch['start']})")
-    elif u["mid_start"]:
-        lines.append(f"  the section begins partway down PDF page {u['start']}; what is above it belongs to the previous section")
-    if u["mid_end"]:
-        lines.append(f"  the section ends partway down PDF page {u['end']}; what follows belongs to the next section")
-    subs = c.subsections(u)
-    if subs:
-        lines.append("SUBSECTIONS: " + " · ".join(
-            f"{s['id']} {s['title']}{' *' if s['starred'] else ''} (PDF {s['start']})" for s in subs)
-            + ("   (* = optional in the book)" if any(s["starred"] for s in subs) else ""))
-    if is_scan(c.book["pdf"], start, u["end"]):
-        lines.append("SCANNED: these pages have no text layer, so the book's figures are not cropped for you. Before "
-                     "you write about a figure, find it on the page you Read and crop it: book.py figure <id> "
-                     "--pdf-page <n> --box TOP BOTTOM (points from the top), then Read the PNG to check it.")
-    lines.append(f"CITE AS: §{u['id']}, {c.cite(start, u['end'])}")
+    problems = c.mode() == "problems"
+    if problems:
+        problem = problem or c.next_problem(u)
+        lines += problem_lines(c, u, ch, problem)
+    else:
+        opening = u is us[0] and ch is not u and (ch["start"] < u["start"] or u["mid_start"])
+        if opening:
+            start = ch["start"]
+        rng, extra = c.pages(start, u["end"])
+        lines.append(f"READ: {c.book['pdf']}")
+        lines.append(f"  pages: {rng}   ({extra})")
+        if opening:
+            lines.append(f"  first unit of the chapter: the range includes the chapter opening (from PDF page {ch['start']})")
+        elif u["mid_start"]:
+            lines.append(f"  the section begins partway down PDF page {u['start']}; what is above it belongs to the previous section")
+        if u["mid_end"]:
+            lines.append(f"  the section ends partway down PDF page {u['end']}; what follows belongs to the next section")
+        subs = c.subsections(u)
+        if subs:
+            lines.append("SUBSECTIONS: " + " · ".join(
+                f"{s['id']} {s['title']}{' *' if s['starred'] else ''} (PDF {s['start']})" for s in subs)
+                + ("   (* = optional in the book)" if any(s["starred"] for s in subs) else ""))
+        if is_scan(c.book["pdf"], start, u["end"]):
+            lines.append(SCANNED)
+        lines.append(f"CITE AS: §{u['id']}, {c.cite(start, u['end'])}")
     note = c.note(ch["id"])
     if os.path.exists(note) and os.path.getsize(note):
         with open(note, encoding="utf-8") as f:
@@ -606,6 +777,10 @@ def describe_unit(c, u, heading="UNIT"):
         lines.append(f"NOTE: {rel(note)}  (exists, {n} lines — resume it)")
     else:
         lines.append(f"NOTE: {rel(note)}  (new — this chapter has no lesson yet)")
+    if problems and len(c.problems(u)) > 1:
+        lines.append(f"UNIT {u['id']} PROBLEMS: " + "  ".join(
+            ("→" if x is problem[1] else problem_mark(c, x)) + " " + pn for pn, x in c.problems(u))
+            + "   (✓ unaided · ~ with hints · ✗ not solved · · not yet)")
     chosen = {x["id"] for x in c.syllabus()}
     marks = []
     for x in us:
@@ -656,7 +831,10 @@ def cmd_new(a):
               "  2. Write the contents to a file under /tmp/learn-book/, one entry per line, tab-separated:\n"
               "       <level>TAB<title with its number, e.g. 2.3 Bayes' rule>TAB<printed page>\n"
               "     level 1 = chapter, 2 = section, 3 = subsection; write =N for a literal PDF page (front matter).\n"
-              f"  3. Run: book.py new \"{pdf}\" --toc <file> --offset <offset>" + (f" --name {a.name}" if a.name else ""))
+              "     A book that prints its solutions apart: add TAB<solution's printed page> to each problem, and a\n"
+              "     level-1 entry where the solutions begin.\n"
+              f"  3. Run: book.py new \"{pdf}\" --toc <file> --offset <offset>" + (f" --name {a.name}" if a.name else "")
+              + (" --problems" if a.problems else ""))
         sys.exit(3)
     save_json(os.path.join(cdir, ".course", "book.json"), book)
     state = load_json(os.path.join(cdir, ".course", "state.json"), None) or {
@@ -664,6 +842,8 @@ def cmd_new(a):
         "exercises": {}, "created": time.strftime("%Y-%m-%d")}
     if a.title:
         state["title"] = a.title
+    if a.problems:
+        state["mode"] = "problems"
     save_json(os.path.join(cdir, ".course", "state.json"), state)
     save_json(POINTER, {"course": cdir})
     c = Course(cdir)
@@ -684,6 +864,10 @@ def cmd_new(a):
               "book.py set offset <that PDF page - 1>")
     if book["generated_ids"]:
         print("IDS: the outline has no section numbers; ids below are positions in the outline, not the book's numbers")
+    if c.mode() == "problems":
+        n = sum(len(c.problems(u)) for u in c.units(appendices=True))
+        apart = sum(1 for e in c.entries if e.get("sol_start"))
+        print(f"MODE: problems — {n} problems" + (f"; {apart} have their solution printed apart" if apart else ""))
     chs = c.chapters(appendices=True)
     first_ch = chs[0]["start"] if chs else 1
     front = [e for e in c.entries if e["level"] <= 1 and e["kind"] == "other" and e["start"] < first_ch]
@@ -783,7 +967,8 @@ def cmd_toc(a):
     c = find_course(a.course)
     chosen = {u["id"] for u in c.syllabus()}
     print(f"{c.state.get('title') or c.slug} — " + progress_line(c))
-    print("marks: ✓ done · ⚠ shaky · – skipped · · to do · (blank) not in the syllabus; * optional in the book")
+    print("marks: ✓ done · ⚠ shaky · – skipped · · to do · (blank) not in the syllabus; * optional in the book"
+          + ("\nproblems: ✓ solved unaided · ~ solved with hints · ✗ not solved · · not attempted" if c.mode() == "problems" else ""))
     for ch in c.chapters(appendices=True):
         if a.chapter and ch["id"] != a.chapter:
             continue
@@ -798,6 +983,10 @@ def cmd_toc(a):
                 continue
             mark = MARK[c.status(u["id"])] if u["id"] in chosen else " "
             print(f"  {mark} {u['id']} {u['title']}{' *' if u['starred'] else ''}  ({c.cite(u['start'], u['end'])})")
+            ps = c.problems(u)
+            if c.mode() == "problems" and a.chapter and ps[0][1] is not u:
+                for n, x in ps:
+                    print(f"      {problem_mark(c, x)} {n} {x['title']}  ({c.cite(x['start'], x['end'])})")
         for e in c.exercise_sections(ch["id"]):
             if a.all or a.chapter:
                 print(f"    {e['id']} {e['title']}  ({c.cite(e['start'], e['end'])})")
@@ -821,6 +1010,9 @@ def cmd_next(a):
 def unit_for(c, id_):
     e = c.by_id.get(id_)
     if e is None:
+        hit = c.find_problem(id_)  # a problem's number, such as 2.2.5
+        if hit:
+            return hit[0]
         die(f"unknown section: {id_}   (see: book.py toc --all)")
     units = c.units(appendices=True)
     if e in units:
@@ -828,6 +1020,7 @@ def unit_for(c, id_):
     if e["kind"] in ("chapter", "appendix"):
         return c.units_of(e)[0]
     parent = next((u for u in units if e["id"].startswith(u["id"] + ".")), None)
+    parent = parent or next((u for u in units if any(x is e for x in c.descendants(u))), None)
     if parent:
         return parent
     die(f"{id_} is not a unit of study (part, exercises or front matter)")
@@ -835,20 +1028,22 @@ def unit_for(c, id_):
 
 def cmd_section(a):
     c = find_course(a.course)
-    print(describe_unit(c, unit_for(c, a.id)))
-
-
-def cmd_done(a):
-    c = find_course(a.course)
     u = unit_for(c, a.id)
-    if a.status == "todo":
+    hit = c.find_problem(a.id) if c.mode() == "problems" and a.id != u["id"] else None
+    print(describe_unit(c, u, problem=hit[1:] if hit else None))
+
+
+def record_unit(c, u, status):
+    if status == "todo":
         c.state["status"].pop(u["id"], None)
     else:
-        c.state["status"][u["id"]] = {"s": a.status, "at": time.strftime("%Y-%m-%d")}
+        c.state["status"][u["id"]] = {"s": status, "at": time.strftime("%Y-%m-%d")}
     if u["id"] not in (c.state.get("syllabus") or []):  # studied out of the syllabus: it is part of the course now
         c.state["syllabus"] = [x["id"] for x in c.units(appendices=True) if x["id"] in set(c.state.get("syllabus") or []) | {u["id"]}]
-    c.save()
-    print(f"🗒 {u['id']} {u['title']}: {a.status} — " + progress_line(c))
+
+
+def print_after_unit(c, u, status):
+    print(f"🗒 {u['id']} {u['title']}: {status} — " + progress_line(c))
     nxt = c.next_unit()
     exam = f"EXAM: /exam {u['chapter'] or u['id']} sets an exam on this chapter."
     if not nxt:
@@ -860,6 +1055,69 @@ def cmd_done(a):
         print(exam)
     else:
         print(describe_unit(c, nxt, "NEXT"))
+
+
+def cmd_done(a):
+    c = find_course(a.course)
+    u = unit_for(c, a.id)
+    record_unit(c, u, a.status)
+    c.save()
+    print_after_unit(c, u, a.status)
+
+
+def cmd_attempt(a):
+    c = find_course(a.course)
+    hit = c.find_problem(a.id)
+    if not hit:
+        die(f"unknown problem: {a.id}   (see: book.py toc <chapter>)")
+    u, n, e = hit
+    atts = c.state.setdefault("attempts", {})
+    r = atts.get(e["id"])
+    changing = a.hint or a.hints is not None or a.result
+    if r and changing and c.problem_state(e["id"]) == "complete":  # a new attempt at a problem done before
+        r.setdefault("history", []).append({k: r[k] for k in ("outcome", "hints", "transfer", "at") if k in r})
+        for k in ("outcome", "transfer"):
+            r.pop(k, None)
+        r["hints"] = 0
+    if r is None:
+        if not (changing or a.transfer):
+            print(f"PROBLEM {n} {e['title']}: not attempted yet")
+            return
+        r = atts[e["id"]] = {"hints": 0}
+    r.update({"n": n, "title": e["title"], "unit": u["id"],
+              "note": os.path.splitext(os.path.basename(c.note(u["chapter"] or u["id"])))[0]})
+    if a.hints is not None:
+        r["hints"] = a.hints
+    if a.hint:
+        r["hints"] = r.get("hints", 0) + 1
+    if a.result:
+        r["outcome"] = "unsolved" if a.result == "unsolved" else "hinted" if r.get("hints") else "solved"
+    if a.transfer:
+        r["transfer"] = a.transfer
+    if changing or a.transfer:
+        r["at"] = time.strftime("%Y-%m-%d")
+    st = c.problem_state(e["id"])
+    if st == "new":
+        print(f"PROBLEM {n} {e['title']}: not attempted yet")
+        return
+    if st == "open":
+        c.save()
+        print(f"🗒 {n} {e['title']}: {outcome_text(r)}")
+        return
+    done = all(c.problem_state(x["id"]) == "complete" for _, x in c.problems(u))
+    status = "shaky" if any(is_shaky(c.attempt(x["id"])) for _, x in c.problems(u)) else "done"
+    if st == "complete" and done:
+        record_unit(c, u, status)
+    c.save()
+    line = f"🗒 {n} {e['title']}: {outcome_text(r)}"
+    if st == "result":
+        print(line + " — record the transfer quiz with --transfer passed|missed when it is done")
+        return
+    print(line + f", transfer {r['transfer']}" + (" — shaky" if is_shaky(r) else ""))
+    if done:
+        print_after_unit(c, u, status)
+    else:
+        print(describe_unit(c, u, "NEXT"))
 
 
 def cmd_find(a):
@@ -1071,6 +1329,10 @@ def cmd_set(a):
         if value not in SOLUTIONS:
             die(f"solutions must be one of: {', '.join(SOLUTIONS)}")
         c.state["solutions"] = value
+    elif a.key == "mode":
+        if value not in MODES:
+            die(f"mode must be one of: {', '.join(MODES)}")
+        c.state["mode"] = value
     elif a.key == "offset":
         if not re.fullmatch(r"-?\d+", value):
             die("offset must be a whole number: (PDF page number of the page printed '1') - 1")
@@ -1089,6 +1351,11 @@ def cmd_status(a):
     if c.state.get("goal"):
         print(f"GOAL: {c.state['goal']}")
     print("PROGRESS: " + progress_line(c))
+    if c.mode() == "problems":
+        atts = [r for r in (c.state.get("attempts") or {}).values() if r.get("outcome")]
+        n = {o: sum(1 for r in atts if r["outcome"] == o) for o in PMARK}
+        print(f"MODE: problems — {len(atts)} attempted: {n['solved']} solved unaided, {n['hinted']} with hints, "
+              f"{n['unsolved']} not solved")
     shaky = [u["id"] for u in c.syllabus() if c.status(u["id"]) == "shaky"]
     if shaky:
         print(f"SHAKY: {', '.join(shaky)}")
@@ -1100,7 +1367,8 @@ def cmd_status(a):
         n = {s: sum(1 for r in ex.values() if r.get("status") == s) for s in EXERCISE_STATUS}
         print("EXERCISES: " + ", ".join(f"{v} {k}" for k, v in n.items() if v)
               + f"; {sum(1 for r in ex.values() if r.get('assessed'))} assessed")
-    print(f"FULL SOLUTIONS POLICY: {c.state.get('solutions', 'after-attempt')}")
+    if c.mode() != "problems":
+        print(f"FULL SOLUTIONS POLICY: {c.state.get('solutions', 'after-attempt')}")
 
 
 def course_dirs():
@@ -1148,6 +1416,7 @@ def main():
     s.add_argument("--dir")
     s.add_argument("--toc")
     s.add_argument("--offset", type=int)
+    s.add_argument("--problems", action="store_true", help="a problem book: each problem is attempted first")
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_new)
 
@@ -1198,13 +1467,22 @@ def main():
     s.add_argument("chapter", nargs="?")
     s.set_defaults(fn=cmd_exercises)
 
+    s = sub.add_parser("attempt", parents=[common])
+    s.add_argument("id")
+    s.add_argument("--hint", action="store_true", help="one more hint given")
+    s.add_argument("--hints", type=int, help="set the number of hints")
+    s.add_argument("--result", choices=("solved", "unsolved"))
+    s.add_argument("--transfer", choices=("passed", "missed"),
+                   help="missed: the transfer quiz was missed more than once, or is still failing")
+    s.set_defaults(fn=cmd_attempt)
+
     s = sub.add_parser("assess", parents=[common])
     s.add_argument("ids", nargs="+")
     s.add_argument("--clear", action="store_true")
     s.set_defaults(fn=cmd_assess)
 
     s = sub.add_parser("set", parents=[common])
-    s.add_argument("key", choices=("title", "goal", "solutions", "offset"))
+    s.add_argument("key", choices=("title", "goal", "solutions", "offset", "mode"))
     s.add_argument("value", nargs="+")
     s.set_defaults(fn=cmd_set)
 
