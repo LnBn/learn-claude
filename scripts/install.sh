@@ -46,4 +46,8 @@ json.dump(d, open(p, "w"), indent=2)
 PY
   echo "Installed and enabled the Obsidian CSS snippet learn-callouts (restart Obsidian if styles do not show)."
 fi
+if [ ! -e "$PROJECT_DIR/Notation.md" ]; then
+  cp "$CLAUDE_DIR/obsidian/Notation.md" "$PROJECT_DIR/Notation.md"
+  echo "Wrote $PROJECT_DIR/Notation.md (the notation sheet every course follows)."
+fi
 echo "Done."
