@@ -1,9 +1,9 @@
 ---
 name: course
-description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course list` and `/course use <name>` switch between courses; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>` manage one.
-argument-hint: new <book.pdf> [name] | next | study <section> | list | use <name> | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request>
+description: Follow a textbook (PDF) as a course. `/course new <book.pdf>` maps the book and sets the syllabus; `/course next` teaches the next section from the book's own pages; `/course study <section>` teaches a given one; `/course list` and `/course use <name>` switch between courses and programmes; `/course programme ...` builds a programme over several books; `/course status`, `/course toc [chapter]`, `/course select <spec>`, `/course assess <exercise>...`, `/course solutions <policy>` manage one.
+argument-hint: new <book.pdf> [name] | next | study <section> | list | use <name> | programme <new|module|move|remove|goal> ... | status | toc [chapter] | select <spec> | assess <exercise>... | solutions <never|after-attempt|on-request>
 disable-model-invocation: true
-allowed-tools: Bash(python3 .claude/hooks/book.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
+allowed-tools: Bash(python3 .claude/hooks/book.py *), Bash(python3 .claude/hooks/programme.py *), Bash(python3 .claude/hooks/md_log.py *), Bash(python3 .claude/hooks/lesson.py *)
 ---
 
 Arguments: `$ARGUMENTS`
@@ -42,8 +42,9 @@ Setup is not lesson content, so nothing of it may reach a note.
 
 1. Ask the script what to teach:
    ```
-   python3 .claude/hooks/book.py next              # or: book.py section <section>
+   python3 .claude/hooks/programme.py next         # or: programme.py section <section>
    ```
+   With no programme current, this is exactly `book.py next` (or `book.py section`). In a programme, see **Programmes** below.
 2. Link the chapter note named on the `NOTE` line, from this point on (no backfill):
    ```
    python3 .claude/hooks/md_log.py link "<note>" --session ${CLAUDE_SESSION_ID} --from-now
@@ -60,15 +61,15 @@ Setup is not lesson content, so nothing of it may reach a note.
 Several courses can exist side by side; each keeps its own syllabus, progress, notes and checkpoints.
 
 ```
-python3 .claude/hooks/book.py list            # every course, the current one marked
-python3 .claude/hooks/book.py use <name>      # make <name> the current course
+python3 .claude/hooks/programme.py list       # every programme and course, the current one marked
+python3 .claude/hooks/programme.py use <name> # make <name> the current course or programme
 ```
 
 For `list`, show the output. For `use`, reply with only the `🗒` line and the progress line under it. Nothing else changes: the next `/course next` continues that course from its own checkpoint. If a lesson of another course is open in this session and has not been paused, save its checkpoint first (as `/lesson pause` does).
 
 ## `status`, `toc [chapter]`
 
-Run `book.py status` or `book.py toc [chapter]` and report in a few lines. Do not link, probe or teach.
+Run `programme.py status` or `book.py toc [chapter]` and report in a few lines. Do not link, probe or teach.
 
 ## `select <spec>`, `assess <exercise>...`, `solutions <policy>`
 
@@ -79,3 +80,35 @@ python3 .claude/hooks/book.py select <spec> [--add | --remove]
 python3 .claude/hooks/book.py assess <exercise>... [--clear]
 python3 .claude/hooks/book.py set solutions <never|after-attempt|on-request>
 ```
+
+## Programmes
+
+A programme is one course made of units from several book courses, grouped into topic modules. Each book keeps its page map, figures, exercises, equation numbers, chapter notes and progress. The programme adds the order and the modules. Its note, `courses/<name>/<name>.md`, holds the index (generated) and, below it, one `## Module n — <title>` section per module with its overview.
+
+`programme.py` acts like `book.py` when no programme is current, which is why `next`, `study`, `status`, `list` and `use` above always call it. While a programme is current, `next` and `study` make the unit's book the current course, so every `book.py` command, `/exercise`, `/exam` and the figures act on that book. Do not pass `--course`.
+
+### `programme <args>`
+
+Setup is not lesson content. Run the matching command (`goal` is `set goal`) and reply with only the `🗒` line it prints:
+
+```
+python3 .claude/hooks/programme.py new <name> --title "<title>" [--goal "<goal>"]
+python3 .claude/hooks/programme.py module "<title>" <course>:<spec> [<course>:<spec> ...] [--at <n>]
+python3 .claude/hooks/programme.py move <n> <to>
+python3 .claude/hooks/programme.py remove <n>
+python3 .claude/hooks/programme.py set goal "<goal>"
+```
+
+A spec is as in `select`: `bh:7.1-7.5 strang:3.3`. A spec without a prefix belongs to the book named before it. Units are taught in the order given. `module` with the title of an existing module replaces its units. Every change also sets each book's syllabus to its units in the programme, so do not use `select` while a programme is current. If the programme has no goal, ask for it once, as in step 5 of `new` (header `Programme`), and record it with `set goal`.
+
+### `next` and `study` in a programme
+
+`programme.py next` prints `PROGRAMME:` and `COURSE:` lines before the unit, and `study` takes `<course>:<section>` (`/course study bh:7.3`).
+
+- **`MODULE START`** (the module has no overview yet): link the programme note on the `PROGRAMME NOTE` line instead of the chapter note, with `--from-now --no-header`. Your reply is the module overview, as **Teaching from a book** in the teach skill describes, under the `HEADING` line and `### Overview`, and nothing else. When the learner says ready, link the chapter note on the `NOTE` line with `--from-now`, Read the unit's pages, and go on as step 3 above.
+- **`PROGRAMME CHAPTER START`** (the chapter note is new): the note opens with the short overview the teach skill describes, not the chapter-sized one.
+- Otherwise the steps above apply unchanged.
+
+The output ends with a `RECORD` line: a unit is recorded with `programme.py done <course>:<unit>`, and the next unit comes from that command's output.
+
+To work on an exercise or an exam of another book in the programme, `/course use <book>` first. The programme stays current, and the next `/course next` follows it again.

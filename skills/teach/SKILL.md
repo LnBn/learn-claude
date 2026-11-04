@@ -285,6 +285,21 @@ When the session was started with `/course next` or `/course study`, the lesson 
 
 **Help with the book's exercises** follows the `exercise` skill: hints in steps, never the whole solution unprompted.
 
+### In a programme
+
+A programme takes units from several books and groups them into topic modules (the `PROGRAMME:` line of `programme.py next`). Each unit is still taught from its own book, as above: its pages, its notation, its equation numbers, its chapter note. What changes is the order, the overviews and how progress is recorded.
+
+- *The goal* is the `PROGRAMME GOAL` line.
+- *The module overview — its own reply, at a `MODULE START`.* It goes in the programme note, under the heading on the `HEADING` line and then `### Overview`. From the `MODULE UNITS` list (Read the opening page of a unit when its title does not say enough), write two to four paragraphs: what the module covers and why it comes at this point of the programme; its units in order, each with its book and a clause on what it adds; why this order, and how the books connect (for example, Strang §3.3 projections give the geometry that Wasserman §13.2 uses for least squares); what the learner will be able to do at the end. Then the module's map: a small ```mermaid``` DAG whose nodes are its units, labelled with book and section (`strang §3.3`), with what they rest on as roots. End with the same choice as a chapter overview: `Say **ready** to start with <book> §<first unit>, or **probe** to first answer a few graded questions on <the prerequisites, named>.` A probe runs as for a chapter, and its quizzes and `### Plan` stay in the programme note.
+- *A chapter first reached through a programme* (`PROGRAMME CHAPTER START`) gets no chapter-sized overview. Its note opens with `### Overview` and two or three sentences: what this chapter of the book is about and which of its units the programme uses here, with the link printed on that line to the module overview. Then the first node of the unit follows in the same reply.
+- *Record progress with `programme.py done <course>:<unit>`*, not `book.py done`, with `--status shaky` as above. It records the unit in its own book. **The next unit comes from its output, never from `book.py`'s order.** The output is one of:
+  - the next unit in full (`NEXT:`): it is in the same note, so go on to it in this session;
+  - `NEXT IN ANOTHER NOTE`: save a checkpoint as for `/lesson pause`, and tell the learner that `/course next` starts it;
+  - `MODULE … COMPLETE`, then the unit that opens the next module: close the module in two or three sentences on what it built across the books, save a checkpoint, and tell the learner that `/course next` opens the next module with its overview;
+  - `PROGRAMME COMPLETE`.
+
+  A `CHAPTER … COMPLETE` line with an `EXAM:` line may come first: end the reply with one sentence saying that `/exam <chapter>` sets an exam on that chapter of that book.
+
 ## Formatting — math renders as LaTeX
 
 Everything written in a session is rendered to the learner through Obsidian, which renders LaTeX natively. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:
