@@ -155,8 +155,40 @@ class Attempts(unittest.TestCase):
     def finish(self, n, result="solved", hints=0, transfer="passed"):
         for _ in range(hints):
             self.book("attempt", n, "--hint")
-        self.book("attempt", n, "--result", result)
-        return self.book("attempt", n, "--transfer", transfer)
+        self.book("attempt", n, "--result", result, *(["--miss", "recall"] if result == "unsolved" else []))
+        return self.book("attempt", n, "--transfer", transfer, *(["--miss", "method"] if transfer == "missed" else []))
+
+    def test_hint_levels(self):
+        self.assertIn("hints up to level 1 so far", self.book("attempt", "2.2.1", "--hint", "1"))
+        self.assertIn("hints up to level 2 so far", self.book("attempt", "2.2.1", "--hint", "2"))
+        self.book("attempt", "2.2.1", "--hint", "0")
+        out = self.book("attempt", "2.2.1", "--result", "solved")
+        self.assertIn("solved with hints (up to level 2)", out)
+        self.assertNotIn("shaky", self.book("attempt", "2.2.1", "--transfer", "passed"))
+        r = state(self.cdir)["attempts"]["2:river-crossing"]
+        self.assertEqual((r["outcome"], r["hints"], r["level"]), ("hinted", 3, 2))
+        self.book("attempt", "2.2.2", "--hint", "3")
+        self.book("attempt", "2.2.2", "--result", "solved")
+        self.assertIn("— shaky", self.book("attempt", "2.2.2", "--transfer", "passed"))
+        r = run(self.vault, "book.py", "attempt", "2.2.3a", "--hint", "6")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--hint takes the hint's level, 0-5", r.stderr)
+
+    def test_kind_of_miss(self):
+        r = run(self.vault, "book.py", "attempt", "2.2.1", "--result", "unsolved")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("a miss needs its kind: --miss recall|method|execution|careless|misconception", r.stderr)
+        r = run(self.vault, "book.py", "attempt", "2.2.1", "--result", "solved", "--miss", "method")
+        self.assertIn("--miss goes with --result unsolved or --transfer missed", r.stderr)
+        self.book("attempt", "2.2.1", "--hint", "4")
+        self.book("attempt", "2.2.1", "--result", "unsolved", "--miss", "method")
+        self.book("attempt", "2.2.1", "--transfer", "missed", "--miss", "execution")
+        r = state(self.cdir)["attempts"]["2:river-crossing"]
+        self.assertEqual((r["miss"], r["transfer_miss"]), ("method", "execution"))
+        self.book("attempt", "2.2.1", "--hint", "1")  # a new attempt: the old one, its level and kinds go to history
+        r = state(self.cdir)["attempts"]["2:river-crossing"]
+        self.assertEqual((r["history"][0]["level"], r["history"][0]["miss"], r["level"]), (4, "method", 1))
+        self.assertNotIn("miss", r)
 
     def test_hints_are_counted_and_the_outcome_follows(self):
         self.assertIn("1 hint so far", self.book("attempt", "2.2.1", "--hint"))
@@ -220,7 +252,8 @@ class Misses(unittest.TestCase):
         (self.cdir / "gb-ch02.md").write_text(NOTE, encoding="utf-8")
         (self.vault / "techniques").mkdir()
         (self.vault / "techniques" / "Information counting.md").write_text("# Information counting\n")
-        for args in (["--hint"], ["--hint"], ["--result", "solved"], ["--transfer", "passed"]):
+        for args in (["--hint", "1"], ["--hint", "3"], ["--result", "unsolved", "--miss", "method"],
+                     ["--transfer", "passed"]):
             run(self.vault, "book.py", "attempt", "2.2.2", *args)
         for args in (["--result", "solved"], ["--transfer", "passed"]):
             run(self.vault, "book.py", "attempt", "2.2.1", *args)
@@ -235,13 +268,14 @@ class Misses(unittest.TestCase):
         self.assertEqual(c["source"], "gb-ch02#2.2.2 Defective ball")
         self.assertEqual(c["techniques"], ["Information counting"])
         self.assertTrue(c["prompt"].startswith("You have 12 balls"))
+        self.assertEqual(c["miss"], "method")
         self.assertIsInstance(out, str)
 
     def test_technique_record_counts_the_attempt(self):
         run(self.vault, "technique.py", "sync")
         note = (self.vault / "techniques" / "Information counting.md").read_text(encoding="utf-8")
         self.assertIn("**Record:** 0 ✓ · 1 ✗ — 1 problem", note)
-        self.assertIn("[[gb-ch02#2.2.2 Defective ball|§2.2.2 Defective ball]] (gb) ✗", note)
+        self.assertIn("[[gb-ch02#2.2.2 Defective ball|§2.2.2 Defective ball]] (gb) ✗ — method miss", note)
 
 
 if __name__ == "__main__":

@@ -251,6 +251,17 @@ class RunningRound(InterviewBase):
         self.assertEqual([h["kind"] for h in self.state()["problems"][0]["hints"]],
                          ["nudge", "error", "nudge", "nudge", "nudge"])
 
+    def test_hint_levels(self):
+        self.ready_round(2)
+        self.iv("start", "--session", "s1")
+        self.iv("hint", "--level", "1")
+        self.iv("hint", "--error", "--level", "0")
+        self.iv("hint", "--level", "3")
+        self.assertNotEqual(self.iv("hint", "--level", "6").returncode, 0)
+        self.assertEqual([h.get("level") for h in self.state()["problems"][0]["hints"]], [1, 0, 3])
+        self.iv("answer", "21")
+        self.assertIn("CLOSED: Problem 1 — hinted (0:00, 3 hints, up to level 3)", self.iv("next").stdout)
+
     def test_answers_and_followup(self):
         self.ready_round(2)
         self.iv("start", "--session", "s1")

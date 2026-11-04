@@ -9,10 +9,14 @@ spec:   {"question", "details", "options": [{"index","label","description"}],
          "correctIndices": [..], "explanation": str}   # revealed only after answering
 typed:  {"mode": "typed", "question", "details", "figure", "explanation", "dontKnow",
          "answer", "variables", "exact", "wrongAnswers", "answerDisplay"}   # graded with answer_check.py
-result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str}
-        or, typed, {"action":"accept","typed":str,"dontKnow":bool,"note":str}
+result: {"action":"accept","answers":[indices],"dontKnow":bool,"note":str,"confidence":0-100}
+        or, typed, {"action":"accept","typed":str,"dontKnow":bool,"note":str,"confidence":0-100}
+        ("confidence" is absent on "I don't know", which carries none)
         or {"action":"ask","question":str}     # learner wants an answer BEFORE choosing
         or {"action":"cancel"}
+
+After an answer (not "I don't know"), one screen asks how sure the learner is: keys 1-5 give 20, 40, 60, 80
+or 100 %; Esc goes back to the question with the answer kept.
 
 Keys: ↑/↓ or j/k move · 1-9 jump · Space toggle (multi) · Enter submit
       Tab edit note · ? ask the teacher first · f view the figure · PgUp/PgDn scroll · Esc cancel
@@ -111,6 +115,60 @@ def open_figure(path):
         pass
 
 
+CONFIDENCE = [(20, "a guess"), (40, "doubtful"), (60, "more likely than not"), (80, "fairly sure"), (100, "certain")]
+
+
+def confidence_key(ch):
+    """What a key on the confidence screen means: a percentage (keys 1-5), "back" (Esc), or None."""
+    if isinstance(ch, int):
+        if ch == 27:
+            return "back"
+        ch = chr(ch) if 0 <= ch < 256 else ""
+    if ch == "\x1b":
+        return "back"
+    if len(ch) == 1 and "1" <= ch <= "5":
+        return CONFIDENCE[int(ch) - 1][0]
+    return None
+
+
+def confidence_rows(answer, chance=None):
+    """The confidence screen's lines, (text, kind), kind one of "title", "dim", "": the learner's answer, the
+    scale, and for a single-choice question the chance of a blind guess."""
+    rows = [("HOW SURE ARE YOU?", "title"), ("", ""), (f"Your answer: {answer}", ""), ("", "")]
+    rows += [(f"  {k}   {pct:>3}%   {label}", "") for k, (pct, label) in enumerate(CONFIDENCE, 1)]
+    if chance:
+        rows += [("", ""), (f"A blind guess is right {chance}% of the time here.", "dim")]
+    rows += [("", ""), ("1–5 choose · Esc back to the question", "dim")]
+    return rows
+
+
+def ask_confidence(stdscr, answer, read, chance=None):
+    """Show the confidence screen until a choice: the percentage, or None when the learner goes back (Esc)."""
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        width = max(20, w - 4)
+        lines = []
+        for text, kind in confidence_rows(answer, chance):
+            attr = curses.A_BOLD | curses.color_pair(1) if kind == "title" else curses.A_DIM if kind == "dim" else 0
+            for k, ln in enumerate(wrap_keep_bold(text, width)):
+                lines.append((ln if k == 0 else "  " + ln, attr))
+        if len(lines) > h:  # a short popup: drop the blank lines before cutting anything
+            lines = [x for x in lines if x[0]]
+        for r, (text, attr) in enumerate(lines[:h]):
+            addline(stdscr, r, 2, text, attr, w - 3)
+        stdscr.refresh()
+        got = confidence_key(read())
+        if got == "back":
+            return None
+        if got is not None:
+            return got
+
+
 def typed_status(text, spec):
     """(whether Enter may submit, the line shown under the answer field)."""
     if not text.strip():
@@ -185,6 +243,8 @@ def main_typed(stdscr, spec, out_path):
                         rows.append(("Common mistake", curses.A_BOLD | curses.color_pair(2)))
                         for ln in wrap_keep_bold(render_math(wrong[matched].get("why", "")), width):
                             rows.append((ln, 0))
+            if result.get("confidence") is not None:
+                rows.append((f"You were {result['confidence']}% sure.", curses.A_DIM))
             if explanation:
                 rows.append(("", 0))
                 for para in explanation.split("\n"):
@@ -317,7 +377,11 @@ def main_typed(stdscr, spec, out_path):
                 finish({"action": "accept", "typed": "", "dontKnow": True, "note": note.strip()})
                 return
             if ok:
-                finish({"action": "accept", "typed": text.strip(), "dontKnow": False, "note": note.strip()})
+                sure = ask_confidence(stdscr, status[len("reads as: "):], stdscr.get_wch)
+                if sure is None:
+                    continue
+                finish({"action": "accept", "typed": text.strip(), "dontKnow": False, "note": note.strip(),
+                        "confidence": sure})
                 return
         elif key == curses.KEY_LEFT:
             pos = max(0, pos - 1)
@@ -390,6 +454,8 @@ def main(stdscr, spec, out_path):
             else:
                 rows.append(("✗ Incorrect.", curses.A_BOLD | curses.color_pair(4)))
                 rows.append((f"Correct answer: {correct_str}", 0))
+            if result.get("confidence") is not None:
+                rows.append((f"You were {result['confidence']}% sure.", curses.A_DIM))
             rows.append(("", 0))
             for i, (idx, label, _) in enumerate(entries):
                 if idx == 0:
@@ -554,10 +620,16 @@ def main(stdscr, spec, out_path):
             if multi:
                 if not selected:
                     selected = {cursor}
-                finish({"action": "accept", "answers": sorted(entries[i][0] for i in selected),
-                        "dontKnow": False, "note": note.strip()})
-                return
-            finish({"action": "accept", "answers": [entries[cursor][0]], "dontKnow": False, "note": note.strip()})
+                picked = sorted(entries[i][0] for i in selected)
+            else:
+                picked = [entries[cursor][0]]
+            by_index = {idx: label for idx, label, _ in entries}
+            shown = ", ".join(f"{i}. {plain(by_index[i])}" for i in picked)
+            chance = None if multi else round(100 / (len(entries) - 1))
+            sure = ask_confidence(stdscr, shown, stdscr.getch, chance)
+            if sure is None:
+                continue
+            finish({"action": "accept", "answers": picked, "dontKnow": False, "note": note.strip(), "confidence": sure})
             return
 
 

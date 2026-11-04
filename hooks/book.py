@@ -19,12 +19,13 @@ or an exercise. Nothing of the book reaches the context except the pages the tea
                                      where the book's Equation 2.51 / Exercise 2.3 / printed page 45 is
     book.py figure <id> [--box TOP BOTTOM | --page] [--force]
                                      crop the book's Figure <id> into viz/<slug>-fig-<id>.png
-    book.py exercise <id> [--hint N] [--status open|attempted|solved|quizzed|shown]
+    book.py exercise <id> [--hint LEVEL] [--status open|attempted|solved|quizzed|shown]
                                      locate an exercise, show and update its record
     book.py exercises [CHAPTER]      the exercises of a chapter with their records
     book.py assess <id>... [--clear] mark exercises as assessed coursework (never quizzed, never solved)
-    book.py attempt <problem> [--hint] [--hints N] [--result solved|unsolved] [--transfer passed|missed]
-                                     a problem course: count hints, record the attempt and the transfer quiz
+    book.py attempt <problem> [--hint LEVEL] [--result solved|unsolved] [--transfer passed|missed] [--miss KIND]
+                                     a problem course: record a hint and its level (0-5), the attempt, the transfer
+                                     quiz, and the kind of a miss (recall|method|execution|careless|misconception)
     book.py set <title|goal|solutions|offset|mode> <value>
     book.py status                   progress in a few lines
     book.py list                     the courses under ./courses, the current one marked
@@ -65,6 +66,8 @@ SOLUTIONS = ("never", "after-attempt", "on-request")
 MODES = ("textbook", "problems")
 UNIT_STATUS = ("todo", "done", "shaky", "skipped")
 EXERCISE_STATUS = ("open", "attempted", "solved", "quizzed", "shown")
+MISS_KINDS = ("recall", "method", "execution", "careless", "misconception")
+SHAKY_LEVEL = 3  # a problem that needed a hint at this level or above is shaky
 MARK = {"todo": "·", "done": "✓", "shaky": "⚠", "skipped": "–"}
 EXERCISES_RE = re.compile(r"^(exercises?|problems?|practice problems|review (questions|exercises|problems)|"
                           r"exercises and \w+)\s*$", re.I)
@@ -578,7 +581,7 @@ def render_index(c):
         out += ["", "## Exercises", "", "| Exercise | Status | Hints used | Assessed |", "|---|---|---|---|"]
         for eid in sorted(ex, key=natural):
             r = ex[eid]
-            out.append(f"| {eid} | {r.get('status', 'open')} | {r.get('hints', 0)} | {'yes' if r.get('assessed') else ''} |")
+            out.append(f"| {eid} | {r.get('status', 'open')} | {exercise_hints(r)} | {'yes' if r.get('assessed') else ''} |")
     exams = st.get("exams") or []
     if exams:
         out += ["", "## Exams", "", "| Chapter | Attempt | Set | Status | Score | Paper |", "|---|---|---|---|---|---|"]
@@ -669,16 +672,34 @@ SCANNED = ("SCANNED: these pages have no text layer, so the book's figures are n
 
 
 def is_shaky(r):
-    """Not solved, two or more hints, or a transfer quiz missed more than once."""
-    return bool(r) and (r.get("outcome") == "unsolved" or r.get("hints", 0) >= 2 or r.get("transfer") == "missed")
+    """Not solved, a hint at level 3 or above, or a transfer quiz missed more than once. A record from before hint
+    levels holds only a count of hints: there, two or more hints make it shaky."""
+    if not r:
+        return False
+    if r.get("outcome") == "unsolved" or r.get("transfer") == "missed":
+        return True
+    if isinstance(r.get("level"), int):
+        return r["level"] >= SHAKY_LEVEL
+    return r.get("hints", 0) >= 2
 
 
 def outcome_text(r):
     r = r or {}
     h = r.get("hints", 0)
+    if isinstance(r.get("level"), int):
+        return {"solved": "solved unaided", "hinted": f"solved with hints (up to level {r['level']})",
+                "unsolved": f"not solved (hints up to level {r['level']})"}.get(
+                    r.get("outcome"), f"hints up to level {r['level']} so far")
     hints = f"{h} hint{'' if h == 1 else 's'}"
     return {"solved": "solved unaided", "hinted": f"solved with {hints}",
             "unsolved": "not solved" + (f" ({hints})" if h else "")}.get(r.get("outcome"), f"{hints} so far")
+
+
+def exercise_hints(rec):
+    """The hints an exercise record holds: levels 0-5, or the rung of the old five-rung ladder."""
+    if isinstance(rec.get("level"), int):
+        return f"up to level {rec['level']}"
+    return f"up to rung {rec['hints']} (old ladder)" if rec.get("hints") else "none"
 
 
 def problem_mark(c, e):
@@ -1085,10 +1106,17 @@ def cmd_attempt(a):
     u, n, e = hit
     atts = c.state.setdefault("attempts", {})
     r = atts.get(e["id"])
-    changing = a.hint or a.hints is not None or a.result
+    if a.hint not in (None, -1) and not 0 <= a.hint <= 5:
+        die("--hint takes the hint's level, 0-5")
+    if a.miss and a.result != "unsolved" and a.transfer != "missed":
+        die("--miss goes with --result unsolved or --transfer missed")
+    if (a.result == "unsolved" or a.transfer == "missed") and not a.miss:
+        die(f"a miss needs its kind: --miss {'|'.join(MISS_KINDS)}")
+    changing = a.hint is not None or a.hints is not None or a.result
     if r and changing and c.problem_state(e["id"]) == "complete":  # a new attempt at a problem done before
-        r.setdefault("history", []).append({k: r[k] for k in ("outcome", "hints", "transfer", "at") if k in r})
-        for k in ("outcome", "transfer"):
+        r.setdefault("history", []).append({k: r[k] for k in ("outcome", "hints", "level", "miss", "transfer",
+                                                              "transfer_miss", "at") if k in r})
+        for k in ("outcome", "transfer", "level", "miss", "transfer_miss"):
             r.pop(k, None)
         r["hints"] = 0
     if r is None:
@@ -1100,12 +1128,18 @@ def cmd_attempt(a):
               "note": os.path.splitext(os.path.basename(c.note(u["chapter"] or u["id"])))[0]})
     if a.hints is not None:
         r["hints"] = a.hints
-    if a.hint:
+    if a.hint is not None:
         r["hints"] = r.get("hints", 0) + 1
+        if a.hint != -1:  # -1: a bare --hint, its level unknown
+            r["level"] = max(r.get("level", a.hint), a.hint)
     if a.result:
         r["outcome"] = "unsolved" if a.result == "unsolved" else "hinted" if r.get("hints") else "solved"
+        if a.result == "unsolved":
+            r["miss"] = a.miss
     if a.transfer:
         r["transfer"] = a.transfer
+        if a.transfer == "missed":
+            r["transfer_miss"] = a.miss
     if changing or a.transfer:
         r["at"] = time.strftime("%Y-%m-%d")
     st = c.problem_state(e["id"])
@@ -1271,7 +1305,7 @@ def cmd_exercise(a):
         die(f"exercise {a.id} not found; see: book.py exercises {ch_id}", 1)
     rec = exercise_record(c, a.id)
     if a.hint is not None:
-        rec["hints"] = max(rec.get("hints", 0), a.hint)
+        rec["level"] = max(rec.get("level", a.hint), a.hint)
         if rec["status"] == "open":
             rec["status"] = "attempted"
     if a.status:
@@ -1279,7 +1313,7 @@ def cmd_exercise(a):
     if changed:
         rec["updated"] = time.strftime("%Y-%m-%d")
         c.save()
-        print(f"🗒 exercise {a.id}: {rec['status']}, hints used up to level {rec.get('hints', 0)}")
+        print(f"🗒 exercise {a.id}: {rec['status']}, hints {exercise_hints(rec)}")
         return
     if not known:
         del c.state["exercises"][a.id]  # looking is not attempting
@@ -1295,7 +1329,7 @@ def cmd_exercise(a):
         print(f"  pages: {c.pages(page, end)[0]}   ({c.cite(page, end)}; found by {how}; the exercise starts on PDF page {page})")
     else:
         print("READ: location unknown — find it from: book.py toc " + ch_id)
-    print(f"RECORD: status {rec['status']} · hints used up to level {rec.get('hints', 0)}"
+    print(f"RECORD: status {rec['status']} · hints {exercise_hints(rec)}"
           + (" · ASSESSED coursework: hints only, no full solution, never a quiz" if rec.get("assessed") else ""))
     print(f"FULL SOLUTIONS POLICY: {c.state.get('solutions', 'after-attempt')}")
     if ch_id in c.by_id:
@@ -1320,7 +1354,7 @@ def cmd_exercises(a):
         if a.chapter:
             for eid, page in listing:
                 r = recs.get(eid) or {}
-                extra = " · ".join(x for x in (r.get("status", ""), f"hints {r['hints']}" if r.get("hints") else "",
+                extra = " · ".join(x for x in (r.get("status", ""), f"hints {exercise_hints(r)}" if exercise_hints(r) != "none" else "",
                                                "ASSESSED" if r.get("assessed") else "") if x)
                 print(f"  {eid}  PDF page {page}" + (f"  [{extra}]" if extra else ""))
 
@@ -1471,7 +1505,7 @@ def main():
 
     s = sub.add_parser("exercise", parents=[common])
     s.add_argument("id")
-    s.add_argument("--hint", type=int, choices=range(1, 6))
+    s.add_argument("--hint", type=int, choices=range(6), metavar="LEVEL", help="the hint's level, 0-5")
     s.add_argument("--status", choices=EXERCISE_STATUS)
     s.set_defaults(fn=cmd_exercise)
 
@@ -1481,8 +1515,10 @@ def main():
 
     s = sub.add_parser("attempt", parents=[common])
     s.add_argument("id")
-    s.add_argument("--hint", action="store_true", help="one more hint given")
+    s.add_argument("--hint", nargs="?", const=-1, type=int, metavar="LEVEL",
+                   help="one more hint given, at this level (0-5)")
     s.add_argument("--hints", type=int, help="set the number of hints")
+    s.add_argument("--miss", choices=MISS_KINDS, help="the kind of miss, with --result unsolved or --transfer missed")
     s.add_argument("--result", choices=("solved", "unsolved"))
     s.add_argument("--transfer", choices=("passed", "missed"),
                    help="missed: the transfer quiz was missed more than once, or is still failing")

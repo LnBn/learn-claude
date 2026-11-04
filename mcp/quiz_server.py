@@ -64,6 +64,8 @@ TOOL = {
         "they've got it. Two modes. OPTIONS: single-select or multi-select, plus an automatic 'I don't know' choice so "
         "the user can signal a genuine gap instead of guessing — never add your own opt-out option. An optional "
         "note field lets the user attach free text to ANY answer; it reaches you only when non-empty. "
+        "After answering (not on 'I don't know') the user says how sure they are, 20-100%; it comes back as a "
+        "Confidence line: read it against the verdict (teach skill, Reading confidence). "
         "correctAnswer is REQUIRED and is the option `value`, not a position. explanation is REQUIRED. "
         "Options are shuffled before display by default. Make every distractor a specific, believable mistake "
         "(so WHICH wrong answer they pick is diagnostic), keep options even in length/specificity/format so the "
@@ -407,6 +409,32 @@ def not_answered(ui, record, pending, tool_use_id, displayed):
     return None
 
 
+CONFIDENCE_LABELS = {20: "20% — a guess", 40: "40% — doubtful", 60: "60% — more likely than not",
+                     80: "80% — fairly sure", 100: "100% — certain"}
+
+
+def confidence_of(ui, dont_know):
+    """The learner's stated confidence, 0-100, or None ("I don't know", the fallback form left blank, a bad value)."""
+    if dont_know:
+        return None
+    c = ui.get("confidence")
+    if isinstance(c, str):
+        c = next((k for k, v in CONFIDENCE_LABELS.items() if v == c), None)
+    if isinstance(c, bool) or not isinstance(c, (int, float)) or not 0 <= c <= 100:
+        return None
+    return int(round(c))
+
+
+def confidence_line(confidence, chance=None):
+    """The tool result's Confidence line, or "" when there is none."""
+    if confidence is None:
+        return ""
+    line = f"\nConfidence: {confidence}%"
+    if chance and confidence <= chance:
+        line += f" (at or below the {chance}% chance of a blind guess: they distrust their pick)"
+    return line
+
+
 def feedback_tail(note, seen_feedback):
     text = ""
     if note:
@@ -485,7 +513,10 @@ def run_quiz(args, tool_use_id, progress_token=None):
     dont_know = bool(ui.get("dontKnow")) and not picked
     note = str(ui.get("note") or "").strip()
     correct = (not dont_know) and sorted(picked) == correct_indices
+    confidence = confidence_of(ui, dont_know)
     record.update({"answers": picked, "correct": correct, "dontKnow": dont_know, "note": note})
+    if confidence is not None:
+        record["confidence"] = confidence
 
     replace_log(pending, quiz_block.render(record))
     mark_logged(tool_use_id)
@@ -497,6 +528,7 @@ def run_quiz(args, tool_use_id, progress_token=None):
     else:
         sel = ", ".join(f"{i}. {by_index[i]}" for i in picked) or "(nothing)"
         text = f"User answered {'correctly' if correct else 'incorrectly'}.\nSelected: {sel}\nCorrect: {correct_str}"
+        text += confidence_line(confidence, None if multi else round(100 / len(displayed)))
     text += f"\nExplanation: {explanation}"
     return result(text + feedback_tail(note, seen_feedback), record)
 
@@ -583,8 +615,11 @@ def run_typed(args, tool_use_id):
         if not correct and not unreadable:
             matched = answer_check.matches_wrong(typed, wrong, variables, exact)
     decimal = answer_check.is_decimal(typed)
+    confidence = confidence_of(ui, dont_know)
     record.update({"typed": typed, "correct": correct, "dontKnow": dont_know, "decimal": decimal,
                    "matchedWrong": matched, "note": note})
+    if confidence is not None:
+        record["confidence"] = confidence
 
     replace_log(pending, quiz_block.render(record))
     mark_logged(tool_use_id)
@@ -602,6 +637,7 @@ def run_typed(args, tool_use_id):
         text += f"\nCorrect: {answer}"
         if matched is not None:
             text += f"\nMatched common mistake: {wrong[matched]['why']}"
+        text += confidence_line(confidence)
     text += f"\nExplanation: {explanation}"
     return result(text + feedback_tail(note, seen_feedback), record)
 
@@ -650,7 +686,7 @@ def ask_via_tmux(record):
         + sum(rows(o["label"]) for o in record.get("options", [])) + rows(record.get("explanation")) \
         + (4 if record.get("mode") == "typed" else 0) \
         + (2 if record.get("figure") else 0)
-    height = str(min(max(n_lines, 14), 45))
+    height = str(min(max(n_lines, 16), 45))  # 16: room for the confidence screen
     def popup(height):
         cmd = ["tmux", "display-popup", "-E", "-w", "85%", "-h", height, "-T", " quiz ",
                f"{shlex_quote(sys.executable)} {shlex_quote(POPUP)} {shlex_quote(spec_path)} {shlex_quote(out_path)}"]
@@ -692,10 +728,12 @@ def ask_via_elicitation(record, displayed, msg_details, multi):
 
     labels = [choice(o) for o in displayed]
     msg = record["question"] + (f"\n\n{msg_details}" if msg_details else "")
+    sure = {"type": "string", "title": "How sure are you?", "enum": list(CONFIDENCE_LABELS.values())}
     if record.get("mode") == "typed":
         schema = {"type": "object",
                   "properties": {"answer": {"type": "string", "title": "Your answer"},
                                  "dk": {"type": "boolean", "title": DONT_KNOW, "default": False},
+                                 "sure": sure,
                                  "note": {"type": "string", "title": "Note (optional)"}},
                   "required": []}
         resp = request("elicitation/create", {"message": msg, "requestedSchema": schema})
@@ -704,16 +742,18 @@ def ask_via_elicitation(record, displayed, msg_details, multi):
         content = resp["result"].get("content") or {}
         typed = str(content.get("answer") or "").strip()
         return {"action": "accept", "typed": typed, "dontKnow": content.get("dk") is True and not typed,
-                "note": str(content.get("note") or "").strip()}
+                "note": str(content.get("note") or "").strip(), "confidence": content.get("sure")}
     if multi:
         props = {f"opt{o['index']}": {"type": "boolean", "title": choice(o), "default": False} for o in displayed}
         props["dk"] = {"type": "boolean", "title": DONT_KNOW, "default": False}
+        props["sure"] = sure
         props["note"] = {"type": "string", "title": "Note (optional)"}
         schema = {"type": "object", "properties": props, "required": []}
         msg += "\n\nSelect ALL that apply."
     else:
         schema = {"type": "object",
                   "properties": {"answer": {"type": "string", "title": "Your answer", "enum": labels + [DONT_KNOW]},
+                                 "sure": sure,
                                  "note": {"type": "string", "title": "Note (optional)"}},
                   "required": ["answer"]}
     resp = request("elicitation/create", {"message": msg, "requestedSchema": schema})
@@ -723,12 +763,13 @@ def ask_via_elicitation(record, displayed, msg_details, multi):
     note = str(content.get("note") or "").strip()
     if multi:
         picked = [o["index"] for o in displayed if content.get(f"opt{o['index']}") is True]
-        return {"action": "accept", "answers": picked, "dontKnow": content.get("dk") is True and not picked, "note": note}
+        return {"action": "accept", "answers": picked, "dontKnow": content.get("dk") is True and not picked, "note": note,
+                "confidence": content.get("sure")}
     ans = str(content.get("answer") or "").strip()
     if ans == DONT_KNOW:
         return {"action": "accept", "answers": [], "dontKnow": True, "note": note}
     picked = [o["index"] for o in displayed if choice(o) == ans or ans in (o["label"], str(o["index"]))]
-    return {"action": "accept", "answers": picked[:1], "dontKnow": False, "note": note}
+    return {"action": "accept", "answers": picked[:1], "dontKnow": False, "note": note, "confidence": content.get("sure")}
 
 
 def err(message):

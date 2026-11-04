@@ -127,7 +127,7 @@ class Cards(PracticeBase):
     def test_wrong_resets(self):
         self.pr("scan")
         self.pr("result", "c1", "right")
-        self.pr("result", "c1", "wrong")
+        self.pr("result", "c1", "wrong", "--miss", "method")
         c = self.card("c1")
         self.assertEqual((c["step"], c["due"]), (0, (date.today() + timedelta(1)).isoformat()))
         self.assertEqual([h["result"] for h in c["history"]], ["right", "wrong"])
@@ -203,7 +203,7 @@ class CardFixes(PracticeBase):
         self.pr("scan")
         for _ in range(5):
             self.pr("result", "c1", "right")
-        self.pr("result", "c1", "wrong")
+        self.pr("result", "c1", "wrong", "--miss", "recall")
         self.assertEqual(self.card("c1")["status"], "active")
 
     def test_stats_next_due(self):
@@ -306,8 +306,8 @@ class Drills(PracticeBase):
         self.write_drill_problems(d, self.valid_problems(2))
         self.pr("drill-check", d)
         slots = self.slots(d)
-        self.pr("drill-result", d, "1", "--recognised", "wrong", "--picked", slots[0]["wrong"][0], "--solved", "right")
-        self.pr("drill-result", d, "2", "--recognised", "right", "--solved", "wrong")
+        self.pr("drill-result", d, "1", "--recognised", "wrong", "--picked", slots[0]["wrong"][0], "--solved", "right", "--miss", "method")
+        self.pr("drill-result", d, "2", "--recognised", "right", "--solved", "wrong", "--miss", "execution")
         r = self.pr("drill-result", d, "2", "--recognised", "right", "--solved", "right")
         self.assertNotEqual(r.returncode, 0)
         out = self.pr("drill-summary", d).stdout
@@ -351,14 +351,14 @@ class Drills(PracticeBase):
 
     def test_picked_must_be_an_option(self):
         d = self.start_drill(1)
-        r = self.pr("drill-result", d, "1", "--recognised", "wrong", "--picked", "Nonsense", "--solved", "right")
+        r = self.pr("drill-result", d, "1", "--recognised", "wrong", "--picked", "Nonsense", "--solved", "right", "--miss", "method")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("not one of the options", r.stderr)
 
     def test_drill_card_links_into_practice_folder(self):
         d = self.start_drill(1)
         self.write_drill_problems(d, self.valid_problems(1))
-        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "wrong")
+        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "wrong", "--miss", "recall")
         self.pr("scan")
         c = next(c for c in self.cards() if c["kind"] == "drill")
         self.assertEqual(c["source"], f"practice/{date.today().isoformat()}#Drill {d}")
@@ -382,6 +382,172 @@ class Drills(PracticeBase):
         r = self.pr("drill-result", "2020-01-01-1", "1", "--recognised", "right", "--solved", "right")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no drill 2020-01-01-1", r.stderr)
+
+
+    def test_demands_and_twins(self):
+        d = self.start_drill(5)
+        slots = self.slots(d)
+        for sl in slots:
+            self.assertEqual(sl["demand"], "discrimination" if sl["technique"] in ("D", "E") else "recall", sl)
+            if sl["demand"] == "discrimination":
+                self.assertIn(sl["twin"], sl["wrong"])
+        out = self.pr("drill", "--n", "5").stdout
+        self.assertRegex(out, r"  demand: (recall|discrimination — near twin: \w)")
+
+    def test_a_clean_slot_moves_the_technique_on(self):
+        d = self.start_drill(5)
+        self.write_drill_problems(d, self.valid_problems(5))
+        a = next(sl for sl in self.slots(d) if sl["technique"] == "A")
+        self.pr("drill-result", d, str(a["slot"]), "--recognised", "right", "--solved", "right")
+        d2 = self.start_drill(5)
+        self.assertEqual(next(sl for sl in self.slots(d2) if sl["technique"] == "A")["demand"], "discrimination")
+
+    def test_interleaved(self):
+        code = ("import sys, json; sys.path.insert(0, '.claude/hooks'); import practice; "
+                "print(json.dumps([[s['technique'] for s in practice.plan_drill(8, f'2026-01-01-{k}')] for k in range(100)]))")
+        r = subprocess.run([sys.executable, "-c", code], cwd=self.vault, capture_output=True, text=True)
+        for slots in json.loads(r.stdout):
+            self.assertFalse(any(a == b for a, b in zip(slots, slots[1:])), slots)
+
+    def test_miss_kind_hint_level_and_retests(self):
+        d = self.start_drill(3)
+        self.write_drill_problems(d, self.valid_problems(3))
+        r = self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "wrong")
+        self.assertIn("give its kind with --miss recall|method|execution|careless|misconception", r.stderr)
+        r = self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "right", "--miss", "method")
+        self.assertIn("--miss is for a slot with a part wrong", r.stderr)
+        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "wrong", "--miss", "execution",
+                "--confidence", "80")
+        self.pr("drill-result", d, "2", "--recognised", "right", "--solved", "right", "--hint", "3")
+        self.pr("drill-result", d, "3", "--recognised", "right", "--solved", "right", "--hint", "2")
+        out = self.pr("drill-retests", d).stdout
+        self.assertIn("RETEST 1: ", out)
+        self.assertIn("— missed (execution)", out)
+        self.assertIn("RETEST 2: ", out)
+        self.assertIn("— needed a hint at level 3", out)
+        self.assertNotIn("RETEST 3", out)
+        self.assertIn("  the problem it replaces: Problem 1?", out)
+        self.assertNotEqual(self.pr("drill-retest", d, "3", "right").returncode, 0)
+        self.assertIn("--miss", self.pr("drill-retest", d, "1", "wrong").stderr)
+        self.pr("drill-retest", d, "1", "right")
+        self.pr("drill-retest", d, "2", "wrong", "--miss", "recall")
+        self.assertIn("already recorded", self.pr("drill-retest", d, "2", "right").stderr)
+        self.assertIn("RETESTS DONE", self.pr("drill-retests", d).stdout)
+        out = self.pr("drill-summary", d).stdout
+        self.assertIn("Recognised 3/3 · solved 2/3 · retests 1/2", out)
+        self.assertIn("kinds of miss: execution 1", out)
+        self.pr("scan")
+        card = next(c for c in self.cards() if c["key"] == f"drill:{d}#1")
+        self.assertEqual((card["miss"], card["confidence"]), ("execution", 80))
+
+    def test_no_retests(self):
+        d = self.start_drill(1)
+        self.write_drill_problems(d, self.valid_problems(1))
+        self.pr("drill-result", d, "1", "--recognised", "right", "--solved", "right")
+        self.assertIn("NO RETESTS", self.pr("drill-retests", d).stdout)
+        self.assertIn("Recognised 1/1 · solved 1/1\n", self.pr("drill-summary", d).stdout)
+
+
+LATER = """## Session — {today} (Wed) 10:00
+
+### 2.6 Confidence
+
+> [!failure|quiz]- ✗ A sure miss
+>
+> Selected: 2. x
+> Correct answer: 1. y
+> Confidence: 90%
+
+> [!success|quiz]- ✓ A lucky guess
+>
+> Selected: 1. y
+> Confidence: 40%
+
+> [!success|quiz]- ✓ A sure hit
+>
+> Selected: 1. y
+> Confidence: 80%
+
+> [!failure|quiz]- ✗ A hesitant miss
+>
+> Selected: 2. x
+> Correct answer: 1. y
+> Confidence: 20%
+"""
+
+
+class Confidence(PracticeBase):
+    def setUp(self):
+        super().setUp()
+        self.pr("scan")  # the first scan, which spreads the old misses
+        with open(self.cdir / "gb-ch02.md", "a", encoding="utf-8") as f:
+            f.write("\n" + LATER.format(today=date.today().isoformat()))
+        self.pr("scan")
+        self.new = {c["prompt"]: c for c in self.cards() if c["missed"] == date.today().isoformat()}
+
+    def test_cards_from_confidence(self):
+        self.assertEqual(sorted(self.new), ["A hesitant miss", "A lucky guess", "A sure miss"])
+        sure, lucky = self.new["A sure miss"], self.new["A lucky guess"]
+        self.assertEqual((sure["confidence"], sure["due"]), (90, (date.today() + timedelta(1)).isoformat()))
+        self.assertEqual((lucky["fragile"], lucky["confidence"], lucky["due"]),
+                         (True, 40, (date.today() + timedelta(3)).isoformat()))
+        self.assertNotIn("fragile", sure)
+
+    def test_due_order(self):
+        data = json.loads(self.cards_path.read_text())
+        for c in data["cards"]:
+            c["due"] = date.today().isoformat()
+        oldest = next(c for c in data["cards"] if c["id"] == "c3")
+        oldest["miss"] = "misconception"
+        self.cards_path.write_text(json.dumps(data))
+        out = self.pr("due").stdout
+        ids = re.findall(r"^(c\d+) · ", out, re.M)
+        self.assertEqual(ids[:2], ["c3", self.new["A sure miss"]["id"]])
+        self.assertIn("  last miss: misconception\n", out)
+        self.assertIn("  last miss: 90% sure\n", out)
+        self.assertIn("  fragile: answered right at 40% confidence; one right answer above 40% retires it", out)
+
+    def test_fragile_card(self):
+        cid = self.new["A lucky guess"]["id"]
+        self.pr("result", cid, "right", "--confidence", "20")
+        c = self.card(cid)
+        self.assertEqual((c["status"], c["due"]), ("active", (date.today() + timedelta(3)).isoformat()))
+        self.pr("result", cid, "right", "--confidence", "80")
+        self.assertEqual(self.card(cid)["status"], "retired")
+
+    def test_fragile_card_missed_becomes_ordinary(self):
+        cid = self.new["A lucky guess"]["id"]
+        self.pr("result", cid, "wrong", "--miss", "method")
+        self.pr("result", cid, "right")
+        c = self.card(cid)
+        self.assertNotIn("fragile", c)
+        self.assertEqual((c["status"], c["step"]), ("active", 1))
+
+    def test_review_records_kind_and_confidence(self):
+        cid = self.new["A hesitant miss"]["id"]
+        r = self.pr("result", cid, "wrong")
+        self.assertIn("a wrong answer needs its kind: --miss", r.stderr)
+        self.assertIn("--miss is for a wrong answer", self.pr("result", cid, "right", "--miss", "recall").stderr)
+        self.assertNotEqual(self.pr("result", cid, "wrong", "--miss", "method", "--confidence", "101").returncode, 0)
+        self.pr("result", cid, "wrong", "--miss", "misconception", "--confidence", "90")
+        c = self.card(cid)
+        self.assertEqual((c["miss"], c["confidence"]), ("misconception", 90))
+        self.assertEqual(c["history"][-1], {"date": date.today().isoformat(), "result": "wrong",
+                                            "miss": "misconception", "confidence": 90})
+        self.pr("result", cid, "right", "--confidence", "30")  # right but unsure: the same gap again
+        c = self.card(cid)
+        self.assertEqual((c["step"], c["due"]), (0, (date.today() + timedelta(1)).isoformat()))
+        self.assertNotIn("miss", c)
+        self.pr("result", cid, "right")
+        self.assertEqual(self.card(cid)["step"], 1)
+
+    def test_a_miss_wins_over_a_fragile_answer_to_the_same_quiz(self):
+        with open(self.cdir / "gb-ch02.md", "a", encoding="utf-8") as f:
+            f.write("\n### 2.7 Again\n\n> [!failure|quiz]- ✗ Re-asked\n> body\n\n"
+                    "> [!success|quiz]- ✓ Re-asked\n>\n> Confidence: 20%\n")
+        self.pr("scan")
+        c = next(c for c in self.cards() if c["prompt"] == "Re-asked")
+        self.assertNotIn("fragile", c)
 
 
 if __name__ == "__main__":

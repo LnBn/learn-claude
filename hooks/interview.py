@@ -18,7 +18,8 @@ the interviewer's style; `sig-oa` and `mw-oa` are written tests, sat in Obsidian
     interview.py start --session <id>                start the clock and the status bar; print problem 1 (or
                                                      write the paper of a written test)
     interview.py hook                                (UserPromptSubmit) the clock line, during a running round
-    interview.py hint [--error]                      record a nudge (or a pointed-out error); print the next nudge
+    interview.py hint [--error] [--level N]          record a nudge (or a pointed-out error) and its level, 0-5;
+                                                     print the next nudge
     interview.py answer "<text>" [--followup]        check a final answer: CORRECT, WRONG or UNREADABLE
     interview.py next [--gave-up]                    close the current problem; print the next one, or ROUND OVER
     interview.py submit                              hand in a written test: read the paper, score it
@@ -724,7 +725,10 @@ def cmd_hint(a):
     h, n, st, probs = running()
     live_only(st)
     pr = st["problems"][st["current"]]
-    pr["hints"].append({"t": time.time(), "kind": "error" if a.error else "nudge"})
+    hint = {"t": time.time(), "kind": "error" if a.error else "nudge"}
+    if a.level is not None:
+        hint["level"] = a.level
+    pr["hints"].append(hint)
     save(h, n, st)
     k = len(pr["hints"])
     if a.error:
@@ -779,7 +783,9 @@ def close_problem(st, probs, t, gave_up=False):
     pr["end"] = t
     pr["gaveUp"] = bool(gave_up)
     shown = len(pr["hints"]) if at is None else hints
-    return [f"CLOSED: Problem {i + 1} — {pr['outcome']} ({mmss(t - pr['start'])}, {shown} hint{'' if shown == 1 else 's'})",
+    levels = [x["level"] for x in pr["hints"][:shown] if isinstance(x.get("level"), int)]
+    top = f", up to level {max(levels)}" if levels else ""
+    return [f"CLOSED: Problem {i + 1} — {pr['outcome']} ({mmss(t - pr['start'])}, {shown} hint{'' if shown == 1 else 's'}{top})",
             f"SOLUTION: {probs[i]['solution']}"]
 
 
@@ -1101,6 +1107,7 @@ def main(argv=None):
     sub.add_parser("clock")
     s = sub.add_parser("hint")
     s.add_argument("--error", action="store_true")
+    s.add_argument("--level", type=int, choices=range(6), help="the hint's level, 0-5 (the practice rules)")
     s = sub.add_parser("answer")
     s.add_argument("text")
     s.add_argument("--followup", action="store_true")

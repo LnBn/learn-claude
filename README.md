@@ -93,6 +93,6 @@ The teacher is the Claude Code session itself, guided by a set of [skills](https
 
 ## Credits
 
-The teaching method, the quiz popup, the note mirror, the skills and the agent prompts come from [Eero Alvar's learn](https://github.com/amosblomqvist/learn). The port to Claude Code, the changes to those pieces, and the courses, exams, interviews, technique notes and practice modes are by Lachlan Burton, written with Claude.
+The teaching method, the quiz popup, the note mirror, the skills and the agent prompts come from [Eero Alvar's learn](https://github.com/amosblomqvist/learn). The confidence ratings on quiz answers and the practice rules (hint levels, kinds of miss, checked problems, retests) follow ideas from Eero Alvar's [learnharness](https://github.com/amosblomqvist/learnharness). The port to Claude Code, the changes to those pieces, and the courses, exams, interviews, technique notes and practice modes are by Lachlan Burton, written with Claude.
 
 If something breaks or you have an idea, please open an issue.
