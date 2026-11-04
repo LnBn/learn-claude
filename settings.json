@@ -61,6 +61,7 @@
       "Bash(python3 .claude/hooks/md_log.py *)",
       "Bash(python3 .claude/hooks/lesson.py *)",
       "Bash(python3 .claude/hooks/book.py *)",
+      "Bash(python3 .claude/hooks/programme.py *)",
       "Bash(python3 .claude/hooks/exam.py *)",
       "Bash(python3 .claude/hooks/coding.py *)",
       "Bash(python3 .claude/hooks/interview.py *)",
